@@ -75,4 +75,4 @@ go build ./cmd/mars_chat_server
 
 ## 许可证
 
-[GPL-3.0](LICENSE)
+[MIT License](LICENSE)
