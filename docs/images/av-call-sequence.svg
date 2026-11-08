@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="596" font-family="Noto Sans CJK SC, Noto Sans SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" viewBox="0 0 760 596" role="img" aria-label="通话信令全部经 WebSocket 由后端转发，媒体流在两个浏览器之间直连" font-size="13">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<defs><marker id="av-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b4b2a9"/></marker></defs>
+<text x="24" y="30" font-size="15" font-weight="600" fill="#1f1e1c">通话信令全部经 WebSocket 由后端转发，媒体流在两个浏览器之间直连</text>
+<text x="24" y="50" font-size="11.5" fill="#6b6964">仅支持单聊一对一；所有信令都是 type=3 的聊天消息，av_data 字段携带 messageId 与 type；圆点表示后端转发</text>
+
+<g>
+<rect x="50" y="64" width="160" height="48" rx="8" fill="none" stroke="#b4b2a9" stroke-width="1.25"/>
+<text x="130" y="84" text-anchor="middle" font-weight="600" fill="#1f1e1c">主叫 A 浏览器</text>
+<text x="130" y="101" text-anchor="middle" font-size="11.5" fill="#1f1e1c">ContactChat.vue</text>
+</g>
+<g>
+<rect x="290" y="64" width="180" height="48" rx="8" fill="#2c6fd1" fill-opacity="0.12" stroke="#2c6fd1" stroke-width="2"/>
+<text x="380" y="84" text-anchor="middle" font-weight="600" fill="#1f1e1c">Go 后端</text>
+<text x="380" y="101" text-anchor="middle" font-size="11.5" fill="#1f1e1c">转发 type=3 消息</text>
+</g>
+<g>
+<rect x="550" y="64" width="160" height="48" rx="8" fill="none" stroke="#b4b2a9" stroke-width="1.25"/>
+<text x="630" y="84" text-anchor="middle" font-weight="600" fill="#1f1e1c">被叫 B 浏览器</text>
+<text x="630" y="101" text-anchor="middle" font-size="11.5" fill="#1f1e1c">ContactChat.vue</text>
+</g>
+
+<g fill="none" stroke="#b4b2a9" stroke-width="1.25" stroke-dasharray="3 4">
+<path d="M130 112V576"/>
+<path d="M380 112V576"/>
+<path d="M630 112V576"/>
+</g>
+
+<g font-size="11.5" fill="#1f1e1c">
+<rect x="40" y="126" width="180" height="30" rx="8" fill="#ecebe6" stroke="#b4b2a9" stroke-width="1.25"/>
+<text x="130" y="145" text-anchor="middle">建连接并打开摄像头 / 麦克风</text>
+<rect x="530" y="196" width="200" height="30" rx="8" fill="#ecebe6" stroke="#b4b2a9" stroke-width="1.25"/>
+<text x="630" y="215" text-anchor="middle">弹出提醒；接听时同样建连接</text>
+<rect x="40" y="266" width="180" height="30" rx="8" fill="#ecebe6" stroke="#b4b2a9" stroke-width="1.25"/>
+<text x="130" y="285" text-anchor="middle">收到后 createOffer</text>
+<rect x="530" y="336" width="200" height="30" rx="8" fill="#ecebe6" stroke="#b4b2a9" stroke-width="1.25"/>
+<text x="630" y="355" text-anchor="middle">设置远端描述后 createAnswer</text>
+</g>
+
+<g fill="none" stroke="#b4b2a9" stroke-width="1.25">
+<path d="M130 180H628" marker-end="url(#av-arrow)"/>
+<path d="M630 250H132" marker-end="url(#av-arrow)"/>
+<path d="M130 320H628" marker-end="url(#av-arrow)"/>
+<path d="M630 390H132" marker-end="url(#av-arrow)"/>
+<path d="M132 424H628" marker-start="url(#av-arrow)" marker-end="url(#av-arrow)"/>
+<path d="M130 512H628" marker-end="url(#av-arrow)"/>
+<path d="M630 556H132" stroke-dasharray="5 4" marker-end="url(#av-arrow)"/>
+</g>
+<g fill="#b4b2a9">
+<circle cx="380" cy="180" r="3.5"/>
+<circle cx="380" cy="250" r="3.5"/>
+<circle cx="380" cy="320" r="3.5"/>
+<circle cx="380" cy="390" r="3.5"/>
+<circle cx="380" cy="424" r="3.5"/>
+<circle cx="380" cy="512" r="3.5"/>
+<circle cx="380" cy="556" r="3.5"/>
+</g>
+<g font-size="11.5" fill="#1f1e1c" text-anchor="middle">
+<text x="255" y="173">① PROXY start_call · 落库</text>
+<text x="505" y="243">② PROXY receive_call · 落库</text>
+<text x="255" y="313">③ PROXY sdp（offer）</text>
+<text x="505" y="383">④ PROXY sdp（answer）</text>
+<text x="255" y="417">⑤ PROXY candidate · 双向多次</text>
+<text x="255" y="505">⑦ PEER_LEAVE（任一方挂断）</text>
+<text x="505" y="505" fill="#6b6964">对方关闭媒体与连接</text>
+<text x="505" y="549" fill="#6b6964">拒绝分支：PROXY reject_call · 落库</text>
+<text x="255" y="549" fill="#6b6964">A 关闭媒体与连接</text>
+</g>
+
+<g>
+<rect x="40" y="446" width="680" height="36" rx="8" fill="#e6eefa" stroke="#2c6fd1" stroke-width="1.25"/>
+<text x="380" y="469" text-anchor="middle" font-size="12" font-weight="600" fill="#2c6fd1">⑥ 音视频媒体流在 A 与 B 之间直连，不经过后端（当前 ICE_CFG 为空，未配置 STUN / TURN）</text>
+</g>
+</svg>
