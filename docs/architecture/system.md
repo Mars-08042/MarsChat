@@ -6,7 +6,7 @@
 
 MarsChat 由一个 Go 后端进程和一个 Vue 3 单页应用组成，前后端分离：
 
-- 后端是**单个进程**，同时提供 HTTPS REST 接口、WSS 长连接和静态文件服务，默认监听 `0.0.0.0:8000`。
+- 后端是**单个进程**，提供 HTTP 业务接口、WebSocket 长连接和静态文件服务。本地模板监听 `127.0.0.1:8000`，`httpEnabled=true` 时使用 HTTP / WS；关闭该开关时使用 HTTPS / WSS。
 - 前端构建为静态文件，由独立的 Web 服务器托管（历史部署方式见 [deployment.md](../deployment.md)）。
 - 在线连接表保存在进程内存中，因此**当前只支持单实例部署**（详见 [tech-debt.md](../plans/tech-debt.md) TD-07）。
 
@@ -43,7 +43,7 @@ pkg/ssl  pkg/zlog  pkg/util     HTTPS 重定向中间件、zap 日志封装、�
 3. `dao` 使用 `mysqlConfig` 完整参数通过 TCP 连接 MySQL，并对 6 张表执行 `AutoMigrate`。
 4. `redis` 创建客户端（不做连通性检查）。
 5. `https_server` 创建 Gin 引擎并注册路由。
-6. `main()`：kafka 模式下初始化 Kafka；启动 `ChatServer` 或 `KafkaChatServer` 协程；`RunTLS` 监听；收到 SIGINT/SIGTERM 后关闭 Kafka、关闭 ChatServer，并**删除当前 Redis 库的全部键**。
+6. `main()`：kafka 模式下初始化 Kafka；启动 `ChatServer` 或 `KafkaChatServer` 协程；根据 `httpEnabled` 使用 `Run` 或 `RunTLS` 监听（仅 HTTPS 模式注册 TLS 重定向）；收到 SIGINT/SIGTERM 后关闭 Kafka、关闭 ChatServer，并**删除当前 Redis 库的全部键**。
 
 本地运行前需要修改的硬编码项见 [deployment.md](../deployment.md#硬编码项清单)。
 
@@ -79,7 +79,7 @@ pkg/ssl  pkg/zlog  pkg/util     HTTPS 重定向中间件、zap 日志封装、�
 | Element Plus | ^2.9.0 | UI 组件库 |
 | WebRTC（浏览器原生） | — | 一对一音视频，信令经 WebSocket 转发 |
 
-前端包管理器为 yarn（仓库中有 `yarn.lock`），构建工具为 Vue CLI 5。
+前端包管理器为 pnpm 11.22.0（`packageManager` 固定版本，唯一锁文件为 `pnpm-lock.yaml`），构建工具为 Vue CLI 5。迁移决策见 [ADR-0004](adr/0004-frontend-pnpm.md)。
 
 ## 5. 横切约定
 

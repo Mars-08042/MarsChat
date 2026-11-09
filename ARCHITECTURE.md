@@ -4,13 +4,13 @@
 
 ## 组成
 
-| 部分 | 技术 | 职责 |
-|---|---|---|
-| 前端 `web/chat-server/` | Vue 3、Vuex、Vue Router、Element Plus、axios | 页面与交互；通过 HTTPS 调用接口，通过 WSS 收发消息和通话信令；WebRTC 音视频 |
-| 后端 `cmd/` `api/` `internal/` `pkg/` | Go 1.27.3、Gin、GORM、go-redis、gorilla/websocket、kafka-go、zap | 业务接口、长连接管理、消息落库与转发、静态文件 |
-| 存储 | MySQL、Redis、本地磁盘 | 业务数据；列表缓存与验证码；头像与聊天文件 |
-| 可选组件 | Kafka、TURN（coturn） | 消息中转；公网音视频中继 |
-| 外部服务 | 阿里云短信 | 注册与登录验证码 |
+| 部分                                          | 技术                                                             | 职责                                                                        |
+| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 前端 `web/chat-server/`                     | Vue 3、Vuex、Vue Router、Element Plus、axios                     | 页面与交互；通过 HTTPS 调用接口，通过 WSS 收发消息和通话信令；WebRTC 音视频 |
+| 后端 `cmd/` `api/` `internal/` `pkg/` | Go 1.27.3、Gin、GORM、go-redis、gorilla/websocket、kafka-go、zap | 业务接口、长连接管理、消息落库与转发、静态文件                              |
+| 存储                                          | MySQL、Redis、本地磁盘                                           | 业务数据；列表缓存与验证码；头像与聊天文件                                  |
+| 可选组件                                      | Kafka、TURN（coturn）                                            | 消息中转；公网音视频中继                                                    |
+| 外部服务                                      | 阿里云短信                                                       | 注册与登录验证码                                                            |
 
 ## 后端模块关系
 
@@ -40,14 +40,16 @@ WSS 连接 ──→ api/v1/ws_controller → internal/service/chat
 - 单实例运行：在线连接表在进程内存中。
 - 后端没有认证与鉴权。
 - 本地依赖由 Compose 提供，应用仍在宿主机运行；配置及证书路径通过配置指定，其他环境相关项见部署文档。
+- 本地显式启用 `httpEnabled` 时使用 HTTP / WS，无需证书；其他情况下使用 HTTPS / WSS。
+- 前端依赖由 pnpm 管理，使用 `pnpm-lock.yaml` 锁定版本，迁移记录见 ADR-0004。
 
 ## 详细文档
 
-| 主题 | 文档 |
-|---|---|
-| 分层、目录、技术组件、横切约定 | [docs/architecture/system.md](docs/architecture/system.md) |
-| 表结构、枚举、Redis 键 | [docs/architecture/data-model.md](docs/architecture/data-model.md) |
-| 请求、消息、信令的流转与格式 | [docs/architecture/data-flow.md](docs/architecture/data-flow.md) |
-| 架构决策记录 | [docs/architecture/adr/](docs/architecture/adr/README.md) |
-| 部署与配置 | [docs/deployment.md](docs/deployment.md) |
-| 已知问题 | [docs/plans/tech-debt.md](docs/plans/tech-debt.md) |
+| 主题                           | 文档                                                              |
+| ------------------------------ | ----------------------------------------------------------------- |
+| 分层、目录、技术组件、横切约定 | [docs/architecture/system.md](docs/architecture/system.md)         |
+| 表结构、枚举、Redis 键         | [docs/architecture/data-model.md](docs/architecture/data-model.md) |
+| 请求、消息、信令的流转与格式   | [docs/architecture/data-flow.md](docs/architecture/data-flow.md)   |
+| 架构决策记录                   | [docs/architecture/adr/](docs/architecture/adr/README.md)          |
+| 部署与配置                     | [docs/deployment.md](docs/deployment.md)                           |
+| 已知问题                       | [docs/plans/tech-debt.md](docs/plans/tech-debt.md)                 |

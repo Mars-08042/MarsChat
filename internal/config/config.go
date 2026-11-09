@@ -11,6 +11,7 @@ type MainConfig struct {
 	AppName     string `toml:"appName"`
 	Host        string `toml:"host"`
 	Port        int    `toml:"port"`
+	HTTPEnabled bool   `toml:"httpEnabled"`
 	TLSCertFile string `toml:"tlsCertFile"`
 	TLSKeyFile  string `toml:"tlsKeyFile"`
 }

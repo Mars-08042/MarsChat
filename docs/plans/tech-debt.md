@@ -11,7 +11,7 @@
 |---|---|---|---|
 | TD-01 | **没有认证与鉴权**。HTTP 接口信任请求体中的 `owner_id`、`uuid`；WebSocket 只凭 `client_id` 参数识别用户，任何人都能以他人身份连接并接收其消息；管理接口只由前端按 `is_admin` 隐藏入口，服务端不校验 | `internal/https_server/https_server.go`、`api/v1/ws_controller.go` | 登录后签发令牌，HTTP 中间件和 WS 握手统一校验；管理接口服务端校验管理员身份 |
 | TD-02 | **密码明文存储与比较**，字段为 `char(18)` | `user_info_service.go` 的 `Login`、`Register`；`model/user_info.go` | 改用 bcrypt 等慢哈希，调整字段长度并迁移存量数据 |
-| TD-03 | **部署配置部分改善（2026-11-08）**：已支持配置文件环境变量、完整 MySQL TCP 配置、后端 TLS 路径配置和前端地址环境变量；本地 Compose 已提供。前端开发证书路径和端口仍固定，云部署需显式迁移配置；尚未完成应用端到端验证 | 见 [deployment.md](../deployment.md#硬编码项清单) | 后续统一环境配置并验证云部署，完成前保留此项 |
+| TD-03 | **部署配置部分改善（2026-11-09）**：已支持配置文件环境变量、完整 MySQL TCP 配置、后端 TLS 路径配置和前端地址环境变量；本地 Compose 已提供。本地可显式启用无证书 HTTP / WS，HTTPS 仍可选。前端开发 HTTPS 证书路径和端口仍固定，云部署需显式迁移配置；尚未完成应用端到端验证 | 见 [deployment.md](../deployment.md#硬编码项清单) | 后续统一环境配置并验证云部署，完成前保留此项 |
 | TD-04 | **单条异常消息可使后端崩溃**。channel 模式的转发循环没有 `recover`：`normalizePath` 在头像不含 `/static/` 时执行 `path[-1:]` 越界；`receive_id` 为空时 `ReceiveId[0]` 越界；发送方不在在线表时对 nil 指针取字段。kafka 模式虽有 `recover`，但读取协程随之退出，之后静默停止消费 | `internal/service/chat/server.go`、`kafka_server.go` | 入口处校验消息字段；单条消息的处理包一层 `recover` 并记录日志，不影响循环继续 |
 
 ## 中

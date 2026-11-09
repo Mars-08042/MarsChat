@@ -20,7 +20,7 @@ docs/
 └── images/                  文档插图（SVG）
 ```
 
-`design/`、`plans/active/` 按需创建。已完成计划包括 [本地 Compose 开发环境](plans/completed/local-compose.md)。
+`design/`、`plans/active/` 按需创建。已完成计划包括 [本地 Compose 开发环境](plans/completed/local-compose.md)、[无证书本地启动](plans/completed/local-http.md)、[前端迁移 pnpm](plans/completed/pnpm-migration.md)。
 
 ## 按问题查找
 

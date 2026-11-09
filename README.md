@@ -20,7 +20,7 @@ MarsChat 是一个前后端分离的 Web 即时通讯系统，提供联系人、
 | 层 | 技术 |
 |---|---|
 | 后端 | Go 1.27.3、Gin、GORM、go-redis、gorilla/websocket、kafka-go（可选）、zap |
-| 前端 | Vue 3、Vue Router、Vuex、Element Plus、axios、Vue CLI 5、yarn |
+| 前端 | Vue 3、Vue Router、Vuex、Element Plus、axios、Vue CLI 5、pnpm |
 | 存储与中间件 | MySQL、Redis、Kafka（可选） |
 | 外部服务 | 阿里云短信；TURN 服务（公网音视频，可选） |
 
@@ -39,9 +39,9 @@ docs/                   项目文档
 
 ## 快速开始
 
-需要 Go 1.27.3、MySQL、Redis、Node.js 与 yarn，以及 HTTPS 证书。
+需要 Go 1.27.3、MySQL、Redis、Node.js 与 pnpm 11.22.0。本地使用 HTTP / WS，无需证书。
 
-本地开发使用根目录 `compose.yaml` 启动 MySQL、Redis、Kafka，复用已有镜像并禁止自动拉取。宿主机端口分别为 `13307`、`16381`、`19093`。首次运行请按 [本地开发步骤](docs/deployment.md#本地开发windows--powershell) 准备 `.env`、`configs/config_local.toml` 和开发证书，再执行：
+本地开发使用根目录 `compose.yaml` 启动 MySQL、Redis、Kafka，复用已有镜像并禁止自动拉取。宿主机端口分别为 `13307`、`16381`、`19093`。首次运行请按 [本地开发步骤](docs/deployment.md#本地开发windows--powershell) 准备 `.env`、`configs/config_local.toml`（`httpEnabled = true`）和日志、上传目录，再执行：
 
 ```powershell
 # 在项目根目录启动依赖
@@ -53,9 +53,11 @@ go run .
 
 # 前端（另开终端，从项目根目录执行）
 Set-Location web/chat-server
-corepack yarn@1.22.22 install --frozen-lockfile
-corepack yarn@1.22.22 serve
+pnpm install --frozen-lockfile
+pnpm serve
 ```
+
+访问 `http://localhost:8080`；后端为 `http://127.0.0.1:8000`。切回 HTTPS 的方法见部署文档。
 
 ## 开发检查
 

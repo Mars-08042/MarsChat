@@ -17,7 +17,10 @@ func init() {
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
 	GE.Use(cors.New(corsConfig))
-	GE.Use(ssl.TlsHandler(config.GetConfig().MainConfig.Host, config.GetConfig().MainConfig.Port))
+	conf := config.GetConfig()
+	if !conf.HTTPEnabled {
+		GE.Use(ssl.TlsHandler(conf.MainConfig.Host, conf.MainConfig.Port))
+	}
 	GE.Static("/static/avatars", config.GetConfig().StaticAvatarPath)
 	GE.Static("/static/files", config.GetConfig().StaticFilePath)
 	GE.POST("/login", v1.Login)

@@ -36,7 +36,7 @@
 - 修改 `internal/service/chat/` 前必须读该目录下的 AGENTS.md：消息处理逻辑在 `server.go` 和 `kafka_server.go` 中各有一份，需要同步修改。
 - WebSocket 消息格式或通话信令变化时，后端 `service/chat`、前端 `ContactChat.vue` 和 `data-flow.md` 必须同时更新。
 - 配置路径、数据库连接、证书路径、前端后端地址是硬编码的（[清单](docs/deployment.md#硬编码项清单)）。不要把本机路径、IP、密钥提交进仓库；真实配置放在被忽略的 `config_local.toml` 中。
-- 前端包管理器是 yarn；后端依赖用 go mod。新增、升级依赖或修改 `go.mod`、`package.json` 前先征得开发者同意。
+- 前端包管理器是 pnpm（版本见 `web/chat-server/package.json` 的 `packageManager`），使用 `pnpm-lock.yaml`；后端依赖用 go mod。新增、升级依赖或修改 `go.mod`、`package.json` 前先征得开发者同意。
 
 ## 验证要求
 
@@ -45,7 +45,7 @@
 ```bash
 go vet ./cmd/... ./internal/... ./pkg/... ./api/...   # 不要加 -mod=mod，它会改写 go.mod
 go build ./cmd/mars_chat_server
-cd web/chat-server && yarn lint                       # 需要已安装 node_modules
+cd web/chat-server && pnpm lint --no-fix              # 需要已安装 node_modules，不自动修改文件
 ```
 
 - `go vet ./test/...` 目前因 `test/dao` 字段过期而失败（TD-12），这是已知问题，不代表本次改动引入错误；修复后删除本条。

@@ -29,9 +29,15 @@ func main() {
 	}
 
 	go func() {
-		if err := https_server.GE.RunTLS(fmt.Sprintf("%s:%d", host, port), conf.TLSCertFile, conf.TLSKeyFile); err != nil {
-			zlog.Fatal("server running fault")
-			return
+		addr := fmt.Sprintf("%s:%d", host, port)
+		var err error
+		if conf.HTTPEnabled {
+			err = https_server.GE.Run(addr)
+		} else {
+			err = https_server.GE.RunTLS(addr, conf.TLSCertFile, conf.TLSKeyFile)
+		}
+		if err != nil {
+			zlog.Fatal("server running fault: " + err.Error())
 		}
 	}()
 

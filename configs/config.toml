@@ -2,6 +2,8 @@
 appName = "marschat"
 host = "127.0.0.1"
 port = 8000
+# 仅本机开发启用；部署时设为 false 并配置 TLS 证书。
+httpEnabled = true
 tlsCertFile = "../../pkg/ssl/local.pem"
 tlsKeyFile = "../../pkg/ssl/local-key.pem"
 

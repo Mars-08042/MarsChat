@@ -66,10 +66,10 @@
 
 ## 4. 历史消息
 
-| 场景 | 接口 | 查询条件 |
-|---|---|---|
+| 场景 | 接口                                                       | 查询条件                                                                     |
+| ---- | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | 单聊 | `/message/getMessageList` `{user_one_id, user_two_id}` | `(send=A AND receive=B) OR (send=B AND receive=A)`，按 `created_at` 升序 |
-| 群聊 | `/message/getGroupMessageList` `{group_id}` | `receive_id = 群 ID`，按 `created_at` 升序 |
+| 群聊 | `/message/getGroupMessageList` `{group_id}`            | `receive_id = 群 ID`，按 `created_at` 升序                               |
 
 一次返回全部记录，没有分页。通话信令里落库的 `start_call` 等记录也会出现在单聊历史中（前端不渲染 `type=3`）。
 
@@ -88,14 +88,14 @@
 
 信令都是 `type=3` 的聊天消息，`av_data` 是 JSON 字符串：
 
-| messageId | type | 发送方 | 是否落库 | 接收方动作 |
-|---|---|---|---|---|
-| `PROXY` | `start_call` | 主叫 | 是 | 提示来电，允许接听或拒绝 |
-| `PROXY` | `receive_call` | 被叫 | 是 | 主叫 `createOffer` |
-| `PROXY` | `reject_call` | 被叫 | 是 | 主叫结束通话 |
-| `PROXY` | `sdp` | 双方 | 否 | `messageData.sdp.type` 为 offer 时回 answer |
-| `PROXY` | `candidate` | 双方 | 否 | `addIceCandidate` |
-| `PEER_LEAVE` | — | 挂断方 | 否 | 对方结束通话 |
+| messageId      | type             | 发送方 | 是否落库 | 接收方动作                                    |
+| -------------- | ---------------- | ------ | -------- | --------------------------------------------- |
+| `PROXY`      | `start_call`   | 主叫   | 是       | 提示来电，允许接听或拒绝                      |
+| `PROXY`      | `receive_call` | 被叫   | 是       | 主叫 `createOffer`                          |
+| `PROXY`      | `reject_call`  | 被叫   | 是       | 主叫结束通话                                  |
+| `PROXY`      | `sdp`          | 双方   | 否       | `messageData.sdp.type` 为 offer 时回 answer |
+| `PROXY`      | `candidate`    | 双方   | 否       | `addIceCandidate`                           |
+| `PEER_LEAVE` | —               | 挂断方 | 否       | 对方结束通话                                  |
 
 后端只把通话信令转发给 `U` 开头的接收方，且不回显给发送方（原因见 [lessons/av-signaling-no-echo.md](../lessons/av-signaling-no-echo.md)）。前端还处理 `CURRENT_PEERS`、`PEER_JOIN`，但后端从不发送这两种消息。
 
