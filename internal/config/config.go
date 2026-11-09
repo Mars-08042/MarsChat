@@ -3,13 +3,16 @@ package config
 import (
 	"github.com/BurntSushi/toml"
 	"log"
+	"os"
 	"time"
 )
 
 type MainConfig struct {
-	AppName string `toml:"appName"`
-	Host    string `toml:"host"`
-	Port    int    `toml:"port"`
+	AppName     string `toml:"appName"`
+	Host        string `toml:"host"`
+	Port        int    `toml:"port"`
+	TLSCertFile string `toml:"tlsCertFile"`
+	TLSKeyFile  string `toml:"tlsKeyFile"`
 }
 
 type MysqlConfig struct {
@@ -66,13 +69,12 @@ type Config struct {
 var config *Config
 
 func LoadConfig() error {
-	// 本地部署
-	// if _, err := toml.DecodeFile("F:\\go\\mars-chat-server\\configs\\config_local.toml", config); err != nil {
-	// 	log.Fatal(err.Error())
-	// 	return err
-	// }
-	// Ubuntu22.04云服务器部署
-	if _, err := toml.DecodeFile("/root/project/MarsChat/configs/config_local.toml", config); err != nil {
+	configPath := os.Getenv("MARSCHAT_CONFIG")
+	if configPath == "" {
+		// 默认从 cmd/mars_chat_server 启动；其他工作目录通过环境变量指定。
+		configPath = "../../configs/config_local.toml"
+	}
+	if _, err := toml.DecodeFile(configPath, config); err != nil {
 		log.Fatal(err.Error())
 		return err
 	}

@@ -38,9 +38,9 @@ pkg/ssl  pkg/zlog  pkg/util     HTTPS 重定向中间件、zap 日志封装、�
 
 各基础组件都在包的 `init()` 中初始化，导入即生效，没有显式的依赖注入：
 
-1. `config.GetConfig()` 首次调用时从**硬编码路径** `/root/project/MarsChat/configs/config_local.toml` 读取配置，失败则 `log.Fatal`。
+1. `config.GetConfig()` 首次调用时读取 `MARSCHAT_CONFIG` 指定的文件，未设置则读取 `../../configs/config_local.toml`（默认从入口目录启动），失败则 `log.Fatal`。
 2. `zlog` 初始化 zap，同时输出到 stdout 和 `logConfig.logPath`。
-3. `dao` 连接 MySQL 并对 6 张表执行 `AutoMigrate`。
+3. `dao` 使用 `mysqlConfig` 完整参数通过 TCP 连接 MySQL，并对 6 张表执行 `AutoMigrate`。
 4. `redis` 创建客户端（不做连通性检查）。
 5. `https_server` 创建 Gin 引擎并注册路由。
 6. `main()`：kafka 模式下初始化 Kafka；启动 `ChatServer` 或 `KafkaChatServer` 协程；`RunTLS` 监听；收到 SIGINT/SIGTERM 后关闭 Kafka、关闭 ChatServer，并**删除当前 Redis 库的全部键**。
@@ -52,7 +52,7 @@ pkg/ssl  pkg/zlog  pkg/util     HTTPS 重定向中间件、zap 日志封装、�
 | 位置 | 职责 |
 |---|---|
 | `web/chat-server/src/router/index.js` | 8 个页面路由加根路径重定向；全局守卫只检查 `sessionStorage` 中是否有 `userInfo.uuid` |
-| `src/store/index.js` | Vuex：`backendUrl`、`wsUrl`（硬编码）、`userInfo`、全局 `socket` |
+| `src/store/index.js` | Vuex：`backendUrl`、`wsUrl`（默认本机 8000，可通过构建环境变量覆盖）、`userInfo`、全局 `socket` |
 | `src/views/access/` | 密码登录、短信登录、注册；登录成功后建立 WebSocket |
 | `src/views/chat/session/SessionList.vue` | 会话列表 |
 | `src/views/chat/contact/ContactList.vue` | 联系人、群组、好友申请 |

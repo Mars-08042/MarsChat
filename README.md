@@ -41,17 +41,20 @@ docs/                   项目文档
 
 需要 Go 1.27.3、MySQL、Redis、Node.js 与 yarn，以及 HTTPS 证书。
 
-配置文件路径、数据库连接方式、证书路径、前端访问的后端地址目前都**写死在代码里**，首次运行前请先按 [docs/deployment.md](docs/deployment.md#硬编码项清单) 修改，再执行：
+本地开发使用根目录 `compose.yaml` 启动 MySQL、Redis、Kafka，复用已有镜像并禁止自动拉取。宿主机端口分别为 `13307`、`16381`、`19093`。首次运行请按 [本地开发步骤](docs/deployment.md#本地开发windows--powershell) 准备 `.env`、`configs/config_local.toml` 和开发证书，再执行：
 
-```bash
+```powershell
+# 在项目根目录启动依赖
+docker compose up -d --pull never --wait --wait-timeout 120
+
 # 后端（在入口目录运行，静态文件和日志按相对路径解析）
-cd cmd/mars_chat_server
-go run main.go
+Set-Location cmd/mars_chat_server
+go run .
 
-# 前端
-cd web/chat-server
-yarn install
-yarn serve
+# 前端（另开终端，从项目根目录执行）
+Set-Location web/chat-server
+corepack yarn@1.22.22 install --frozen-lockfile
+corepack yarn@1.22.22 serve
 ```
 
 ## 开发检查

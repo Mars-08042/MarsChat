@@ -84,6 +84,7 @@
 | kafka 消息模式 | | 部分实现 | 未验证 | TD-05、TD-07 |
 | Redis 列表缓存 | 部分键只读不写 | 部分实现 | 未验证 | TD-09 |
 | HTTPS / WSS | 自签证书 | 已实现 | 未验证 | TD-03 |
+| 本地依赖容器 | Compose 复用本地 MySQL、Redis、Kafka 镜像，禁止自动拉取；自动创建聊天 topic | 已实现 | 手动验证 2026-11-08：容器健康、数据库查询、Redis PING、Kafka topic 与宿主机端口连接 | 应用端到端未验证 |
 | 启动自动建表 | GORM AutoMigrate | 已实现 | 未验证 | |
 | 结构化日志 | zap，同时输出到终端和文件 | 已实现 | 未验证 | TD-21 |
 | 后端编译 | | — | `go build ./cmd/mars_chat_server` 通过（2026-11-07） | |

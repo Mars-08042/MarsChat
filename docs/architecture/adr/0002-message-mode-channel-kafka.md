@@ -27,7 +27,7 @@
 - 处理逻辑重复两份，修改时容易只改一处（TD-14），kafka 模式已出现登出无效等遗漏（TD-05）。
 - kafka 模式下在线连接表仍在进程内存中，并不能支撑多实例部署（TD-07）。
 - Writer 配置为 `RequireNone`，不等待 broker 确认，没有提高投递可靠性。
-- kafka 模式额外依赖 Kafka（及 Zookeeper）运维，topic 需要手动预建。
+- kafka 模式额外依赖 Kafka 运维；本地 Compose 使用单节点 KRaft，无需 ZooKeeper，并通过初始化容器预建 topic。其他部署仍需自行预建 topic。
 
 ## 适用条件
 

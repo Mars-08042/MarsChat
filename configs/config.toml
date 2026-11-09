@@ -1,18 +1,20 @@
 [mainConfig]
-appName = "your app name"
-host = "0.0.0.0"
+appName = "marschat"
+host = "127.0.0.1"
 port = 8000
+tlsCertFile = "../../pkg/ssl/local.pem"
+tlsKeyFile = "../../pkg/ssl/local-key.pem"
 
 [mysqlConfig]
 host = "127.0.0.1"
-port = 3306
-user = "root"
-password = "123456"
-databaseName = "your database name"
+port = 13307
+user = "marschat"
+password = "replace-with-local-password"
+databaseName = "marschat"
 
 [redisConfig]
 host = "127.0.0.1"
-port = 6379
+port = 16381
 password = ""
 db = 0
 
@@ -23,11 +25,11 @@ signName = "阿里云短信测试"
 templateCode = "SMS_154950909"
 
 [logConfig]
-logPath = "your log path"
+logPath = "./logs/backend.log"
 
 [kafkaConfig]
 messageMode = "channel"# 消息模式 channel or kafka
-hostPort = "127.0.0.1:9092" # "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094" 多个kafka服务器
+hostPort = "127.0.0.1:19093"
 loginTopic = "login"
 chatTopic = "chat_message"
 logoutTopic = "logout"
@@ -35,5 +37,5 @@ partition = 0 # kafka partition
 timeout = 1 # 单位秒
 
 [staticSrcConfig]
-staticAvatarPath = "./static/avatars"
-staticFilePath = "./static/files"
+staticAvatarPath = "../../static/avatars"
+staticFilePath = "../../static/files"
