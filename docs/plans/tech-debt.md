@@ -46,4 +46,5 @@
 
 | 编号 | 处理 | 提交 |
 |---|---|---|
+| TD-23 | 通话启动缺少安全上下文、WebRTC 和媒体接口检查，接口不可用时返回 null 后调用 getTracks 导致异常；已补充环境提示、失败资源清理及启动防重入，并通过 7 项回归测试 | 本次提交，2026-11-11 |
 | — | go.mod 把直接依赖 `gin-contrib/cors`、`segmentio/kafka-go`、`unrolled/secure` 标为 `// indirect`：执行 `go mod tidy` 后已修正 | 首次提交 |

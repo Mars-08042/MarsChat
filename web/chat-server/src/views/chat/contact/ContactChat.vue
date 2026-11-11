@@ -1046,6 +1046,7 @@ export default {
       curContactList: [],
       ableToReceiveOrRejectCall: false,
       ableToStartCall: true,
+      isStartingCall: false,
     });
     //这是/chat/:id 的id改变时会调用
     onBeforeRouteUpdate(async (to, from, next) => {
@@ -1922,7 +1923,10 @@ export default {
         console.log("peer connection has already been created.");
         return;
       }
-      data.rtcPeerConn = new RTCPeerConnection(data.ICE_CFG);
+      if (typeof window.RTCPeerConnection !== "function") {
+        throw new Error("当前浏览器未提供 WebRTC 连接能力，请使用支持 WebRTC 的浏览器并检查相关扩展或设置");
+      }
+      data.rtcPeerConn = new window.RTCPeerConnection(data.ICE_CFG);
       data.rtcPeerConn.onicecandidate = (event) => {
         if (event.candidate) {
           var proxyCandidateMessage = {
@@ -1976,9 +1980,8 @@ export default {
     };
 
     const getLocalMediaStream = () => {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.log("getUserMedia is not supported!");
-        return null;
+      if (typeof navigator.mediaDevices?.getUserMedia !== "function") {
+        throw new Error("当前浏览器不支持获取摄像头和麦克风，请使用支持音视频的浏览器");
       } else if (data.localStream) {
         console.log("localStream already exist.");
         return data.localStream;
@@ -2092,7 +2095,7 @@ export default {
     const startCall = async (isInitiator) => {
       console.log(data.localVideo);
       console.log(data.localStream);
-      if (data.localVideo) {
+      if (data.localVideo || data.isStartingCall) {
         ElMessage.warning("已经在通话中，请勿重复发起");
         return;
       }
@@ -2106,51 +2109,77 @@ export default {
         ElMessage.warning("对方没有发起通话或已在通话中，无法接收通话");
         return;
       }
-      createRtcPeerConnection();
-      data.localStream = await getLocalMediaStream();
-      attachMediaStreamToLocalVideo();
-      attachMediaStreamToPeerConnection();
-      if (isInitiator) {
-        var startCallMessage = {
-          messageId: "PROXY",
-          type: "start_call",
+      data.isStartingCall = true;
+      try {
+        if (!window.isSecureContext) {
+          throw new Error("音视频通话需要安全连接。手机访问局域网地址时，请使用受信任的 HTTPS 页面");
+        }
+        createRtcPeerConnection();
+        data.localStream = await getLocalMediaStream();
+        if (!data.localStream) {
+          throw new Error("未获取到摄像头和麦克风，无法开始通话");
+        }
+        attachMediaStreamToLocalVideo();
+        attachMediaStreamToPeerConnection();
+        if (isInitiator) {
+          var startCallMessage = {
+            messageId: "PROXY",
+            type: "start_call",
+          };
+          const rtcMessageRequest = {
+            session_id: data.sessionId,
+            type: 3,
+            content: "",
+            url: "",
+            send_id: data.userInfo.uuid,
+            send_name: data.userInfo.nickname,
+            send_avatar: data.userInfo.avatar,
+            receive_id: data.contactInfo.contact_id,
+            file_size: "",
+            file_name: "",
+            file_type: "",
+            av_data: JSON.stringify(startCallMessage),
+          };
+          store.state.socket.send(JSON.stringify(rtcMessageRequest));
+        } else {
+          var receiveCallMessage = {
+            messageId: "PROXY",
+            type: "receive_call",
+          };
+          const rtcMessageRequest = {
+            session_id: data.sessionId,
+            type: 3,
+            content: "",
+            url: "",
+            send_id: data.userInfo.uuid,
+            send_name: data.userInfo.nickname,
+            send_avatar: data.userInfo.avatar,
+            receive_id: data.contactInfo.contact_id,
+            file_size: "",
+            file_name: "",
+            file_type: "",
+            av_data: JSON.stringify(receiveCallMessage),
+          };
+          store.state.socket.send(JSON.stringify(rtcMessageRequest));
+          data.ableToReceiveOrRejectCall = false;
+        }
+      } catch (error) {
+        closeLocalMediaStream();
+        closeRtcPeerConnection();
+        if (data.localVideo) {
+          data.localVideo.srcObject = null;
+          data.localVideo.style.display = "none";
+          data.localVideo = null;
+        }
+        const messages = {
+          NotAllowedError: "摄像头或麦克风权限未获允许，请检查浏览器和系统权限后重试",
+          NotFoundError: "未找到可用的摄像头或麦克风",
+          NotReadableError: "无法读取摄像头或麦克风，请检查设备是否被其他应用占用",
         };
-        const rtcMessageRequest = {
-          session_id: data.sessionId,
-          type: 3,
-          content: "",
-          url: "",
-          send_id: data.userInfo.uuid,
-          send_name: data.userInfo.nickname,
-          send_avatar: data.userInfo.avatar,
-          receive_id: data.contactInfo.contact_id,
-          file_size: "",
-          file_name: "",
-          file_type: "",
-          av_data: JSON.stringify(startCallMessage),
-        };
-        store.state.socket.send(JSON.stringify(rtcMessageRequest));
-      } else {
-        var receiveCallMessage = {
-          messageId: "PROXY",
-          type: "receive_call",
-        };
-        const rtcMessageRequest = {
-          session_id: data.sessionId,
-          type: 3,
-          content: "",
-          url: "",
-          send_id: data.userInfo.uuid,
-          send_name: data.userInfo.nickname,
-          send_avatar: data.userInfo.avatar,
-          receive_id: data.contactInfo.contact_id,
-          file_size: "",
-          file_name: "",
-          file_type: "",
-          av_data: JSON.stringify(receiveCallMessage),
-        };
-        store.state.socket.send(JSON.stringify(rtcMessageRequest));
-        data.ableToReceiveOrRejectCall = false;
+        ElMessage.error(messages[error.name] || error.message || "通话启动失败，请重试");
+        console.error("通话启动失败", error);
+      } finally {
+        data.isStartingCall = false;
       }
     };
 

@@ -48,3 +48,6 @@ pkg/ssl/*.pem
 
 # Compose 本地凭据
 .env
+
+# 临时文件
+tmp/

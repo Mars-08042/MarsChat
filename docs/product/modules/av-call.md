@@ -21,6 +21,7 @@
 ## 行为与限制
 
 - 前端防重入：已在通话中不能再次发起；对方已发起时只能先接听或拒绝。
+- 发起和接听前检查安全上下文及 WebRTC、媒体接口能力。局域网 IP 的 HTTP 页面明确提示使用受信任的 HTTPS；接口缺失、权限拒绝或设备不可用时提示原因，不继续绑定空媒体流或发送通话信令。失败时释放已获取的媒体轨道及连接；等待媒体授权期间阻止重复启动。
 - `start_call`、`receive_call`、`reject_call` 会写入 `message` 表，作为通话记录；`sdp`、`candidate`、`PEER_LEAVE` 不落库。
 - 信令不回显给发送方（[lessons/av-signaling-no-echo.md](../../lessons/av-signaling-no-echo.md)）。
 - 对方不在线时信令被丢弃，主叫端没有超时或“对方不在线”提示。
@@ -30,3 +31,7 @@
 ## 相关问题
 
 TD-11（ICE 配置与群聊通话）、TD-20（`CURRENT_PEERS`/`PEER_JOIN` 只有前端处理）。
+
+## 回归验证
+
+在 `web/chat-server` 执行 `node --test tests/av-call.test.cjs`。测试运行组件实际通话函数，模拟局域网 HTTP、接口缺失、设备失败、空媒体流、正常发起与接听、重复点击和信令发送失败。2026-11-10：7 项测试通过，未使用真实摄像头或验证手机端到端通话。
