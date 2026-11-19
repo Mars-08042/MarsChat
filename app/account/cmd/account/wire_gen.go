@@ -20,7 +20,7 @@ import (
 
 // Injectors from wire.go:
 
-func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, auth *conf.Auth, token *conf2.Token, sms *conf2.Sms, security *conf2.Security, cache *conf2.Cache, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, auth *conf.Auth, token *conf2.Token, sms *conf2.Sms, security *conf2.Security, cache *conf2.Cache, kafka *conf.Kafka, outbox *conf.Outbox, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
 	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
 	if err != nil {
 		return nil, nil, err
@@ -56,16 +56,24 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 	}
 	sessionRepo := data.NewSessionRepo(dataData)
 	eventRepo := data.NewEventRepo(dataData)
-	transaction := data.NewTransaction(dataData)
-	tokenService, err := biz.NewTokenService(token, auth)
+	publisher, cleanup3, err := data.NewPublisher(db, client, kafka, outbox, logger)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	loginGuard := data.NewLoginGuard(client)
-	idGenerator, cleanup3, err := data.NewIDGenerator(client, logger)
+	transaction := data.NewTransaction(dataData, publisher)
+	tokenService, err := biz.NewTokenService(token, auth)
 	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	loginGuard := data.NewLoginGuard(client)
+	idGenerator, cleanup4, err := data.NewIDGenerator(client, logger)
+	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -73,6 +81,7 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 	revoker := data.NewRevoker(client)
 	authUsecase, err := biz.NewAuthUsecase(userRepo, sessionRepo, eventRepo, transaction, tokenService, smsUsecase, rateLimiter, loginGuard, idGenerator, revoker, policyHolder, security, logger)
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -83,6 +92,7 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 	adminUsecase := biz.NewAdminUsecase(userRepo, sessionRepo, eventRepo, transaction, tokenService, revoker, logger)
 	resolver, err := service.NewClientIPResolver(security)
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -92,8 +102,9 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 	internalService := service.NewInternalService(userUsecase)
 	grpcServer := server.NewGRPCServer(confServer, middlewares, accountService, internalService)
 	httpServer := server.NewHTTPServer(confServer, middlewares, dataData, accountService, logger)
-	app := newApp(logger, consulRegistry, grpcServer, httpServer)
+	app := newApp(logger, consulRegistry, grpcServer, httpServer, publisher)
 	return app, func() {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()

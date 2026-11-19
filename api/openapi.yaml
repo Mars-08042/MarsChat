@@ -230,6 +230,137 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/social.v1.UnblockUserResponse'
+    /v1/conversations:
+        get:
+            tags:
+                - MessageService
+            description: |-
+                列出我的会话，按会话 ID 游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+                 next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 100。
+                 不按最近活跃排序：客户端拿到完整列表后按 last_message 的时间排序，重连时据此比对各会话的 max_seq。
+            operationId: MessageService_ListConversations
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.ListConversationsResponse'
+    /v1/conversations/{conversationId}:
+        get:
+            tags:
+                - MessageService
+            description: 获取单个会话，字段与列表相同。客户端收到未知会话的消息推送时调用。
+            operationId: MessageService_GetConversation
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.GetConversationResponse'
+    /v1/conversations/{conversationId}/difference:
+        get:
+            tags:
+                - MessageService
+            description: 补拉 from_seq 之后的消息，按 seq 升序。三种结果见 DifferenceResult。limit 为 0 时取 100，最大 200。
+            operationId: MessageService_GetDifference
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: fromSeq
+                  in: query
+                  description: 客户端本地连续的最大 seq，第一次同步传 0
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.GetDifferenceResponse'
+    /v1/conversations/{conversationId}/messages:
+        get:
+            tags:
+                - MessageService
+            description: |-
+                历史消息，从 before_seq 往前翻页（不含 before_seq），按 seq 降序。before_seq 为 0 表示从最新开始；
+                 next_before_seq 为 0 表示没有更早的消息。limit 为 0 时取 20，最大 100。
+            operationId: MessageService_ListMessages
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: beforeSeq
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.ListMessagesResponse'
+    /v1/conversations/{conversationId}/read:
+        post:
+            tags:
+                - MessageService
+            description: |-
+                标记已读到 seq。已读位置只增不减，超过会话最新 seq 时按最新 seq 处理；
+                 位置变化后推送给本人的其他设备，单聊同时推给对方作为已读回执。
+            operationId: MessageService_MarkRead
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/message.v1.MarkReadRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.MarkReadResponse'
     /v1/friend-requests:
         post:
             tags:
@@ -1104,6 +1235,138 @@ components:
                     type: integer
                     format: enum
             description: UserProfile 是其他用户可见的公开资料，不含手机号。
+        message.v1.Conversation:
+            type: object
+            properties:
+                id:
+                    type: string
+                type:
+                    type: integer
+                    format: enum
+                peerUser:
+                    allOf:
+                        - $ref: '#/components/schemas/account.v1.UserProfile'
+                    description: 单聊对方的资料，account 不可用时只有 id
+                group:
+                    allOf:
+                        - $ref: '#/components/schemas/message.v1.GroupBrief'
+                    description: 群资料，social 不可用时只有 id
+                maxSeq:
+                    type: string
+                    description: 会话最新消息的 seq
+                readSeq:
+                    type: string
+                    description: 本人的已读位置
+                unreadCount:
+                    type: string
+                    description: max_seq - read_seq
+                peerReadSeq:
+                    type: string
+                    description: 单聊对方的已读位置，用于显示已读回执；群聊为 0
+                lastMessage:
+                    allOf:
+                        - $ref: '#/components/schemas/message.v1.Message'
+                    description: 最新一条消息，会话还没有消息时为空
+        message.v1.GetConversationResponse:
+            type: object
+            properties:
+                conversation:
+                    $ref: '#/components/schemas/message.v1.Conversation'
+        message.v1.GetDifferenceResponse:
+            type: object
+            properties:
+                result:
+                    type: integer
+                    format: enum
+                messages:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/message.v1.Message'
+                nextFromSeq:
+                    type: string
+                    description: SLICE 时下一次请求的 from_seq
+                maxSeq:
+                    type: string
+                    description: 会话当前最新的 seq
+        message.v1.GroupBrief:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                avatar:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
+                memberCount:
+                    type: integer
+                    format: int32
+            description: GroupBrief 是会话列表中展示的群资料。
+        message.v1.ListConversationsResponse:
+            type: object
+            properties:
+                conversations:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/message.v1.Conversation'
+                nextCursor:
+                    type: string
+        message.v1.ListMessagesResponse:
+            type: object
+            properties:
+                messages:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/message.v1.Message'
+                nextBeforeSeq:
+                    type: string
+        message.v1.MarkReadRequest:
+            type: object
+            properties:
+                conversationId:
+                    type: string
+                seq:
+                    type: string
+        message.v1.MarkReadResponse:
+            type: object
+            properties:
+                readSeq:
+                    type: string
+                    description: 生效后的已读位置
+        message.v1.Message:
+            type: object
+            properties:
+                conversationId:
+                    type: string
+                conversationType:
+                    type: integer
+                    format: enum
+                seq:
+                    type: string
+                    description: 会话内从 1 开始连续递增，(conversation_id, seq) 唯一标识一条消息
+                senderId:
+                    type: string
+                clientMsgId:
+                    type: string
+                    description: 发送方生成的幂等键，只对发送方有意义
+                content:
+                    $ref: '#/components/schemas/message.v1.MessageContent'
+                createdAt:
+                    type: string
+                    format: date-time
+        message.v1.MessageContent:
+            type: object
+            properties:
+                text:
+                    $ref: '#/components/schemas/message.v1.TextContent'
+            description: MessageContent 是消息正文，按类型取其中一种。文件、图片等类型在 media 服务就绪后加入。
+        message.v1.TextContent:
+            type: object
+            properties:
+                text:
+                    type: string
         social.v1.AcceptFriendRequestRequest:
             type: object
             properties:
@@ -1519,6 +1782,13 @@ tags:
       description: |-
         AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
          除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
+    - name: MessageService
+      description: |-
+        MessageService 是面向客户端的会话与消息接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+         全部接口都需要在 Authorization 头携带 Bearer 访问令牌，当前用户取自令牌。
+         发消息只走 WebSocket（见 access.v1 的帧协议），这里只有读取与已读。
+
+         不是会话成员时一律返回 CONVERSATION_NOT_FOUND，不区分“会话不存在”和“无权访问”。
     - name: SocialService
       description: |-
         SocialService 是面向客户端的好友与群接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。

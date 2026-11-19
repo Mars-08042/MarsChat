@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package access.v1;
+
+import "account/v1/events.proto";
+import "message/v1/message.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/access/v1;v1";
+
+// WebSocket 帧协议。客户端连接 GET /ws，用子协议选择帧编码：
+//   - marschat.v1.proto（默认）：二进制消息，内容为 protobuf 编码的帧；
+//   - marschat.v1.json：文本消息，内容为 protobuf JSON 编码的帧，便于手工调试。
+// 每条 WebSocket 消息恰好是一个帧，客户端发 ClientFrame，服务端发 ServerFrame。
+//
+// 连接流程：
+//   1. 连接后 10 秒内发送 Auth 帧（必须是第一帧），成功返回 AuthOk，失败返回 Error 后以 4001 关闭；
+//   2. 每隔 AuthOk.heartbeat_interval_seconds 秒发送 Ping，服务端回 Pong；90 秒内没有收到任何帧，服务端断开连接；
+//   3. 发消息用 SendMessage 帧，服务端按发送顺序返回 SendAck 或带同一 request_id 的 Error；
+//   4. 新消息与已读位置由服务端主动推送（request_id 为 0）。断线期间的消息不补推，重连后经 HTTP 接口补拉。
+//
+// 服务端关闭码：
+//   - 4001：未认证（第一帧不是 Auth、令牌无效或超时未认证）；
+//   - 4002：被踢（退出登录、在别处被踢下线、封禁、令牌被吊销），关闭前发送 Kicked 帧；
+//   - 4003：连接太慢，发送队列已满。重连后补拉；
+//   - 4008：上行帧频率超限；
+//   - 1001：服务停机，客户端应重连（会被分配到其他实例）。
+
+// ClientFrame 是客户端发给服务端的帧。
+message ClientFrame {
+  // 客户端生成，对该帧的响应原样带回，用于匹配请求与响应。建议在同一连接内递增
+  uint64 request_id = 1;
+  oneof body {
+    // 必须是第一帧，之后不能再发
+    Auth auth = 2;
+    Ping ping = 3;
+    // 发送消息。超时未收到确认时，用同一个 client_msg_id 重发，服务端只存一条
+    message.v1.OutgoingMessage send_message = 4;
+  }
+}
+
+// Auth 携带访问令牌。令牌不放在 URL 里：URL 会进入网关和代理的访问日志。
+message Auth {
+  string access_token = 1;
+}
+
+// Ping 是应用层心跳。不用 WebSocket 控制帧：浏览器不能主动发送 ping。
+message Ping {}
+
+// ServerFrame 是服务端发给客户端的帧。
+message ServerFrame {
+  // 对客户端帧的响应时为该帧的 request_id，服务端主动推送时为 0
+  uint64 request_id = 1;
+  oneof body {
+    AuthOk auth_ok = 2;
+    Pong pong = 3;
+    // 消息已写入，seq 为它在会话中的位置
+    message.v1.SendResult send_ack = 4;
+    Error error = 5;
+    // 新消息推送。发送者的其他连接也会收到，发起发送的连接只收到 SendAck
+    message.v1.Message message = 6;
+    // 已读位置推送：自己在其他设备上的已读，以及单聊对方的已读。位置只增不减，收到更小的值时忽略
+    message.v1.ReadPosition read = 7;
+    // 连接被踢，随后以 4002 关闭
+    Kicked kicked = 8;
+  }
+}
+
+// AuthOk 表示认证成功，连接开始接收推送。
+message AuthOk {
+  int64 user_id = 1;
+  // 登录会话 ID
+  int64 session_id = 2;
+  // 本连接的 ID，排查问题时使用
+  int64 connection_id = 3;
+  // 客户端发送 Ping 的间隔
+  int32 heartbeat_interval_seconds = 4;
+}
+
+message Pong {}
+
+// Error 与 HTTP 接口的 Kratos 错误一一对应：code 为 HTTP 状态码，reason 为错误原因。
+// 发消息的错误原样来自 message 服务（例如 RATE_LIMITED、NOT_FRIENDS、VALIDATOR），
+// access 自身的错误见 access.v1.ErrorReason。
+message Error {
+  int32 code = 1;
+  string reason = 2;
+  string message = 3;
+  map<string, string> metadata = 4;
+}
+
+// Kicked 说明连接被踢的原因。心跳时发现令牌已被吊销，原因为 REVOKE_REASON_UNSPECIFIED。
+message Kicked {
+  account.v1.RevokeReason reason = 1;
+}

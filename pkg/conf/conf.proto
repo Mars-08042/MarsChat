@@ -73,3 +73,28 @@ message RateLimit {
     (buf.validate.field).duration.gt = {seconds: 0}
   ];
 }
+
+// Kafka 是 Kafka 客户端配置，修改后需要重启。
+message Kafka {
+  // broker 地址，多个用逗号分隔
+  string brokers = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Outbox 是 Outbox 发布器配置，修改后需要重启。
+message Outbox {
+  // 没有收到进程内唤醒时的轮询间隔
+  google.protobuf.Duration poll_interval = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 每批最多发布的事件数
+  int32 batch_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 1000
+  }];
+  // 已发布事件的保留时间，超过后删除
+  google.protobuf.Duration retention = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}

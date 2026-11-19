@@ -10,6 +10,7 @@ import (
 	"github.com/google/wire"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/Mars-08042/MarsChat/pkg/kafka"
 	"github.com/Mars-08042/MarsChat/pkg/ratelimit"
 )
 
@@ -22,7 +23,7 @@ var ProviderSet = wire.NewSet(
 )
 
 // TopicSocialEvents 是 social 事件的 Kafka topic。
-const TopicSocialEvents = "marschat.social.events"
+const TopicSocialEvents = kafka.TopicSocialEvents
 
 // 数据层返回的通用错误，由用例转换成对外的业务错误。
 var (
@@ -226,6 +227,12 @@ type GroupRepo interface {
 	EvictCache(ctx context.Context, id int64)
 	// OnCreated 在建群提交后调用，把群 ID 加入布隆过滤器
 	OnCreated(ctx context.Context, id int64)
+}
+
+// GroupCacheInvalidator 删除群资料和成员列表缓存，失败时返回错误。
+// 事件消费者用它兜底同步删除（TD-25）：同步删除失败时不必等 TTL 过期，消费者会重试到成功为止。
+type GroupCacheInvalidator interface {
+	InvalidateGroup(ctx context.Context, groupID int64) error
 }
 
 // MemberRepo 是群成员存储。

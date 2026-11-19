@@ -19,6 +19,8 @@ message Bootstrap {
   Cache cache = 8 [(buf.validate.field).required = true];
   // 可热更新，见 Policy
   Policy policy = 9 [(buf.validate.field).required = true];
+  marschat.conf.Kafka kafka = 10 [(buf.validate.field).required = true];
+  marschat.conf.Outbox outbox = 11 [(buf.validate.field).required = true];
 }
 
 // Account 是调用 account 服务的配置，修改后需要重启。

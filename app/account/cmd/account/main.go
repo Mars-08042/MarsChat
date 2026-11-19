@@ -14,6 +14,7 @@ import (
 	"github.com/Mars-08042/MarsChat/app/account/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/account/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
+	"github.com/Mars-08042/MarsChat/pkg/outbox"
 )
 
 var (
@@ -29,14 +30,14 @@ func init() {
 	flag.StringVar(&flagconf, "conf", "app/account/configs", "配置目录或文件路径")
 }
 
-func newApp(logger *slog.Logger, r *consul.Registry, gs *grpc.Server, hs *http.Server) *kratos.App {
+func newApp(logger *slog.Logger, r *consul.Registry, gs *grpc.Server, hs *http.Server, pub *outbox.Publisher) *kratos.App {
 	return kratos.New(
 		kratos.ID(bootstrap.InstanceID(Name)),
 		kratos.Name(Name),
 		kratos.Version(Version),
 		kratos.Logger(logger),
 		kratos.Registrar(r),
-		kratos.Server(gs, hs),
+		kratos.Server(gs, hs, pub),
 	)
 }
 
@@ -67,7 +68,7 @@ func run() error {
 	}
 
 	app, cleanup, err := wireApp(bc.GetServer(), bc.GetRegistry(), bc.GetMysql(), bc.GetRedis(), bc.GetAuth(),
-		bc.GetToken(), bc.GetSms(), bc.GetSecurity(), bc.GetCache(), policy, logger)
+		bc.GetToken(), bc.GetSms(), bc.GetSecurity(), bc.GetCache(), bc.GetKafka(), bc.GetOutbox(), policy, logger)
 	if err != nil {
 		return fmt.Errorf("init app: %w", err)
 	}

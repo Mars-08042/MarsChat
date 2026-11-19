@@ -63,11 +63,13 @@ func newFixture(t *testing.T) *fixture {
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
 
-	mw, err := Server(&conf.Auth{
+	c := &conf.Auth{
 		PublicKey: base64.StdEncoding.EncodeToString(signer.PublicKey()),
 		Issuer:    testIssuer,
 		Audience:  testAudience,
-	}, rdb, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mw, err := Server(c, rdb, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +77,7 @@ func newFixture(t *testing.T) *fixture {
 		p, _ := FromContext(ctx)
 		return p, nil
 	})
-	call := func(token string) (Principal, error) {
+	viaMiddleware := func(token string) (Principal, error) {
 		ctx := transport.NewServerContext(context.Background(), fakeTransport{header: http.Header{"Authorization": {"Bearer " + token}}})
 		out, err := h(ctx, nil)
 		if err != nil {
@@ -83,7 +85,27 @@ func newFixture(t *testing.T) *fixture {
 		}
 		return out.(Principal), nil
 	}
+	v, err := NewVerifier(c, rdb, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 每个用例同时走中间件和 Verifier，两者结论必须一致
+	call := func(token string) (Principal, error) {
+		p1, err1 := viaMiddleware(token)
+		p2, err2 := v.Authenticate(context.Background(), token)
+		if p1 != p2 || errCode(err1) != errCode(err2) {
+			t.Fatalf("middleware = (%+v, %v), verifier = (%+v, %v)", p1, err1, p2, err2)
+		}
+		return p1, err1
+	}
 	return &fixture{signer: signer, mr: mr, rdb: rdb, call: call}
+}
+
+func errCode(err error) int32 {
+	if err == nil {
+		return 0
+	}
+	return kerrors.FromError(err).Code
 }
 
 func assertUnauthorized(t *testing.T, err error) {
@@ -195,4 +217,31 @@ func TestMissingToken(t *testing.T) {
 	f := newFixture(t)
 	_, err := f.call("")
 	assertUnauthorized(t, err)
+}
+
+// 长连接心跳复查吊销状态。
+func TestVerifierIsRevoked(t *testing.T) {
+	f := newFixture(t)
+	v, err := NewVerifier(&conf.Auth{
+		PublicKey: base64.StdEncoding.EncodeToString(f.signer.PublicKey()),
+		Issuer:    testIssuer,
+		Audience:  testAudience,
+	}, f.rdb, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, _ := f.signer.Sign(Principal{UserID: 42, SessionID: 7}, time.Now())
+	p, err := v.Authenticate(context.Background(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revoked, err := v.IsRevoked(context.Background(), p); err != nil || revoked {
+		t.Fatalf("IsRevoked = %v, %v, want false", revoked, err)
+	}
+	if err := NewRevocations(f.rdb).RevokeSessions(context.Background(), time.Hour, 7); err != nil {
+		t.Fatal(err)
+	}
+	if revoked, err := v.IsRevoked(context.Background(), p); err != nil || !revoked {
+		t.Fatalf("IsRevoked = %v, %v, want true", revoked, err)
+	}
 }

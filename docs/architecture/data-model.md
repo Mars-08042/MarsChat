@@ -1,6 +1,6 @@
 # 数据模型
 
-> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 3（2026-11-19）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
+> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 4（2026-11-19）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
 
 ## 1. 数据库与账号
 
@@ -62,7 +62,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `revoked_at` / `revoke_reason` | `DATETIME(3) NULL` / `TINYINT` | 原因 0 未吊销、1 退出、2 被踢、3 封禁、4 同设备重新登录、5 刷新令牌重放 |
 | `active_device` | 虚拟生成列 `IF(revoked_at IS NULL, device_id, NULL)` | 只用于唯一索引 |
 
-**outbox_events**：结构见 [pkg/outbox](../../pkg/outbox/outbox.go)，各服务同构。account 写入的事件为 `SessionRevoked`、`UserBanned`（topic `marschat.account.events`，分区键为用户 ID），发布器在步骤 4 实现。
+**outbox_events**：结构见 [pkg/outbox](../../pkg/outbox/outbox.go)，各服务同构。account 写入的事件为 `SessionRevoked`、`UserBanned`（topic `marschat.account.events`，分区键为用户 ID），由 Outbox 发布器发布到 Kafka，见 [data-flow.md](data-flow.md#6-事件与-outbox)。
 
 索引与查询（`EXPLAIN` 于 2026-11-18 在 MySQL 9.7.4 上核对）：
 
@@ -73,7 +73,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `sessions.uk_user_active_device (user_id, active_device)` | 同设备登录时吊销旧会话：`WHERE user_id = ? AND active_device = ? FOR UPDATE` | 已吊销会话这一列为 NULL，不占唯一约束，所以同一设备最多一个有效会话，历史全部保留 |
 | `sessions.idx_user_revoked (user_id, revoked_at)` | 设备列表、封禁时吊销全部会话：`WHERE user_id = ? AND revoked_at IS NULL` | 数据量很小时优化器可能改用 `uk_user_active_device` 的 `user_id` 前缀，两者都在候选索引中 |
 | `sessions.PRIMARY` | 刷新：按令牌里的会话 ID 查找；轮换 `UPDATE ... WHERE id = ? AND refresh_hash = ? AND revoked_at IS NULL` | 条件更新保证并发刷新只有一个成功 |
-| `outbox_events.idx_unpublished (published_at, id)` | 发布器取未发布事件 `WHERE published_at IS NULL ORDER BY id` | 步骤 4 使用 |
+| `outbox_events.idx_unpublished (published_at, id)` | 发布器取未发布事件 `WHERE published_at IS NULL ORDER BY id`；清理已发布超过 7 天的记录 | 各服务同构，`EXPLAIN` 见 2.3 |
 
 事务边界见 [account 设计 3.6](../design/account-service.md#36-事务与事件)。登录事务先 `SELECT ... FOR UPDATE` 锁住用户行，与封禁互斥。
 
@@ -144,6 +144,54 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 单聊发言权限是 2 次主键查询（拉黑、好友），群聊发言权限读群资料缓存和成员列表缓存。事务边界与并发控制见 [social 设计 3.4、3.9](../design/social-service.md#34-群)。
 
+### 2.3 message（`marschat_message`，迁移 `000001_init`）
+
+读扩散：消息按会话只存一份，会话内 seq 连续递增，每个成员只记录自己的已读位置（[ADR-0006](adr/0006-message-sync-model.md)）。主键与索引都以会话 ID 开头，将来可以按会话分片。
+
+**conversations**
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `BIGINT` PK | 群聊为群 ID；单聊为新的 snowflake |
+| `type` | `TINYINT` | 1 单聊、2 群聊 |
+| `user_low` / `user_high` | `BIGINT NULL` | 仅单聊：两人中较小、较大的用户 ID，唯一索引 `uk_pair`；群聊为 NULL（唯一索引中 NULL 互不冲突） |
+| `max_seq` | `BIGINT` | 最新消息的 seq，在锁住本行的事务内递增 |
+| `created_at` / `updated_at` | `DATETIME(3)` | |
+
+**conversation_members**（主键 `(conversation_id, user_id)`）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `read_seq` | `BIGINT` | 已读位置，只增不减（条件更新 `read_seq < ?`）；未读数 = `max_seq - read_seq` |
+| `joined_at` / `updated_at` | `DATETIME(3)` | |
+
+单聊在第一条消息的事务中插入两行；群聊由 social 的群事件维护：建群时已读位置为 0，之后入群的成员取当时的 `max_seq`（能看历史，但历史不算未读），退群删除。
+
+**messages**（主键 `(conversation_id, seq)`）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `sender_id` | `BIGINT` | |
+| `client_msg_id` | `VARCHAR(64)`，`ascii_bin` | 客户端生成的幂等键，只含字母、数字、`-`、`_`；唯一索引 `uk_client (conversation_id, sender_id, client_msg_id)` |
+| `content` | `BLOB` | `message.v1.MessageContent` 的 protobuf 编码，新增消息类型不改表 |
+| `created_at` | `DATETIME(3)` | |
+
+**outbox_events**：同构。message 写入的事件为 `MessageCreated`、`ReadPositionUpdated`（topic `marschat.message.events`，分区键为会话 ID）。
+
+索引与查询（`EXPLAIN` 于 2026-11-19 在 MySQL 9.7.4 上核对，临时库中造了 1 万个会话、6.8 万行成员、10 万条消息、5 万条 Outbox 记录并 `ANALYZE`）：
+
+| 索引 | 查询 | 说明 |
+|---|---|---|
+| `conversations.PRIMARY` | 分配 seq 前锁会话行 `WHERE id = ? FOR UPDATE`；`UPDATE ... SET max_seq`；会话列表批量取 `id IN (...)` | 常量查找 / 主键点范围 |
+| `conversations.uk_pair` | 单聊查找与锁定 `WHERE user_low = ? AND user_high = ?` | 常量查找 |
+| `conversation_members.PRIMARY` | 成员与已读位置；已读条件更新；退群删除；会话列表取单聊对方的已读 `conversation_id IN (...) AND user_id <> ?` | |
+| `conversation_members.idx_user (user_id, conversation_id)` | 我的会话 `WHERE user_id = ? AND conversation_id > ? ORDER BY conversation_id LIMIT n` | 索引范围扫描，无排序 |
+| `messages.PRIMARY` | 历史 `WHERE conversation_id = ? AND seq < ? ORDER BY seq DESC LIMIT n`；补拉 `seq > ? ORDER BY seq LIMIT n`；最后一条消息 `(conversation_id, seq) IN (...)` | 历史为主键倒序范围扫描（Backward index scan），补拉为正序范围扫描，都没有排序 |
+| `messages.uk_client` | 重发去重 `WHERE conversation_id = ? AND sender_id = ? AND client_msg_id = ?`；并发重发时由唯一约束兜底 | 常量查找 |
+| `outbox_events.idx_unpublished (published_at, id)` | 发布器取未发布事件 `WHERE published_at IS NULL ORDER BY id LIMIT 200`；清理 `WHERE published_at < ? ORDER BY published_at LIMIT 1000` | 索引 ref / 范围扫描，无排序 |
+
+发消息的事务边界、死锁规避与并发 e2e 结果见 [message-pipeline 设计 3.4](../design/message-pipeline.md#34-message)。
+
 ## 3. Redis 键
 
 所有键带服务前缀。限额类数值来自可热更新的 `policy` 配置，表中为默认值。
@@ -163,14 +211,18 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `account:rl:sms_ip:{ip}` | ZSET | 窗口长度 | `pkg/ratelimit` 滑动窗口 | 每 IP 每小时 20 次发码；Redis 故障时拒绝发码 |
 | `account:rl:login_ip:{ip}` | ZSET | 窗口长度 | 同上 | 每 IP 每分钟 20 次登录；Redis 故障时放行 |
 | `account:login_fail:{phone}` | String 计数 | 首次失败起 15 分钟；达到 5 次时改为锁定 15 分钟 | 密码错误时加一；登录成功后删除 | 密码错误锁定 |
-| `social:group:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10%；空值标记 1 分钟 | 资料修改、成员数变化、转让、解散后删除 | 群资料缓存，未命中时先查群 ID 布隆过滤器 |
-| `social:group:members:{id}` | String（1 字节标记 + JSON 数组：用户 ID、角色、禁言截止） | 30 分钟 ±10% | 任何成员、角色、禁言变化后删除 | 全部成员，供发言权限校验和投递；开启跨实例重建锁 |
+| `social:group:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10%；空值标记 1 分钟 | 资料修改、成员数变化、转让、解散后删除；social 消费自己的群事件再删一次（兜底） | 群资料缓存，未命中时先查群 ID 布隆过滤器 |
+| `social:group:members:{id}` | String（1 字节标记 + JSON 数组：用户 ID、角色、禁言截止） | 30 分钟 ±10% | 任何成员、角色、禁言变化后删除；同样经事件兜底删除 | 全部成员，供发言权限校验和投递；开启跨实例重建锁 |
 | `social:group:members:{id}:lock` | String，值为持有者随机串 | 3 秒 | 缓存未命中时 `SET NX PX`，回填后校验持有者再删除 | 重建锁：没抢到的实例每 50 毫秒重读缓存，最多 200 毫秒，之后直接回源 |
 | `social:group_bf`、`:ready`、`:dirty`、`:rebuild` | 同 `account:user_bf*` | 同上 | 建群后 `BF.INSERT` | 群 ID 布隆过滤器（`pkg/bloom`），含已解散的群 |
 | `social:rl:friend_request:{uid}` | ZSET | 窗口长度 | `pkg/ratelimit` | 每人每小时 20 条好友申请 |
 | `social:rl:group_create:{uid}` | ZSET | 窗口长度 | 同上 | 每人每天（滑动 24 小时）建 10 个群 |
 | `social:rl:join_request:{uid}` | ZSET | 窗口长度 | 同上 | 每人每小时 20 次入群（直接加入也计入）；social 的限流在 Redis 故障时都放行 |
 | `idgen:node:{n}` | String，值为实例 ID | 30 秒，每 10 秒续期 | 启动时 `SET NX` 抢占节点号 | snowflake 节点号租约（所有服务共用 0～1023） |
+| `message:rl:send:{uid}` | ZSET | 窗口长度 | `pkg/ratelimit` | 每人每 10 秒 30 条消息（所有设备、所有会话合计），Redis 故障时放行 |
+| `access:route:{uid}` | Hash：字段为连接 ID，值为 `{session_id}\|{access gRPC 地址}` | **字段级** 90 秒（心跳超时） | access 认证成功和每次心跳时 `HSETEX ... PX`，连接关闭时 `HDEL` | 在线路由（`pkg/route`），delivery 推送前用 pipeline `HGETALL`。`HSETEX` 需要 Redis 8.0+ |
+| `delivery:done:{event_id}` | String | 1 小时 | 推送前 `SET NX` | 推送去重：已存在就跳过，覆盖消费者重启、再均衡后的重复投递 |
+| `outbox:lease:{service}` | String，值为实例 ID | 10 秒，每 3 秒续期 | 发布器 `SET NX PX` 抢占，续期与释放都校验持有者 | 每个服务同时只有一个实例发布 Outbox（account、social、message） |
 
 ## 附录：旧基线表结构（已移除）
 

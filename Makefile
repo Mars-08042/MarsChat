@@ -1,7 +1,7 @@
 # MarsChat 开发命令。Windows 上用 Git Bash 的 sh 执行，和 Linux CI 行为一致。
 SHELL := sh
 
-SERVICES := account social
+SERVICES := access account social message delivery
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 # 代码生成工具固定版本；protoc 插件版本写在 buf.gen.*.yaml 中
@@ -41,7 +41,7 @@ test: ## 单元测试
 	go test ./...
 
 .PHONY: e2e
-e2e: ## 端到端测试，需要先 make up、迁移各服务（make migrate-account、make migrate-social）并启动服务
+e2e: ## 端到端测试，需要先 make up、迁移 account、social、message 并启动全部服务
 	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
 	set -a && . ./.env && set +a && go test -tags e2e -count=1 ./test/e2e/...
 
@@ -51,8 +51,9 @@ build: ## 构建全部服务到 bin/
 	go build -ldflags "-X main.Version=$(VERSION)" -o bin/ $(foreach s,$(SERVICES),./app/$(s)/cmd/$(s))
 
 .PHONY: up
-up: ## 启动依赖组件并等待健康检查通过
+up: ## 启动依赖组件，等待健康检查通过后创建 Kafka topic
 	docker compose up -d --wait
+	docker compose run --rm kafka-init
 
 .PHONY: down
 down: ## 停止依赖组件，保留数据卷

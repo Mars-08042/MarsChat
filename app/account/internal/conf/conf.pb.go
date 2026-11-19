@@ -35,9 +35,11 @@ type Bootstrap struct {
 	Token    *Token                 `protobuf:"bytes,7,opt,name=token,proto3" json:"token,omitempty"`
 	Sms      *Sms                   `protobuf:"bytes,8,opt,name=sms,proto3" json:"sms,omitempty"`
 	// 可热更新，见 Policy
-	Policy        *Policy   `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
-	Security      *Security `protobuf:"bytes,10,opt,name=security,proto3" json:"security,omitempty"`
-	Cache         *Cache    `protobuf:"bytes,11,opt,name=cache,proto3" json:"cache,omitempty"`
+	Policy        *Policy      `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
+	Security      *Security    `protobuf:"bytes,10,opt,name=security,proto3" json:"security,omitempty"`
+	Cache         *Cache       `protobuf:"bytes,11,opt,name=cache,proto3" json:"cache,omitempty"`
+	Kafka         *conf.Kafka  `protobuf:"bytes,12,opt,name=kafka,proto3" json:"kafka,omitempty"`
+	Outbox        *conf.Outbox `protobuf:"bytes,13,opt,name=outbox,proto3" json:"outbox,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -145,6 +147,20 @@ func (x *Bootstrap) GetSecurity() *Security {
 func (x *Bootstrap) GetCache() *Cache {
 	if x != nil {
 		return x.Cache
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetKafka() *conf.Kafka {
+	if x != nil {
+		return x.Kafka
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetOutbox() *conf.Outbox {
+	if x != nil {
+		return x.Outbox
 	}
 	return nil
 }
@@ -605,7 +621,7 @@ var File_account_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_account_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	" account/internal/conf/conf.proto\x12\x15marschat.account.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xd0\x04\n" +
+	" account/internal/conf/conf.proto\x12\x15marschat.account.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xbb\x05\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -618,7 +634,9 @@ const file_account_internal_conf_conf_proto_rawDesc = "" +
 	"\x06policy\x18\t \x01(\v2\x1d.marschat.account.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x12C\n" +
 	"\bsecurity\x18\n" +
 	" \x01(\v2\x1f.marschat.account.conf.SecurityB\x06\xbaH\x03\xc8\x01\x01R\bsecurity\x12:\n" +
-	"\x05cache\x18\v \x01(\v2\x1c.marschat.account.conf.CacheB\x06\xbaH\x03\xc8\x01\x01R\x05cache\"\xfa\x02\n" +
+	"\x05cache\x18\v \x01(\v2\x1c.marschat.account.conf.CacheB\x06\xbaH\x03\xc8\x01\x01R\x05cache\x122\n" +
+	"\x05kafka\x18\f \x01(\v2\x14.marschat.conf.KafkaB\x06\xbaH\x03\xc8\x01\x01R\x05kafka\x125\n" +
+	"\x06outbox\x18\r \x01(\v2\x15.marschat.conf.OutboxB\x06\xbaH\x03\xc8\x01\x01R\x06outbox\"\xfa\x02\n" +
 	"\x05Token\x12(\n" +
 	"\vprivate_key\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"privateKey\x12\x1e\n" +
@@ -685,8 +703,10 @@ var file_account_internal_conf_conf_proto_goTypes = []any{
 	(*conf.Redis)(nil),          // 11: marschat.conf.Redis
 	(*conf.Log)(nil),            // 12: marschat.conf.Log
 	(*conf.Auth)(nil),           // 13: marschat.conf.Auth
-	(*durationpb.Duration)(nil), // 14: google.protobuf.Duration
-	(*conf.RateLimit)(nil),      // 15: marschat.conf.RateLimit
+	(*conf.Kafka)(nil),          // 14: marschat.conf.Kafka
+	(*conf.Outbox)(nil),         // 15: marschat.conf.Outbox
+	(*durationpb.Duration)(nil), // 16: google.protobuf.Duration
+	(*conf.RateLimit)(nil),      // 17: marschat.conf.RateLimit
 }
 var file_account_internal_conf_conf_proto_depIdxs = []int32{
 	8,  // 0: marschat.account.conf.Bootstrap.server:type_name -> marschat.conf.Server
@@ -700,25 +720,27 @@ var file_account_internal_conf_conf_proto_depIdxs = []int32{
 	3,  // 8: marschat.account.conf.Bootstrap.policy:type_name -> marschat.account.conf.Policy
 	4,  // 9: marschat.account.conf.Bootstrap.security:type_name -> marschat.account.conf.Security
 	5,  // 10: marschat.account.conf.Bootstrap.cache:type_name -> marschat.account.conf.Cache
-	14, // 11: marschat.account.conf.Token.access_ttl:type_name -> google.protobuf.Duration
-	14, // 12: marschat.account.conf.Token.refresh_ttl:type_name -> google.protobuf.Duration
-	14, // 13: marschat.account.conf.Token.rotation_grace:type_name -> google.protobuf.Duration
-	14, // 14: marschat.account.conf.Token.revocation_ttl:type_name -> google.protobuf.Duration
-	6,  // 15: marschat.account.conf.Policy.sms:type_name -> marschat.account.conf.Policy.Sms
-	7,  // 16: marschat.account.conf.Policy.login:type_name -> marschat.account.conf.Policy.Login
-	14, // 17: marschat.account.conf.Cache.user_ttl:type_name -> google.protobuf.Duration
-	14, // 18: marschat.account.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
-	14, // 19: marschat.account.conf.Policy.Sms.code_ttl:type_name -> google.protobuf.Duration
-	14, // 20: marschat.account.conf.Policy.Sms.send_interval:type_name -> google.protobuf.Duration
-	15, // 21: marschat.account.conf.Policy.Sms.ip_limit:type_name -> marschat.conf.RateLimit
-	14, // 22: marschat.account.conf.Policy.Login.failure_window:type_name -> google.protobuf.Duration
-	14, // 23: marschat.account.conf.Policy.Login.lock_duration:type_name -> google.protobuf.Duration
-	15, // 24: marschat.account.conf.Policy.Login.ip_limit:type_name -> marschat.conf.RateLimit
-	25, // [25:25] is the sub-list for method output_type
-	25, // [25:25] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	14, // 11: marschat.account.conf.Bootstrap.kafka:type_name -> marschat.conf.Kafka
+	15, // 12: marschat.account.conf.Bootstrap.outbox:type_name -> marschat.conf.Outbox
+	16, // 13: marschat.account.conf.Token.access_ttl:type_name -> google.protobuf.Duration
+	16, // 14: marschat.account.conf.Token.refresh_ttl:type_name -> google.protobuf.Duration
+	16, // 15: marschat.account.conf.Token.rotation_grace:type_name -> google.protobuf.Duration
+	16, // 16: marschat.account.conf.Token.revocation_ttl:type_name -> google.protobuf.Duration
+	6,  // 17: marschat.account.conf.Policy.sms:type_name -> marschat.account.conf.Policy.Sms
+	7,  // 18: marschat.account.conf.Policy.login:type_name -> marschat.account.conf.Policy.Login
+	16, // 19: marschat.account.conf.Cache.user_ttl:type_name -> google.protobuf.Duration
+	16, // 20: marschat.account.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
+	16, // 21: marschat.account.conf.Policy.Sms.code_ttl:type_name -> google.protobuf.Duration
+	16, // 22: marschat.account.conf.Policy.Sms.send_interval:type_name -> google.protobuf.Duration
+	17, // 23: marschat.account.conf.Policy.Sms.ip_limit:type_name -> marschat.conf.RateLimit
+	16, // 24: marschat.account.conf.Policy.Login.failure_window:type_name -> google.protobuf.Duration
+	16, // 25: marschat.account.conf.Policy.Login.lock_duration:type_name -> google.protobuf.Duration
+	17, // 26: marschat.account.conf.Policy.Login.ip_limit:type_name -> marschat.conf.RateLimit
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_account_internal_conf_conf_proto_init() }

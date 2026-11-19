@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package access.v1;
+
+import "access/v1/frame.proto";
+import "account/v1/events.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/access/v1;v1";
+
+// AccessInternalService 只供 delivery 通过 gRPC 调用，不经网关暴露。
+// 调用方按在线路由中的地址直连 access 实例，连接 ID 不在本实例上时直接忽略。
+service AccessInternalService {
+  // 把帧放进连接的发送队列，返回实际放入的连接数。发送队列已满的连接会以 4003 断开。
+  rpc Push(PushRequest) returns (PushResponse);
+  // 发送 Kicked 帧后以 4002 关闭连接，返回实际找到的连接数。
+  rpc Kick(KickRequest) returns (KickResponse);
+}
+
+message PushRequest {
+  repeated int64 connection_ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 1000
+  }];
+  ServerFrame frame = 2 [(buf.validate.field).required = true];
+}
+
+message PushResponse {
+  int32 delivered = 1;
+}
+
+message KickRequest {
+  repeated int64 connection_ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 1000
+  }];
+  account.v1.RevokeReason reason = 2;
+}
+
+message KickResponse {
+  int32 kicked = 1;
+}

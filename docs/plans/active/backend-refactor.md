@@ -37,7 +37,7 @@
 | Grafana | 3000 | 13000 | 8 |
 | Jaeger（UI / OTLP gRPC / OTLP HTTP） | 16686 / 4317 / 4318 | 26686 / 14317 / 14318 | 8 |
 
-应用服务按 HTTP `18xx0`、gRPC `19xx0` 编排（2026-11-18 确认）：access 18000（WebSocket）、account 18010 / 19010、social 18020 / 19020、message 18030 / 19030、delivery 19040（仅 gRPC）、media 18050 / 19050。
+应用服务按 HTTP `18xx0`、gRPC `19xx0` 编排（2026-11-18 确认）：access 18000（WebSocket）/ 19100（内部 gRPC，19000 留给 MinIO，2026-11-19 确认）、account 18010 / 19010、social 18020 / 19020、message 18030 / 19030、delivery 19040（仅 gRPC）、media 18050 / 19050。
 
 2026-11-18 检查：上述端口中只有 19093 被占用，占用者是旧的 `marschat-kafka-1`，步骤 0 删除后释放。
 
@@ -149,16 +149,18 @@
 
 ### 4. 核心消息链路（各服务单实例）
 
-- [ ] access：WebSocket 接入、握手校验令牌、心跳、每连接有界发送队列（满了断开慢连接）、帧协议用 proto 定义、Redis 在线路由（用户 → 设备 → 实例，TTL 随心跳续期）、按用户限制发送频率、收到封禁事件断开连接。
-- [ ] message：会话模型（读扩散）、按 `client_msg_id` 幂等（唯一约束）、事务内用行锁分配会话 seq、消息与 Outbox 同事务、历史游标分页、会话列表（最后一条消息、未读数）、已读位置、按游标补拉（完整、分批、缺口过大重载三种结果）。
-- [ ] Outbox 发布器与 Kafka（按会话分区，topic 由初始化任务显式创建）；delivery 最小实现：消费事件（幂等）、查在线路由、推送给在线设备并排除发起设备。
-- [ ] 在 `test/e2e` 编写端到端测试（Go WebSocket 客户端），覆盖：发送确认、重复发送只存一条、断线补齐、多端同步、已读与未读。
+设计：[message-pipeline.md](../../design/message-pipeline.md)（已采纳，实施差异见其第 9 节）。
+
+- [x] access：WebSocket 接入、首帧校验令牌、心跳、每连接有界发送队列（满了断开慢连接）、帧协议用 proto 定义、Redis 在线路由（用户 → 连接 → 实例，字段级 TTL 随心跳续期）、每连接帧频率保护、收到封禁与吊销事件断开连接。按用户限制发送频率改在 message 用 Redis 统一计数（设计第 8 节第 9 点）。
+- [x] message：会话模型（读扩散）、按 `client_msg_id` 幂等（唯一约束）、事务内用行锁分配会话 seq、消息与 Outbox 同事务、历史游标分页、会话列表（最后一条消息、未读数）、已读位置、按游标补拉（完整、分批、缺口过大重载三种结果）；群会话成员由 social 事件维护。
+- [x] Outbox 发布器与 Kafka（按会话分区，topic 由初始化任务显式创建；发布器用 Redis 租约，account、social、message 都启用）；delivery：消费事件（幂等）、查在线路由、推送给在线设备并排除发起连接、群成员扩散（原属步骤 5）、踢连接；social 经事件兜底删除群缓存（TD-25 的 social 部分）。
+- [x] 在 `test/e2e` 编写端到端测试（Go WebSocket 客户端），覆盖：发送确认、重复发送只存一条、断线补齐（`SLICE`；`TOO_LONG` 只有单元测试）、多端同步、已读与未读、群推送、封禁踢线。
 
 ### 5. 网关与多实例
 
 - [ ] APISIX Standalone：HTTP 按路径直达各服务（通过 Consul 发现），WebSocket 转发到 access，TLS 与入口限流。先验证 Standalone 与 Consul 发现能组合使用（官方文档未见组合示例）。
-- [ ] 服务镜像与 Compose 多实例（access、message、delivery 各起 N 个）；Outbox 多实例发布用 `FOR UPDATE SKIP LOCKED`。
-- [ ] delivery 完整实现：按路由直连目标 access 实例并缓存连接、群成员扩散、推送尽力而为；消费失败进重试队列，多次失败进死信队列。
+- [ ] 服务镜像与 Compose 多实例（access、message、delivery 各起 N 个）；验证 Outbox 租约在多实例下的接管（步骤 4 已用 Redis 租约替代 `FOR UPDATE SKIP LOCKED`，见 message-pipeline 设计第 8 节第 5 点，TD-32）。
+- [ ] delivery 与消费者完善（直连、缓存连接、群成员扩散、尽力推送已在步骤 4 实现）：消费失败进重试队列，多次失败进死信队列（TD-30）；access 实例下线时摘除缓存的连接（TD-31）；social 事件的实时通知（好友申请、入群申请等）。
 - [ ] 服务间调用加超时、仅对幂等调用重试、熔断；access 优雅停机（通知客户端重连、先从 Consul 摘除）。
 - [ ] 故障实验：跨节点收发；杀掉 access 或 delivery 实例；滚动重启 access；暂停 Kafka；停掉 Redis 验证降级。验证不丢、不重、重连能补齐，结果记录在本计划。
 
@@ -225,9 +227,19 @@
 
 步骤 2 已完成（2026-11-18），提交 `bfe2778`，阿里云短信除外（TD-24）。设计 [account-service.md](../../design/account-service.md) 已采纳，实施中的调整记在其第 8 节。验证：`buf lint`、`go vet`、`go build`、`go test -race ./...`、`make e2e`（6 个用例）通过，关键查询 `EXPLAIN` 已核对。
 
-步骤 3 已完成（2026-11-19）。设计 [social-service.md](../../design/social-service.md) 已采纳（第 8 节的 7 个问题均按推荐方案确认），实施中的调整记在其第 9 节。验证：`buf lint`、`go vet`（含 `e2e` 标签）、`go build`、`go test -race ./...`、`make gen` 后无差异、`make e2e`（17 个用例，连续两次）通过，`EXPLAIN` 已在造数据的临时库中核对。
+步骤 3 已完成（2026-11-19），提交 `edf0492`。设计 [social-service.md](../../design/social-service.md) 已采纳（第 8 节的 7 个问题均按推荐方案确认），实施中的调整记在其第 9 节。验证：`buf lint`、`go vet`（含 `e2e` 标签）、`go build`、`go test -race ./...`、`make gen` 后无差异、`make e2e`（17 个用例，连续两次）通过，`EXPLAIN` 已在造数据的临时库中核对。
 
-下一步：步骤 4 核心消息链路。
+步骤 4 已完成（2026-11-19），尚未提交。设计 [message-pipeline.md](../../design/message-pipeline.md) 已采纳（第 8 节的 9 个问题均按推荐方案确认），实施中的调整记在其第 9 节。按第 7 节的顺序分五段实施：
+
+- [x] 1. Kafka topic 初始化、`pkg/kafka`、Outbox 发布器（account、social 启用）、Kafka 集成测试（2026-11-19：单测、`make e2e` 19 项通过；首次启动时发现 franz-go 按记录时间戳计算投递超时，见 [lessons/franz-go-record-timestamp-timeout.md](../../lessons/franz-go-record-timestamp-timeout.md)）
+- [x] 2. message（2026-11-19：biz 单测、message e2e 3 项通过；并发发送无死锁）
+- [x] 3. access（2026-11-19：单测含 `-race`、access e2e 4 项通过；`HSETEX` 需要 Redis 8.0+，设计写的 7.4 有误）
+- [x] 4. delivery 与 social 缓存消费者（2026-11-19：delivery 单测 9 项；推送、多端同步、已读回执、群推送、封禁踢线、缓存兜底删除的 e2e 通过）
+- [x] 5. e2e、`EXPLAIN`、文档（2026-11-19：`make e2e` 30 项连续两次通过；`EXPLAIN` 记在 data-model.md；data-flow.md 重写，system、deployment、features、chat-message、tech-debt 同步更新）
+
+验证：`buf lint`、`make gen` 后生成代码不变、`go mod tidy -diff`、`go vet`（含 `e2e` 标签）、`go build`、`go test -race ./...`（24 个包）、`make e2e`（五个服务同时运行，30 项，连续两次）通过，各服务日志无 ERROR。
+
+下一步：步骤 5（网关与多实例）。开始前先写设计文档，重点是 APISIX Standalone 与 Consul 发现的组合验证、多实例下的跨节点推送与故障实验，以及 TD-30（重试与死信队列）、TD-31、TD-32。
 
 ## 遇到的问题
 

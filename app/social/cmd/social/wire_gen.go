@@ -20,7 +20,7 @@ import (
 
 // Injectors from wire.go:
 
-func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, auth *conf.Auth, account *conf2.Account, cache *conf2.Cache, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, auth *conf.Auth, account *conf2.Account, cache *conf2.Cache, kafka *conf.Kafka, outbox *conf.Outbox, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
 	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
 	if err != nil {
 		return nil, nil, err
@@ -40,20 +40,28 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 		return nil, nil, err
 	}
 	dataData := data.NewData(db, client)
-	transaction := data.NewTransaction(dataData)
-	friendRepo := data.NewFriendRepo(dataData)
-	friendRequestRepo := data.NewFriendRequestRepo(dataData)
-	blockRepo := data.NewBlockRepo(dataData)
-	eventRepo := data.NewEventRepo(dataData)
-	accountInternalServiceClient, cleanup3, err := data.NewAccountClient(account, consulRegistry, logger)
+	publisher, cleanup3, err := data.NewPublisher(db, client, kafka, outbox, logger)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	userService := data.NewUserService(accountInternalServiceClient)
-	idGenerator, cleanup4, err := data.NewIDGenerator(client, logger)
+	transaction := data.NewTransaction(dataData, publisher)
+	friendRepo := data.NewFriendRepo(dataData)
+	friendRequestRepo := data.NewFriendRequestRepo(dataData)
+	blockRepo := data.NewBlockRepo(dataData)
+	eventRepo := data.NewEventRepo(dataData)
+	accountInternalServiceClient, cleanup4, err := data.NewAccountClient(account, consulRegistry, logger)
 	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	userService := data.NewUserService(accountInternalServiceClient)
+	idGenerator, cleanup5, err := data.NewIDGenerator(client, logger)
+	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -71,8 +79,20 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 	internalService := service.NewInternalService(permissionUsecase, groupUsecase)
 	grpcServer := server.NewGRPCServer(confServer, middlewares, socialService, internalService)
 	httpServer := server.NewHTTPServer(confServer, middlewares, dataData, socialService, logger)
-	app := newApp(logger, consulRegistry, grpcServer, httpServer)
+	groupCacheInvalidator := data.NewGroupCacheInvalidator(dataData)
+	consumer, cleanup6, err := server.NewCacheEventConsumer(kafka, groupCacheInvalidator, logger)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	app := newApp(logger, consulRegistry, grpcServer, httpServer, publisher, consumer)
 	return app, func() {
+		cleanup6()
+		cleanup5()
 		cleanup4()
 		cleanup3()
 		cleanup2()

@@ -78,3 +78,12 @@ policy:
     ip_limit:
       limit: 20
       window: 60s
+
+kafka:
+  brokers: ${KAFKA_BROKERS:127.0.0.1:19092}
+
+# Outbox 发布器：事务提交后立即唤醒，轮询只是兜底；已发布的事件保留 7 天
+outbox:
+  poll_interval: 0.5s
+  batch_size: 200
+  retention: 604800s

@@ -21,6 +21,8 @@ message Bootstrap {
   Policy policy = 9 [(buf.validate.field).required = true];
   Security security = 10 [(buf.validate.field).required = true];
   Cache cache = 11 [(buf.validate.field).required = true];
+  marschat.conf.Kafka kafka = 12 [(buf.validate.field).required = true];
+  marschat.conf.Outbox outbox = 13 [(buf.validate.field).required = true];
 }
 
 // Token 是签发令牌的配置，修改后需要重启。

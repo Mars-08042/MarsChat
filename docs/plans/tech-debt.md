@@ -21,19 +21,47 @@
 
 ### TD-26 服务间 gRPC 调用没有认证
 
-- 发现：2026-11-18，重构步骤 2；步骤 3 新增 `SocialInternalService`
-- 位置：`api/account/v1/internal.proto`、`api/social/v1/internal.proto`，以及两个服务 `internal/server/server.go` 的 `requiresAuth`
-- 现状：内部接口只注册在 gRPC 上、不经过令牌校验，安全性依赖服务网络不对外暴露。服务容器化（步骤 5）后，同一网络中的任意容器都能调用，例如读取任意群的成员列表、探测任意两人是否为好友。
+- 发现：2026-11-18，重构步骤 2；步骤 3 新增 `SocialInternalService`；步骤 4 新增 `MessageInternalService`、`AccessInternalService`
+- 位置：各服务 `api/<服务>/v1/internal.proto`，以及 `internal/server/server.go` 的 `requiresAuth`（access 的 gRPC 服务器不挂令牌校验）
+- 现状：内部接口只注册在 gRPC 上、不经过令牌校验，安全性依赖服务网络不对外暴露。服务容器化（步骤 5）后，同一网络中的任意容器都能调用，例如读取任意群的成员列表、探测任意两人是否为好友；步骤 4 之后还能以任意用户的身份发消息（`SendMessage` 的发送者取自请求），或向任意连接推送帧、踢掉任意连接（`Push`、`Kick`）。
 - 处理：步骤 5 起评估 mTLS 或服务令牌。
 
-### TD-25 缓存删除失败时最长有 30 分钟旧数据
+### TD-30 Kafka 消费没有重试队列和死信队列
 
-- 发现：2026-11-18，重构步骤 2；步骤 3 扩大到 social，优先级由低调为中
-- 位置：`app/account/internal/data/user.go`、`app/social/internal/data/group.go` 的 `EvictCache`
-- 现状：写操作在数据库提交之后删除缓存，失败只记 WARN，靠 TTL（30 分钟 ±10%）兜底。account 的影响是资料短时间不一致；social 的群成员列表用于发言权限校验，删除失败时被移除或被禁言的成员最多 30 分钟内仍能发言。
-- 处理：步骤 4 接入 Outbox 发布器后，改为经事件重试删除。
+- 发现：2026-11-19，重构步骤 4
+- 位置：`pkg/kafka/consumer.go`
+- 现状：处理器返回错误时原地退避重试，直到成功或服务停止。message 的群成员投影、social 的缓存删除依赖这一点保证顺序；但如果某条事件因为数据问题持续失败（不是 `Permanent` 错误），它所在的分区会一直阻塞，同分区后面的群事件都不生效。解码失败和 panic 记 ERROR 后跳过，没有地方留存原始记录。
+- 处理：步骤 5 按计划加入重试 topic 与死信 topic：原地重试若干次后转入重试 topic，多次失败进死信，并为死信积压加告警。
 
 ## 低
+
+### TD-25 account 的资料缓存删除失败时最长有 30 分钟旧数据
+
+- 发现：2026-11-18，重构步骤 2；步骤 3 扩大到 social，优先级调为中；步骤 4 解决 social 部分后调回低
+- 位置：`app/account/internal/data/user.go` 的 `EvictCache`
+- 现状：写操作在数据库提交之后删除缓存，失败只记 WARN，靠 TTL（30 分钟 ±10%）兜底，影响是资料短时间不一致。social 的群资料与成员列表已在步骤 4 改为经事件兜底删除（消费组 `marschat-social-cache`，Redis 故障时重试到成功），被移除或被禁言的成员不会再因删除失败而继续发言。
+- 处理：account 的资料修改目前没有对应事件。需要时新增 `UserProfileUpdated` 事件，按 social 的方式兜底。
+
+### TD-31 delivery 缓存的 access 连接不会摘除
+
+- 发现：2026-11-19，重构步骤 4
+- 位置：`app/delivery/internal/data/data.go` 的 `pusher`
+- 现状：delivery 按在线路由中的地址直连 access，每个地址一条 gRPC 连接，建立后一直保留。access 实例下线或换地址后，旧连接留在缓存中由 gRPC 在后台按退避重连；路由过期前（最多 90 秒）推送到这些地址会失败。实例频繁变化（滚动发布、自动扩缩容）时，缓存只增不减。
+- 处理：步骤 5 监听 Consul 中 access 实例的变化，下线的地址关闭连接；或连续失败若干次后摘除。
+
+### TD-32 Outbox 租约过期与续期之间可能短暂出现两个发布者
+
+- 发现：2026-11-19，重构步骤 4
+- 位置：`pkg/outbox/publisher.go`
+- 现状：租约 10 秒、每 3 秒续期，续期失败才停止发布。持有者长时间卡住（GC 停顿、网络分区超过 10 秒）时，另一个实例会拿到租约开始发布，而旧持有者可能仍在完成手上的 `ProduceSync`。结果是同一批事件被发布两次，并且同一个键的事件在 Kafka 中可能短暂乱序。消费方按事件 ID 幂等，可以容忍重复；乱序只影响依赖顺序的群成员投影（例如同一成员的入群与退群）。
+- 处理：发布前检查剩余租期，不足一次发布超时（5 秒）时先续期；或在 Kafka 记录中带上租约代数，消费方丢弃旧代数的记录。
+
+### TD-33 发消息遇到数据库死锁时直接返回 500
+
+- 发现：2026-11-19，重构步骤 4
+- 位置：`app/message/internal/biz/message.go` 的 `Send`
+- 现状：分配 seq 的事务锁会话行，按设计不会死锁（会话创建用 `ON DUPLICATE KEY UPDATE` 避免 `INSERT IGNORE` 的锁升级，存在性检查放在事务外）。但如果出现 MySQL 1213，错误不会被识别和重试，客户端收到 `500 INTERNAL`，需要用同一个 `client_msg_id` 重发。识别 1213 需要直接依赖 MySQL 驱动的错误类型，涉及 `go.mod`，暂未处理。并发 e2e 中没有出现过死锁。
+- 处理：压测（步骤 5）中观察到死锁时，在事务层对 1213 重试一次。
 
 ### TD-28 布隆过滤器加入失败的重试期间会把新 ID 判为不存在
 

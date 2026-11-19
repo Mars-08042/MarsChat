@@ -14,7 +14,7 @@ import (
 )
 
 // ProviderSet 是 server 层的依赖提供者。
-var ProviderSet = wire.NewSet(NewMiddlewares, NewGRPCServer, NewHTTPServer)
+var ProviderSet = wire.NewSet(NewMiddlewares, NewGRPCServer, NewHTTPServer, NewCacheEventConsumer)
 
 // Middlewares 是 HTTP 与 gRPC 共用的中间件链。
 type Middlewares []middleware.Middleware

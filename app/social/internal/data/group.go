@@ -431,6 +431,17 @@ func (r *memberRepo) EvictCache(ctx context.Context, groupID int64) {
 	}
 }
 
+type groupCacheInvalidator struct{ d *Data }
+
+// NewGroupCacheInvalidator 创建群缓存失效器，供事件消费者使用。
+func NewGroupCacheInvalidator(d *Data) biz.GroupCacheInvalidator {
+	return &groupCacheInvalidator{d: d}
+}
+
+func (i *groupCacheInvalidator) InvalidateGroup(ctx context.Context, groupID int64) error {
+	return i.d.rdb.Del(ctx, groupCacheKey(groupID), membersCacheKey(groupID)).Err()
+}
+
 // joinRequestPO 对应 group_join_requests 表。生成列 pending_flag 由数据库维护，这里不映射。
 type joinRequestPO struct {
 	ID        int64 `gorm:"primaryKey;autoIncrement:false"`

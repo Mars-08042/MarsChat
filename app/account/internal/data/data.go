@@ -15,7 +15,9 @@ import (
 	"github.com/Mars-08042/MarsChat/app/account/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/auth"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
+	pkgconf "github.com/Mars-08042/MarsChat/pkg/conf"
 	"github.com/Mars-08042/MarsChat/pkg/idgen"
+	"github.com/Mars-08042/MarsChat/pkg/outbox"
 	"github.com/Mars-08042/MarsChat/pkg/ratelimit"
 )
 
@@ -25,6 +27,7 @@ var ProviderSet = wire.NewSet(
 	bootstrap.NewRedis,
 	NewData,
 	NewTransaction,
+	NewPublisher,
 	NewUserRepo,
 	NewSessionRepo,
 	NewEventRepo,
@@ -35,6 +38,9 @@ var ProviderSet = wire.NewSet(
 	NewRateLimiter,
 	NewRevoker,
 )
+
+// serviceName 与 cmd 中注册到 Consul 的服务名一致，用于实例 ID、Outbox 租约和事件来源。
+const serviceName = "marschat-account"
 
 // Data 持有各 repo 共用的存储客户端。
 type Data struct {
@@ -67,28 +73,41 @@ func inTx(ctx context.Context) bool {
 	return ok
 }
 
-type transaction struct{ d *Data }
+type transaction struct {
+	d   *Data
+	pub *outbox.Publisher
+}
 
 // NewTransaction 创建事务管理器。
-func NewTransaction(d *Data) biz.Transaction {
-	return &transaction{d: d}
+func NewTransaction(d *Data, pub *outbox.Publisher) biz.Transaction {
+	return &transaction{d: d, pub: pub}
 }
 
 // InTx 开启事务执行 fn。已经在事务中时直接复用，不开嵌套事务。
+// 提交成功后唤醒 Outbox 发布器：事务里可能写了事件，唤醒的开销只是一次非阻塞的 channel 发送。
 func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	if inTx(ctx) {
 		return fn(ctx)
 	}
-	return t.d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := t.d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(context.WithValue(ctx, txKey{}, tx))
 	})
+	if err == nil {
+		t.pub.Notify()
+	}
+	return err
+}
+
+// NewPublisher 创建 Outbox 发布器，作为 Kratos server 随服务启停。
+func NewPublisher(db *gorm.DB, rdb *redis.Client, kc *pkgconf.Kafka, oc *pkgconf.Outbox, logger *slog.Logger) (*outbox.Publisher, func(), error) {
+	return outbox.New(db, rdb, kc, oc, serviceName, bootstrap.InstanceID(serviceName), logger)
 }
 
 // NewIDGenerator 创建 snowflake 生成器，节点号通过 Redis 租约分配。
 func NewIDGenerator(rdb *redis.Client, logger *slog.Logger) (biz.IDGenerator, func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	g, cleanup, err := idgen.New(ctx, rdb, bootstrap.InstanceID("marschat-account"), logger)
+	g, cleanup, err := idgen.New(ctx, rdb, bootstrap.InstanceID(serviceName), logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init id generator: %w", err)
 	}

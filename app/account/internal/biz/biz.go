@@ -10,6 +10,7 @@ import (
 	"github.com/google/wire"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/Mars-08042/MarsChat/pkg/kafka"
 	"github.com/Mars-08042/MarsChat/pkg/ratelimit"
 )
 
@@ -24,7 +25,7 @@ var ProviderSet = wire.NewSet(
 )
 
 // TopicAccountEvents 是 account 事件的 Kafka topic，分区键为用户 ID。
-const TopicAccountEvents = "marschat.account.events"
+const TopicAccountEvents = kafka.TopicAccountEvents
 
 // 数据层返回的通用错误，由用例转换成对外的业务错误。
 var (

@@ -452,6 +452,116 @@ func (x *RateLimit) GetWindow() *durationpb.Duration {
 	return nil
 }
 
+// Kafka 是 Kafka 客户端配置，修改后需要重启。
+type Kafka struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// broker 地址，多个用逗号分隔
+	Brokers       string `protobuf:"bytes,1,opt,name=brokers,proto3" json:"brokers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Kafka) Reset() {
+	*x = Kafka{}
+	mi := &file_conf_conf_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Kafka) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Kafka) ProtoMessage() {}
+
+func (x *Kafka) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_conf_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Kafka.ProtoReflect.Descriptor instead.
+func (*Kafka) Descriptor() ([]byte, []int) {
+	return file_conf_conf_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Kafka) GetBrokers() string {
+	if x != nil {
+		return x.Brokers
+	}
+	return ""
+}
+
+// Outbox 是 Outbox 发布器配置，修改后需要重启。
+type Outbox struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 没有收到进程内唤醒时的轮询间隔
+	PollInterval *durationpb.Duration `protobuf:"bytes,1,opt,name=poll_interval,json=pollInterval,proto3" json:"poll_interval,omitempty"`
+	// 每批最多发布的事件数
+	BatchSize int32 `protobuf:"varint,2,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`
+	// 已发布事件的保留时间，超过后删除
+	Retention     *durationpb.Duration `protobuf:"bytes,3,opt,name=retention,proto3" json:"retention,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Outbox) Reset() {
+	*x = Outbox{}
+	mi := &file_conf_conf_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Outbox) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Outbox) ProtoMessage() {}
+
+func (x *Outbox) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_conf_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Outbox.ProtoReflect.Descriptor instead.
+func (*Outbox) Descriptor() ([]byte, []int) {
+	return file_conf_conf_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Outbox) GetPollInterval() *durationpb.Duration {
+	if x != nil {
+		return x.PollInterval
+	}
+	return nil
+}
+
+func (x *Outbox) GetBatchSize() int32 {
+	if x != nil {
+		return x.BatchSize
+	}
+	return 0
+}
+
+func (x *Outbox) GetRetention() *durationpb.Duration {
+	if x != nil {
+		return x.Retention
+	}
+	return nil
+}
+
 type Server_HTTP struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Addr          string                 `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
@@ -462,7 +572,7 @@ type Server_HTTP struct {
 
 func (x *Server_HTTP) Reset() {
 	*x = Server_HTTP{}
-	mi := &file_conf_conf_proto_msgTypes[7]
+	mi := &file_conf_conf_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -474,7 +584,7 @@ func (x *Server_HTTP) String() string {
 func (*Server_HTTP) ProtoMessage() {}
 
 func (x *Server_HTTP) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[7]
+	mi := &file_conf_conf_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -514,7 +624,7 @@ type Server_GRPC struct {
 
 func (x *Server_GRPC) Reset() {
 	*x = Server_GRPC{}
-	mi := &file_conf_conf_proto_msgTypes[8]
+	mi := &file_conf_conf_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -526,7 +636,7 @@ func (x *Server_GRPC) String() string {
 func (*Server_GRPC) ProtoMessage() {}
 
 func (x *Server_GRPC) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[8]
+	mi := &file_conf_conf_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -568,7 +678,7 @@ type Registry_Consul struct {
 
 func (x *Registry_Consul) Reset() {
 	*x = Registry_Consul{}
-	mi := &file_conf_conf_proto_msgTypes[9]
+	mi := &file_conf_conf_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -580,7 +690,7 @@ func (x *Registry_Consul) String() string {
 func (*Registry_Consul) ProtoMessage() {}
 
 func (x *Registry_Consul) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[9]
+	mi := &file_conf_conf_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -652,7 +762,15 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\baudience\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\baudience\"j\n" +
 	"\tRateLimit\x12\x1d\n" +
 	"\x05limit\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x05limit\x12>\n" +
-	"\x06window\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\x06windowB.Z,github.com/Mars-08042/MarsChat/pkg/conf;confb\x06proto3"
+	"\x06window\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\x06window\"*\n" +
+	"\x05Kafka\x12!\n" +
+	"\abrokers\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\abrokers\"\xc6\x01\n" +
+	"\x06Outbox\x12K\n" +
+	"\rpoll_interval\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\fpollInterval\x12)\n" +
+	"\n" +
+	"batch_size\x18\x02 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a \x00R\tbatchSize\x12D\n" +
+	"\tretention\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\tretentionB.Z,github.com/Mars-08042/MarsChat/pkg/conf;confb\x06proto3"
 
 var (
 	file_conf_conf_proto_rawDescOnce sync.Once
@@ -666,7 +784,7 @@ func file_conf_conf_proto_rawDescGZIP() []byte {
 	return file_conf_conf_proto_rawDescData
 }
 
-var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_conf_conf_proto_goTypes = []any{
 	(*Server)(nil),              // 0: marschat.conf.Server
 	(*Registry)(nil),            // 1: marschat.conf.Registry
@@ -675,28 +793,32 @@ var file_conf_conf_proto_goTypes = []any{
 	(*Log)(nil),                 // 4: marschat.conf.Log
 	(*Auth)(nil),                // 5: marschat.conf.Auth
 	(*RateLimit)(nil),           // 6: marschat.conf.RateLimit
-	(*Server_HTTP)(nil),         // 7: marschat.conf.Server.HTTP
-	(*Server_GRPC)(nil),         // 8: marschat.conf.Server.GRPC
-	(*Registry_Consul)(nil),     // 9: marschat.conf.Registry.Consul
-	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
+	(*Kafka)(nil),               // 7: marschat.conf.Kafka
+	(*Outbox)(nil),              // 8: marschat.conf.Outbox
+	(*Server_HTTP)(nil),         // 9: marschat.conf.Server.HTTP
+	(*Server_GRPC)(nil),         // 10: marschat.conf.Server.GRPC
+	(*Registry_Consul)(nil),     // 11: marschat.conf.Registry.Consul
+	(*durationpb.Duration)(nil), // 12: google.protobuf.Duration
 }
 var file_conf_conf_proto_depIdxs = []int32{
-	7,  // 0: marschat.conf.Server.http:type_name -> marschat.conf.Server.HTTP
-	8,  // 1: marschat.conf.Server.grpc:type_name -> marschat.conf.Server.GRPC
-	9,  // 2: marschat.conf.Registry.consul:type_name -> marschat.conf.Registry.Consul
-	10, // 3: marschat.conf.MySQL.conn_max_lifetime:type_name -> google.protobuf.Duration
-	10, // 4: marschat.conf.MySQL.slow_threshold:type_name -> google.protobuf.Duration
-	10, // 5: marschat.conf.Redis.dial_timeout:type_name -> google.protobuf.Duration
-	10, // 6: marschat.conf.Redis.read_timeout:type_name -> google.protobuf.Duration
-	10, // 7: marschat.conf.Redis.write_timeout:type_name -> google.protobuf.Duration
-	10, // 8: marschat.conf.RateLimit.window:type_name -> google.protobuf.Duration
-	10, // 9: marschat.conf.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	10, // 10: marschat.conf.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	9,  // 0: marschat.conf.Server.http:type_name -> marschat.conf.Server.HTTP
+	10, // 1: marschat.conf.Server.grpc:type_name -> marschat.conf.Server.GRPC
+	11, // 2: marschat.conf.Registry.consul:type_name -> marschat.conf.Registry.Consul
+	12, // 3: marschat.conf.MySQL.conn_max_lifetime:type_name -> google.protobuf.Duration
+	12, // 4: marschat.conf.MySQL.slow_threshold:type_name -> google.protobuf.Duration
+	12, // 5: marschat.conf.Redis.dial_timeout:type_name -> google.protobuf.Duration
+	12, // 6: marschat.conf.Redis.read_timeout:type_name -> google.protobuf.Duration
+	12, // 7: marschat.conf.Redis.write_timeout:type_name -> google.protobuf.Duration
+	12, // 8: marschat.conf.RateLimit.window:type_name -> google.protobuf.Duration
+	12, // 9: marschat.conf.Outbox.poll_interval:type_name -> google.protobuf.Duration
+	12, // 10: marschat.conf.Outbox.retention:type_name -> google.protobuf.Duration
+	12, // 11: marschat.conf.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	12, // 12: marschat.conf.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }
@@ -710,7 +832,7 @@ func file_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conf_conf_proto_rawDesc), len(file_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

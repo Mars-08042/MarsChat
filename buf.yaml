@@ -10,6 +10,8 @@ modules:
         ENUM_VALUE_PREFIX:
           - api/account/v1/error_reason.proto
           - api/social/v1/error_reason.proto
+          - api/message/v1/error_reason.proto
+          - api/access/v1/error_reason.proto
   # 跨服务共用的配置片段
   - path: pkg
     lint:

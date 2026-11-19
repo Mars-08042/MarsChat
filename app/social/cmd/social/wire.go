@@ -20,7 +20,7 @@ import (
 )
 
 func wireApp(*pkgconf.Server, *pkgconf.Registry, *pkgconf.MySQL, *pkgconf.Redis, *pkgconf.Auth,
-	*conf.Account, *conf.Cache, *biz.PolicyHolder, *slog.Logger) (*kratos.App, func(), error) {
+	*conf.Account, *conf.Cache, *pkgconf.Kafka, *pkgconf.Outbox, *biz.PolicyHolder, *slog.Logger) (*kratos.App, func(), error) {
 	panic(wire.Build(server.ProviderSet, service.ProviderSet, biz.ProviderSet, data.ProviderSet,
 		bootstrap.NewConsulRegistry, newApp))
 }

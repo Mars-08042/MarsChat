@@ -1,0 +1,35 @@
+# delivery 服务配置。${XXX} 引用环境变量 MARSCHAT_XXX，${XXX:默认值} 在变量缺失时取默认值。
+# 默认值对应本地开发环境（compose.yaml），密码只从环境变量读取。
+# 时长按 protobuf Duration 的 JSON 格式书写，单位只能是秒，例如 0.5s、3600s；500ms、1h 会解析失败。
+server:
+  # 没有业务接口，gRPC 端口只用于注册到 Consul 和健康检查
+  grpc:
+    addr: ${DELIVERY_GRPC_ADDR:127.0.0.1:19040}
+    timeout: 3s
+
+registry:
+  consul:
+    address: ${CONSUL_ADDR:127.0.0.1:18500}
+    health_check: false
+
+redis:
+  addr: ${REDIS_ADDR:127.0.0.1:16379}
+  password: ${REDIS_PASSWORD}
+  db: 0
+  dial_timeout: 2s
+  read_timeout: 0.5s
+  write_timeout: 0.5s
+
+log:
+  level: ${LOG_LEVEL:info}
+  format: ${LOG_FORMAT:text}
+
+kafka:
+  brokers: ${KAFKA_BROKERS:127.0.0.1:19092}
+
+social:
+  endpoint: ${SOCIAL_ENDPOINT:discovery:///marschat-social}
+  timeout: 1s
+
+push:
+  timeout: 2s

@@ -116,6 +116,38 @@ services:
     entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://social:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_social?multiStatements=true\" \"$$@\"", "migrate"]
     command: ["up"]
 
+  migrate-message:
+    image: migrate/migrate:v4.20.1
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${MARSCHAT_MESSAGE_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MESSAGE_DB_PASSWORD}
+    volumes:
+      - ./app/message/migrations:/migrations:ro
+    entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://message:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_message?multiStatements=true\" \"$$@\"", "migrate"]
+    command: ["up"]
+
+  # 创建 Kafka topic，由 make up 在依赖组件健康后执行，已存在的 topic 跳过。
+  # 格式为 topic:分区数，副本数固定为 1（本地单 broker）。marschat.e2e.events 只给集成测试使用。
+  kafka-init:
+    image: apache/kafka:4.4.0
+    profiles: ["init"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        for spec in marschat.account.events:3 marschat.social.events:6 marschat.message.events:12 marschat.e2e.events:3; do
+          topic=$${spec%%:*}
+          partitions=$${spec##*:}
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
+            --topic "$$topic" --partitions "$$partitions" --replication-factor 1
+        done
+
 volumes:
   mysql-data:
   redis-data:
