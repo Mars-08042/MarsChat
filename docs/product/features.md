@@ -92,4 +92,6 @@
 
 ## 计划中
 
-暂无已确认的计划。新计划请在 `docs/plans/active/` 中建立计划文档（目录按需创建，规则见 [docs/README.md](../README.md#计划文档)），并在此登记。
+- [后端重构](../plans/active/backend-refactor.md)：用 Kratos v3 重写为微服务后端并移除旧前端，状态为提议中，待开发者确认。
+
+新计划请在 `docs/plans/active/` 中建立计划文档（目录按需创建，规则见 [docs/README.md](../README.md#计划文档)），并在此登记。
