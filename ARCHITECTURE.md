@@ -1,5 +1,7 @@
 # MarsChat 架构总览
 
+> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），只作参考。后端正在 `dev` 分支按 [后端重构计划](docs/plans/active/backend-refactor.md) 重写，目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md) 和 [目标架构图](docs/images/proposed-distributed-architecture.svg)；本文将在重构中重写。
+
 ![系统架构](docs/images/architecture.svg)
 
 ## 组成

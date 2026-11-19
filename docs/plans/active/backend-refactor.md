@@ -1,6 +1,6 @@
 # 计划：后端重构
 
-- 状态：提议中（待开发者确认后开始） | 开始：2026-11-18 | 分支：`dev` | 关联设计：[目标架构图](../../images/proposed-distributed-architecture.svg)、ADR-0005 / ADR-0006（待编写）
+- 状态：进行中 | 开始：2026-11-18 | 分支：`dev` | 关联设计：[目标架构图](../../images/proposed-distributed-architecture.svg)、[ADR-0005](../../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../../architecture/adr/0006-message-sync-model.md)
 
 ## 目标
 
@@ -91,11 +91,12 @@
 
 ### 0. 准备与清理
 
-- [x] 创建本地 `dev` 分支（2026-11-18，未推送）。
-- [ ] 编写 ADR-0005（目标架构与技术选型）和 ADR-0006（消息同步模型：读扩散、会话内 seq、游标补拉），状态为提议中，确认后改为已采纳；ADR-0001 至 0003 标为已被替代，ADR-0004 注明旧前端已移除、pnpm 约定沿用到新前端。
-- [ ] 删除旧代码：`cmd/mars_chat_server/`、`api/v1/`、`internal/`、`pkg/`、`test/`、`configs/`、`static/`、`mars_chat_server.exe`、`web/chat-server/`；重置 `go.mod`、`go.sum`。
-- [ ] 删除旧容器与数据：容器 `marschat-mysql-1`、`marschat-redis-1`、`marschat-kafka-1`、`marschat-kafka-init-1`；卷 `marschat_mysql-data`、`marschat_redis-data`、`marschat_kafka-data`；镜像 `mysql:8.0`、`apache/kafka:4.3.1`。
-- [ ] 文档：`tech-debt.md` 中随旧代码移除的条目移到“已解决”并注明原因；`features.md` 标注旧功能待重写；删除 `internal/service/chat/AGENTS.md`；更新 `AGENTS.md` 的项目速览、开发约束和验证命令。
+- [x] 创建本地 `dev` 分支（2026-11-18，未推送）；计划与架构图提交为 `6624cea`。
+- [x] 编写 ADR-0005（目标架构与技术选型）和 ADR-0006（消息同步模型：读扩散、会话内 seq、游标补拉），状态为提议中；ADR-0001、0002 标为已被 ADR-0005 替代，ADR-0003 标为已被 ADR-0006 替代，ADR-0004 注明旧前端已移除、pnpm 约定沿用到新前端。
+- [x] 开发者确认 ADR-0005、ADR-0006，状态改为已采纳（2026-11-18）。
+- [x] 删除旧代码：`cmd/mars_chat_server/`、`api/v1/`、`internal/`、`pkg/`、`test/`、`configs/`、`static/`、`mars_chat_server.exe`、`web/chat-server/`，以及对应旧容器的 `compose.yaml`；`go.mod` 按新 module 路径重新初始化，`go.sum` 删除。`.env.example` 与被忽略的 `.env` 暂留，步骤 1 随新 compose 更新。
+- [x] 删除旧容器与数据：容器 `marschat-mysql-1`、`marschat-redis-1`、`marschat-kafka-1`、`marschat-kafka-init-1`，网络 `marschat_default`；卷 `marschat_mysql-data`、`marschat_redis-data`、`marschat_kafka-data`；镜像 `mysql:8.0`、`apache/kafka:4.3.1`。复核：无 MarsChat 残留，`redis:7` 镜像保留，`pestle-redis` 正常运行。
+- [x] 文档：`tech-debt.md` 清空旧基线条目，新问题从 TD-24 起编号；`features.md` 改为旧基线功能基线（列名“旧基线状态”）；`internal/service/chat/AGENTS.md` 随 `internal/` 删除；重写 `AGENTS.md`；`README.md`、`ARCHITECTURE.md`、`docs/README.md`、`system.md`、`data-model.md`、`data-flow.md`、`deployment.md`、`overview.md` 和 6 篇模块文档加“重构说明”。
 
 ### 1. 基础设施与工程骨架
 
@@ -195,7 +196,7 @@
 
 ## 当前进度与下一步
 
-已创建 `dev` 分支，计划已按开发者反馈更新，尚未提交。下一步：开发者确认更新后的计划，然后执行步骤 0，先写 ADR，再删除旧代码和容器。
+步骤 0 已完成（2026-11-18）。旧的本地配置（含阿里云短信 AccessKey）未保留，步骤 2 接入短信时重新配置。下一步：步骤 1，搭建基础设施与工程骨架。
 
 ## 遇到的问题
 

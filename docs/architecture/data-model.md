@@ -1,5 +1,7 @@
 # 数据模型
 
+> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线表结构（截至提交 `6624cea`），只作功能参考。新表按服务分库重新设计，在各重构步骤中写入本文，设计原则见 [后端重构计划](../plans/active/backend-refactor.md)。
+
 > 权威来源：`internal/model/*.go`（表结构）、`pkg/enum/**`（状态值）。表由 `internal/dao/gorm.go` 在启动时 `AutoMigrate` 自动创建，仓库中没有 SQL 迁移脚本。
 
 ## 1. 表关系

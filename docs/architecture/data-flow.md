@@ -1,5 +1,7 @@
 # 数据流
 
+> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），只作参考。新的消息同步模型见 [ADR-0006](adr/0006-message-sync-model.md)，消息与信令流转在重构步骤 4、7 中重写本文，见 [后端重构计划](../plans/active/backend-refactor.md)。
+
 > 描述请求、消息和数据在模块之间如何流转。WebSocket 消息格式以本文为准。模块分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)。
 
 ## 1. HTTP 请求链路

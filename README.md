@@ -2,7 +2,7 @@
 
 MarsChat 是一个前后端分离的 Web 即时通讯系统，提供联系人、单聊群聊、文件传输、一对一音视频通话和后台管理。后端为 Go 单体服务，前端为 Vue 3 单页应用。
 
-> 当前代码是后续改造的基线版本，存在若干已知的安全与稳定性问题（例如后端没有认证鉴权），**不适合直接用于生产环境**。详见 [docs/plans/tech-debt.md](docs/plans/tech-debt.md)。
+> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），其中的启动方式已不可用。后端正在 `dev` 分支按 [后端重构计划](docs/plans/active/backend-refactor.md) 用 Kratos v3 重写为微服务，前端之后用 React 重写；目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)。本文将在重构完成时重写。
 
 ## 核心功能
 

@@ -1,5 +1,7 @@
 # 文档索引
 
+> **重构说明（2026-11-18）**：后端正在 `dev` 分支按 [后端重构计划](plans/active/backend-refactor.md) 重写，目标架构见 [ADR-0005](architecture/adr/0005-distributed-architecture.md)、[ADR-0006](architecture/adr/0006-message-sync-model.md)。下列 `product/`、`architecture/`（ADR 除外）和 `deployment.md` 仍描述已移除的旧基线，将按重构步骤逐篇重写。
+
 ## 目录
 
 ```

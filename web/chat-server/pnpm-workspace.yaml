@@ -1,7 +1,0 @@
-allowBuilds:
-  # 仅显示提示信息，不影响 polyfill 功能。
-  core-js: false
-  # 按已安装 Vue 版本生成兼容入口。
-  vue-demi: true
-  # 当前项目未配置 yorkie hooks，无需安装 Git hooks。
-  yorkie: false

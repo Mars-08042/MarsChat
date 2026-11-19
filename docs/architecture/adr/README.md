@@ -6,10 +6,12 @@
 
 | 编号 | 标题 | 状态 |
 |---|---|---|
-| [0001](0001-service-return-convention.md) | Service 层三元返回值与错误分级 | 已采纳（追溯记录） |
-| [0002](0002-message-mode-channel-kafka.md) | 消息中转支持 channel / kafka 两种模式 | 已采纳（追溯记录） |
-| [0003](0003-server-side-echo.md) | 发送方消息由服务端回显 | 已采纳（追溯记录） |
-| [0004](0004-frontend-pnpm.md) | 前端使用 pnpm 管理依赖 | 已采纳 |
+| [0001](0001-service-return-convention.md) | Service 层三元返回值与错误分级 | 已被 ADR-0005 替代 |
+| [0002](0002-message-mode-channel-kafka.md) | 消息中转支持 channel / kafka 两种模式 | 已被 ADR-0005 替代 |
+| [0003](0003-server-side-echo.md) | 发送方消息由服务端回显 | 已被 ADR-0006 替代 |
+| [0004](0004-frontend-pnpm.md) | 前端使用 pnpm 管理依赖 | 已采纳（旧前端已移除，约定沿用到新前端） |
+| [0005](0005-distributed-architecture.md) | 分布式微服务目标架构与技术选型 | 已采纳 |
+| [0006](0006-message-sync-model.md) | 消息同步模型：读扩散、会话内 seq 与游标补拉 | 已采纳 |
 
 “追溯记录”表示该决策在基线代码中已经存在，于 2026-11-07 根据代码与注释整理。原始记录没有说明的内容（例如考虑过哪些候选方案）如实标注“无记录”，不做推测。
 
