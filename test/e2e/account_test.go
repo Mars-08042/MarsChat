@@ -1,0 +1,362 @@
+//go:build e2e
+
+package e2e
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math/big"
+	"net/http"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+
+	v1 "github.com/Mars-08042/MarsChat/api/account/v1"
+)
+
+// 依赖本地配置：account 使用 log 短信发送方和默认固定验证码 000000（app/account/configs/config.yaml）。
+// make e2e 会加载 .env，测试用其中的密码直接连接 Redis 和 MySQL 做准备工作。
+const (
+	accountHTTP = "http://127.0.0.1:18010"
+	accountGRPC = "127.0.0.1:19010"
+	fixedCode   = "000000"
+	password    = "abc12345"
+)
+
+type apiError struct {
+	Code     int               `json:"code"`
+	Reason   string            `json:"reason"`
+	Message  string            `json:"message"`
+	Metadata map[string]string `json:"metadata"`
+}
+
+// call 按 protobuf JSON 收发，与浏览器客户端一致。返回 HTTP 状态码和错误体（成功时为 nil）。
+func call(t *testing.T, method, path, token string, req, resp proto.Message) (int, *apiError) {
+	t.Helper()
+	var body io.Reader
+	if req != nil {
+		b, err := protojson.Marshal(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body = bytes.NewReader(b)
+	}
+	r, err := http.NewRequest(method, accountHTTP+path, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		var e apiError
+		if err := json.Unmarshal(data, &e); err != nil {
+			t.Fatalf("%s %s: status %d, body %s", method, path, res.StatusCode, data)
+		}
+		return res.StatusCode, &e
+	}
+	if resp != nil {
+		if err := protojson.Unmarshal(data, resp); err != nil {
+			t.Fatalf("%s %s: decode %s: %v", method, path, data, err)
+		}
+	}
+	return res.StatusCode, nil
+}
+
+func mustCall(t *testing.T, method, path, token string, req, resp proto.Message) {
+	t.Helper()
+	if status, e := call(t, method, path, token, req, resp); e != nil {
+		t.Fatalf("%s %s: status %d, %+v", method, path, status, e)
+	}
+}
+
+func wantError(t *testing.T, status int, e *apiError, wantStatus int, wantReason string) {
+	t.Helper()
+	if e == nil || status != wantStatus || e.Reason != wantReason {
+		t.Fatalf("got status %d, error %+v; want %d %s", status, e, wantStatus, wantReason)
+	}
+}
+
+func randomPhone(t *testing.T) string {
+	t.Helper()
+	n, err := rand.Int(rand.Reader, big.NewInt(100_000_000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("199%08d", n.Int64())
+}
+
+func device(id string, p v1.Platform) *v1.Device {
+	return &v1.Device{DeviceId: id, Platform: p, DeviceName: "e2e " + id}
+}
+
+func newRedisClient(t *testing.T) *redis.Client {
+	t.Helper()
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:16379", Password: os.Getenv("MARSCHAT_REDIS_PASSWORD")})
+	t.Cleanup(func() { _ = rdb.Close() })
+	return rdb
+}
+
+// resetRateLimits 清除本机 IP 的限流计数，否则多次运行 e2e 会触发每小时 20 次的发码上限。
+func resetRateLimits(t *testing.T) {
+	t.Helper()
+	if err := newRedisClient(t).Del(context.Background(), "account:rl:sms_ip:127.0.0.1", "account:rl:login_ip:127.0.0.1").Err(); err != nil {
+		t.Fatalf("reset rate limits (is MARSCHAT_REDIS_PASSWORD set? run via make e2e): %v", err)
+	}
+}
+
+type session struct {
+	user  *v1.User
+	token *v1.TokenPair
+}
+
+func register(t *testing.T, phone, deviceID string) session {
+	t.Helper()
+	mustCall(t, http.MethodPost, "/v1/auth/sms-codes", "",
+		&v1.SendSmsCodeRequest{Phone: phone, Purpose: v1.SmsPurpose_SMS_PURPOSE_REGISTER}, nil)
+	var resp v1.RegisterResponse
+	mustCall(t, http.MethodPost, "/v1/auth/register", "", &v1.RegisterRequest{
+		Phone: phone, SmsCode: fixedCode, Password: password, Nickname: "小克",
+		Device: device(deviceID, v1.Platform_PLATFORM_WEB),
+	}, &resp)
+	return session{user: resp.GetUser(), token: resp.GetToken()}
+}
+
+func loginByPassword(t *testing.T, phone, deviceID string) session {
+	t.Helper()
+	var resp v1.LoginByPasswordResponse
+	mustCall(t, http.MethodPost, "/v1/auth/login/password", "", &v1.LoginByPasswordRequest{
+		Phone: phone, Password: password, Device: device(deviceID, v1.Platform_PLATFORM_ANDROID),
+	}, &resp)
+	return session{user: resp.GetUser(), token: resp.GetToken()}
+}
+
+func TestAccountFlow(t *testing.T) {
+	resetRateLimits(t)
+	phone := randomPhone(t)
+	web := register(t, phone, "e2e-web-"+phone)
+	if web.user.GetPhone() != phone || web.user.GetNickname() != "小克" || web.user.GetRole() != v1.Role_ROLE_USER {
+		t.Fatalf("registered user = %v", web.user)
+	}
+	if web.token.GetAccessExpiresIn() != 900 {
+		t.Errorf("access_expires_in = %d, want 900", web.token.GetAccessExpiresIn())
+	}
+
+	// 发送间隔
+	status, e := call(t, http.MethodPost, "/v1/auth/sms-codes", "",
+		&v1.SendSmsCodeRequest{Phone: phone, Purpose: v1.SmsPurpose_SMS_PURPOSE_LOGIN}, nil)
+	wantError(t, status, e, 429, "SMS_SEND_TOO_FREQUENT")
+	if e.Metadata["retry_after_seconds"] == "" {
+		t.Error("retry_after_seconds missing")
+	}
+
+	var me v1.GetMeResponse
+	mustCall(t, http.MethodGet, "/v1/users/me", web.token.GetAccessToken(), nil, &me)
+	if me.GetUser().GetId() != web.user.GetId() {
+		t.Fatalf("GetMe = %v", me.GetUser())
+	}
+
+	nick, birthday := "新昵称", "2000-02-29"
+	var upd v1.UpdateMeResponse
+	mustCall(t, http.MethodPatch, "/v1/users/me", web.token.GetAccessToken(),
+		&v1.UpdateMeRequest{Nickname: &nick, Birthday: &birthday}, &upd)
+	if upd.GetUser().GetNickname() != nick || upd.GetUser().GetBirthday() != birthday {
+		t.Fatalf("UpdateMe = %v", upd.GetUser())
+	}
+	// 缓存已删除，再读拿到新值
+	mustCall(t, http.MethodGet, "/v1/users/me", web.token.GetAccessToken(), nil, &me)
+	if me.GetUser().GetNickname() != nick {
+		t.Fatalf("GetMe after update = %v", me.GetUser())
+	}
+
+	// 第二台设备
+	android := loginByPassword(t, phone, "e2e-android-"+phone)
+	var list v1.ListSessionsResponse
+	mustCall(t, http.MethodGet, "/v1/sessions", web.token.GetAccessToken(), nil, &list)
+	if len(list.GetSessions()) != 2 {
+		t.Fatalf("sessions = %d, want 2", len(list.GetSessions()))
+	}
+	var androidSID int64
+	for _, s := range list.GetSessions() {
+		if !s.GetCurrent() {
+			androidSID = s.GetId()
+		}
+	}
+
+	// 刷新令牌轮换；宽限期内重复使用旧令牌返回 409
+	var refreshed v1.RefreshTokenResponse
+	mustCall(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: web.token.GetRefreshToken()}, &refreshed)
+	status, e = call(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: web.token.GetRefreshToken()}, nil)
+	wantError(t, status, e, 409, "REFRESH_TOKEN_ROTATED")
+	web.token = refreshed.GetToken()
+
+	// 踢掉第二台设备：它的访问令牌立即失效，刷新令牌也不能再用
+	mustCall(t, http.MethodDelete, "/v1/sessions/"+strconv.FormatInt(androidSID, 10), web.token.GetAccessToken(), nil, nil)
+	status, e = call(t, http.MethodGet, "/v1/users/me", android.token.GetAccessToken(), nil, nil)
+	wantError(t, status, e, 401, "UNAUTHORIZED")
+	status, e = call(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: android.token.GetRefreshToken()}, nil)
+	wantError(t, status, e, 401, "REFRESH_TOKEN_INVALID")
+
+	// 退出
+	mustCall(t, http.MethodPost, "/v1/auth/logout", web.token.GetAccessToken(), &v1.LogoutRequest{}, nil)
+	status, e = call(t, http.MethodGet, "/v1/users/me", web.token.GetAccessToken(), nil, nil)
+	wantError(t, status, e, 401, "UNAUTHORIZED")
+
+	// 短信登录。注册时发过码，先清掉发送间隔
+	newRedisClient(t).Del(context.Background(), "account:sms:cooldown:"+phone)
+	mustCall(t, http.MethodPost, "/v1/auth/sms-codes", "", &v1.SendSmsCodeRequest{Phone: phone, Purpose: v1.SmsPurpose_SMS_PURPOSE_LOGIN}, nil)
+	var smsLogin v1.LoginBySmsResponse
+	mustCall(t, http.MethodPost, "/v1/auth/login/sms", "", &v1.LoginBySmsRequest{
+		Phone: phone, SmsCode: fixedCode, Device: device("e2e-web-"+phone, v1.Platform_PLATFORM_WEB),
+	}, &smsLogin)
+}
+
+func TestRefreshTokenReuseRevokesSession(t *testing.T) {
+	resetRateLimits(t)
+	s := register(t, randomPhone(t), "e2e-reuse-device")
+	var refreshed v1.RefreshTokenResponse
+	mustCall(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: s.token.GetRefreshToken()}, &refreshed)
+
+	// 超过 10 秒宽限期后旧令牌再次出现，判定为泄露
+	time.Sleep(11 * time.Second)
+	status, e := call(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: s.token.GetRefreshToken()}, nil)
+	wantError(t, status, e, 401, "REFRESH_TOKEN_INVALID")
+	status, e = call(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: refreshed.GetToken().GetRefreshToken()}, nil)
+	wantError(t, status, e, 401, "REFRESH_TOKEN_INVALID")
+	status, e = call(t, http.MethodGet, "/v1/users/me", refreshed.GetToken().GetAccessToken(), nil, nil)
+	wantError(t, status, e, 401, "UNAUTHORIZED")
+}
+
+// grantAdmin 与 make grant-admin 等价：改数据库并删除资料缓存，再刷新令牌拿到新角色。
+func grantAdmin(t *testing.T, s session) session {
+	t.Helper()
+	dsn := fmt.Sprintf("account:%s@tcp(127.0.0.1:13306)/marschat_account?parseTime=true&loc=UTC", os.Getenv("MARSCHAT_ACCOUNT_DB_PASSWORD"))
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		defer sqlDB.Close()
+	}
+	if err := db.Exec("UPDATE users SET role = 2 WHERE id = ?", s.user.GetId()).Error; err != nil {
+		t.Fatal(err)
+	}
+	newRedisClient(t).Del(context.Background(), "account:user:"+strconv.FormatInt(s.user.GetId(), 10))
+	var refreshed v1.RefreshTokenResponse
+	mustCall(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: s.token.GetRefreshToken()}, &refreshed)
+	s.token = refreshed.GetToken()
+	return s
+}
+
+func TestBanAndUnban(t *testing.T) {
+	resetRateLimits(t)
+	admin := grantAdmin(t, register(t, randomPhone(t), "e2e-admin-device"))
+	phone := randomPhone(t)
+	target := register(t, phone, "e2e-target-device")
+	banPath := "/v1/admin/users/" + strconv.FormatInt(target.user.GetId(), 10)
+
+	status, e := call(t, http.MethodPost, "/v1/admin/users/"+strconv.FormatInt(admin.user.GetId(), 10)+"/ban", target.token.GetAccessToken(), &v1.BanUserRequest{}, nil)
+	wantError(t, status, e, 403, "PERMISSION_DENIED")
+
+	mustCall(t, http.MethodPost, banPath+"/ban", admin.token.GetAccessToken(), &v1.BanUserRequest{}, nil)
+	status, e = call(t, http.MethodGet, "/v1/users/me", target.token.GetAccessToken(), nil, nil)
+	wantError(t, status, e, 401, "UNAUTHORIZED")
+	status, e = call(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: target.token.GetRefreshToken()}, nil)
+	wantError(t, status, e, 401, "REFRESH_TOKEN_INVALID")
+	status, e = call(t, http.MethodPost, "/v1/auth/login/password", "", &v1.LoginByPasswordRequest{
+		Phone: phone, Password: password, Device: device("e2e-target-device", v1.Platform_PLATFORM_WEB),
+	}, nil)
+	wantError(t, status, e, 403, "USER_BANNED")
+	var profile v1.GetUserResponse
+	mustCall(t, http.MethodGet, "/v1/users/"+strconv.FormatInt(target.user.GetId(), 10), admin.token.GetAccessToken(), nil, &profile)
+	if profile.GetUser().GetStatus() != v1.UserStatus_USER_STATUS_BANNED {
+		t.Fatalf("status after ban = %v", profile.GetUser().GetStatus())
+	}
+
+	mustCall(t, http.MethodPost, banPath+"/unban", admin.token.GetAccessToken(), &v1.UnbanUserRequest{}, nil)
+	// iat 按秒计，封禁时间所在的那一秒签发的令牌仍会被拒绝，等到下一秒再登录
+	time.Sleep(time.Second)
+	again := loginByPassword(t, phone, "e2e-target-device")
+	mustCall(t, http.MethodGet, "/v1/users/me", again.token.GetAccessToken(), nil, nil)
+}
+
+func TestPublicProfileAndInternalBatchGet(t *testing.T) {
+	resetRateLimits(t)
+	a := register(t, randomPhone(t), "e2e-profile-a")
+	b := register(t, randomPhone(t), "e2e-profile-b")
+
+	// 公开资料不含手机号；新注册的用户已加入布隆过滤器，能查到
+	status, raw := getRaw(t, "/v1/users/"+strconv.FormatInt(b.user.GetId(), 10), a.token.GetAccessToken())
+	if status != 200 || bytes.Contains(raw, []byte(b.user.GetPhone())) {
+		t.Fatalf("GetUser status %d body %s", status, raw)
+	}
+	st, e := call(t, http.MethodGet, "/v1/users/12345", a.token.GetAccessToken(), nil, nil)
+	wantError(t, st, e, 404, "USER_NOT_FOUND")
+
+	conn, err := grpc.NewClient(accountGRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := v1.NewAccountInternalServiceClient(conn).BatchGetUsers(ctx, &v1.BatchGetUsersRequest{
+		UserIds: []int64{b.user.GetId(), 12345, a.user.GetId()},
+	})
+	if err != nil {
+		t.Fatalf("BatchGetUsers: %v", err)
+	}
+	if len(resp.GetUsers()) != 2 || resp.GetUsers()[0].GetId() != b.user.GetId() || resp.GetUsers()[1].GetId() != a.user.GetId() {
+		t.Fatalf("BatchGetUsers = %v", resp.GetUsers())
+	}
+}
+
+func TestAuthAndValidationErrors(t *testing.T) {
+	resetRateLimits(t)
+	status, e := call(t, http.MethodGet, "/v1/users/me", "", nil, nil)
+	wantError(t, status, e, 401, "UNAUTHORIZED")
+	status, e = call(t, http.MethodGet, "/v1/users/me", "not-a-jwt", nil, nil)
+	wantError(t, status, e, 401, "UNAUTHORIZED")
+	status, e = call(t, http.MethodPost, "/v1/auth/sms-codes", "", &v1.SendSmsCodeRequest{Phone: "12345", Purpose: v1.SmsPurpose_SMS_PURPOSE_REGISTER}, nil)
+	wantError(t, status, e, 400, "VALIDATOR")
+	status, e = call(t, http.MethodPost, "/v1/auth/login/password", "", &v1.LoginByPasswordRequest{
+		Phone: randomPhone(t), Password: "whatever1", Device: device("e2e-nobody", v1.Platform_PLATFORM_WEB),
+	}, nil)
+	wantError(t, status, e, 401, "INVALID_CREDENTIALS")
+}
+
+func getRaw(t *testing.T, path, token string) (int, []byte) {
+	t.Helper()
+	r, _ := http.NewRequest(http.MethodGet, accountHTTP+path, nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, b
+}

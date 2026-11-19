@@ -49,9 +49,11 @@ func main() {
 
 func run() error {
 	var bc conf.Bootstrap
-	if err := bootstrap.LoadConfig(flagconf, &bc); err != nil {
+	c, err := bootstrap.LoadConfig(flagconf, &bc)
+	if err != nil {
 		return err
 	}
+	defer c.Close()
 	logger := bootstrap.NewLogger(bc.GetLog(),
 		slog.String("service.name", Name),
 		slog.String("service.version", Version),

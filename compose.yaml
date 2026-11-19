@@ -32,7 +32,8 @@ services:
       - "127.0.0.1:16379:6379"
     environment:
       REDIS_PASSWORD: ${MARSCHAT_REDIS_PASSWORD:?请在 .env 中设置 MARSCHAT_REDIS_PASSWORD}
-    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    # 自定义命令后不再加载镜像默认配置中的模块，RedisBloom（用户 ID 布隆过滤器）需要显式加载
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\" --loadmodule /usr/local/lib/redis/modules/redisbloom.so"]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -86,6 +87,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # 数据库迁移任务，带 profile 所以 make up 不会启动，由 make migrate-account 按需运行
+  migrate-account:
+    image: migrate/migrate:v4.20.1
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${MARSCHAT_ACCOUNT_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_ACCOUNT_DB_PASSWORD}
+    volumes:
+      - ./app/account/migrations:/migrations:ro
+    # 密码从环境变量展开，不写进 compose 文件；"$$@" 接收 docker compose run 传入的子命令（up、down 1 等）
+    entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://account:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_account?multiStatements=true\" \"$$@\"", "migrate"]
+    command: ["up"]
 
 volumes:
   mysql-data:

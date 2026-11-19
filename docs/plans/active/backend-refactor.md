@@ -127,12 +127,14 @@
 
 ### 2. account 服务
 
-- [ ] 从步骤 1 移入的公共能力：接口 proto 生成（gRPC、HTTP、OpenAPI）、buf breaking 检查、protovalidate、错误码、snowflake ID（节点号用 Redis 租约分配）、按服务分库的 SQL 迁移（`migrate/migrate` 镜像）、带三类防护的缓存组件、Redis 限流组件。
-- [ ] 手机号加短信验证码注册；密码登录与短信验证码登录；刷新令牌、退出、个人资料、设备列表与踢设备、管理员封禁。
-- [ ] 短信：阿里云短信，开发环境用只写日志的假实现；验证码存 Redis，加上发送间隔、每日上限、按 IP 限流、验证次数上限，验证后立即失效。
-- [ ] 密码用 bcrypt 哈希；JWT 访问令牌加按设备签发的刷新令牌（使用后轮换）；退出和封禁时写入 Redis 吊销名单；提供公共 JWT 中间件给其他服务复用。
-- [ ] 用户资料缓存接入缓存组件；封禁和踢设备时经 Outbox 发出事件，供 access 断开连接（步骤 4 接入）。
-- [ ] 验证：单元测试；HTTP 接口冒烟测试；短信限流用例。
+设计：[account-service.md](../../design/account-service.md)。
+
+- [x] 从步骤 1 移入的公共能力：接口 proto 生成（gRPC、HTTP、OpenAPI）、buf breaking 检查（CI）、protovalidate、错误码、snowflake ID（节点号用 Redis 租约分配）、按服务分库的 SQL 迁移（`migrate/migrate` 镜像）、带三类防护的缓存组件、Redis 限流组件。另外新增 `pkg/jsoncodec`（HTTP 按 protobuf JSON 收发）和 `pkg/middleware/accesslog`（不记录请求体的访问日志）。
+- [x] 手机号加短信验证码注册；密码登录与短信验证码登录；刷新令牌、退出、个人资料、设备列表与踢设备、管理员封禁与解封。
+- [ ] 短信：开发环境只写日志的发送方已实现；验证码存 Redis，加上发送间隔、每日上限、按 IP 限流、验证次数上限，验证后立即失效，限额可热更新。**阿里云短信未实现**（没有 AccessKey，TD-24）。
+- [x] 密码用 bcrypt 哈希；JWT（Ed25519）访问令牌加按设备签发的刷新令牌（使用后轮换、重放检测）；退出、踢设备和封禁时写入 Redis 吊销名单；公共 JWT 中间件在 `pkg/auth`。
+- [x] 用户资料缓存接入缓存组件，加布隆过滤器；封禁和踢设备时写 Outbox 事件（发布器在步骤 4 实现）。
+- [x] 验证：单元测试；HTTP 接口冒烟测试；e2e 覆盖完整流程与短信限流。
 
 ### 3. social 服务
 
@@ -216,7 +218,9 @@
 
 步骤 0 已完成（2026-11-18）。旧的本地配置（含阿里云短信 AccessKey）未保留，步骤 2 接入短信时重新配置。
 
-步骤 1 已完成（2026-11-18）。下一步：步骤 2，account 服务。
+步骤 1 已完成（2026-11-18），提交 `6685aae`。
+
+步骤 2 已完成（2026-11-18），阿里云短信除外（TD-24）。设计 [account-service.md](../../design/account-service.md) 已采纳，实施中的调整记在其第 8 节。验证：`buf lint`、`go vet`、`go build`、`go test -race ./...`、`make e2e`（6 个用例）通过，关键查询 `EXPLAIN` 已核对。下一步：步骤 3（social）。
 
 ## 遇到的问题
 
@@ -224,5 +228,7 @@
 - 2026-11-18：配置中的时长写成 `500ms`、`1h` 时解析失败。Kratos 用 protojson 解析 `google.protobuf.Duration`，只接受以秒为单位的写法（`0.5s`、`3600s`）。已改正配置，并为每个服务加了解析真实配置文件的单元测试。
 - 2026-11-18：`make e2e` 通过服务发现调用时 panic（`transport/grpc/balancer.go:52` 空指针）。Kratos v3.0.0 的 gRPC 负载均衡器在包初始化时就存下了全局选择器，默认选择器设置得更晚，存下的是 nil。新增 `pkg/balancer` 利用 Go 的包初始化顺序提前设置选择器，见 [lessons/kratos-grpc-selector-nil.md](../../lessons/kratos-grpc-selector-nil.md)。升级 Kratos 时检查上游是否已修复。
 - 2026-11-18：`make run-account` 报 `unexpected EOF while looking for matching '"'`。GnuWin32 make 3.81 按 GBK 代码页把命令行传给 sh，echo 中文提示的 UTF-8 字节和相邻引号组成了非法字符，引号丢失。Makefile 的命令行改为只用 ASCII，并加了注释。
+- 2026-11-18：account 的 HTTP 接口不接受枚举名字、int64 输出为数字。Kratos v3 的 `json` codec 改为纯标准库实现，不再按 protobuf JSON 处理 proto 消息。新增 `pkg/jsoncodec` 覆盖注册，见 [lessons/kratos-v3-server-defaults.md](../../lessons/kratos-v3-server-defaults.md)。
+- 2026-11-18：Kratos 自带的 `logging` 中间件会把请求体（含密码、验证码、刷新令牌）写进日志，`recovery` 记录 panic 时也打印请求体；非 Kratos 错误的原文会返回给客户端。改用自己实现的 `pkg/middleware/accesslog`，见同一篇 lesson。
 
 - Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、MinIO、监控组件加多实例服务）在 Docker Desktop 上的内存占用未实测，步骤 5 前评估，必要时按步骤分组启动。

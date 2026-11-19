@@ -7,9 +7,11 @@
 package conf
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	conf "github.com/Mars-08042/MarsChat/pkg/conf"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -23,12 +25,19 @@ const (
 )
 
 type Bootstrap struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Server        *conf.Server           `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
-	Registry      *conf.Registry         `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
-	Mysql         *conf.MySQL            `protobuf:"bytes,3,opt,name=mysql,proto3" json:"mysql,omitempty"`
-	Redis         *conf.Redis            `protobuf:"bytes,4,opt,name=redis,proto3" json:"redis,omitempty"`
-	Log           *conf.Log              `protobuf:"bytes,5,opt,name=log,proto3" json:"log,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Server   *conf.Server           `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
+	Registry *conf.Registry         `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
+	Mysql    *conf.MySQL            `protobuf:"bytes,3,opt,name=mysql,proto3" json:"mysql,omitempty"`
+	Redis    *conf.Redis            `protobuf:"bytes,4,opt,name=redis,proto3" json:"redis,omitempty"`
+	Log      *conf.Log              `protobuf:"bytes,5,opt,name=log,proto3" json:"log,omitempty"`
+	Auth     *conf.Auth             `protobuf:"bytes,6,opt,name=auth,proto3" json:"auth,omitempty"`
+	Token    *Token                 `protobuf:"bytes,7,opt,name=token,proto3" json:"token,omitempty"`
+	Sms      *Sms                   `protobuf:"bytes,8,opt,name=sms,proto3" json:"sms,omitempty"`
+	// 可热更新，见 Policy
+	Policy        *Policy   `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
+	Security      *Security `protobuf:"bytes,10,opt,name=security,proto3" json:"security,omitempty"`
+	Cache         *Cache    `protobuf:"bytes,11,opt,name=cache,proto3" json:"cache,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -98,17 +107,555 @@ func (x *Bootstrap) GetLog() *conf.Log {
 	return nil
 }
 
+func (x *Bootstrap) GetAuth() *conf.Auth {
+	if x != nil {
+		return x.Auth
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetToken() *Token {
+	if x != nil {
+		return x.Token
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetSms() *Sms {
+	if x != nil {
+		return x.Sms
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetPolicy() *Policy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetSecurity() *Security {
+	if x != nil {
+		return x.Security
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetCache() *Cache {
+	if x != nil {
+		return x.Cache
+	}
+	return nil
+}
+
+// Token 是签发令牌的配置，修改后需要重启。
+type Token struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Ed25519 私钥种子（32 字节）的 base64 标准编码
+	PrivateKey string `protobuf:"bytes,1,opt,name=private_key,json=privateKey,proto3" json:"private_key,omitempty"`
+	// 写入 JWT 头部的 kid，轮换密钥时用来区分
+	KeyId      string               `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	AccessTtl  *durationpb.Duration `protobuf:"bytes,3,opt,name=access_ttl,json=accessTtl,proto3" json:"access_ttl,omitempty"`
+	RefreshTtl *durationpb.Duration `protobuf:"bytes,4,opt,name=refresh_ttl,json=refreshTtl,proto3" json:"refresh_ttl,omitempty"`
+	// 刷新令牌轮换后的宽限期：期间再提交上一个令牌视为客户端并发刷新，而不是重放攻击
+	RotationGrace *durationpb.Duration `protobuf:"bytes,5,opt,name=rotation_grace,json=rotationGrace,proto3" json:"rotation_grace,omitempty"`
+	// 吊销记录在 Redis 中的保留时间，必须不小于 access_ttl（启动时校验）
+	RevocationTtl *durationpb.Duration `protobuf:"bytes,6,opt,name=revocation_ttl,json=revocationTtl,proto3" json:"revocation_ttl,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Token) Reset() {
+	*x = Token{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Token) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Token) ProtoMessage() {}
+
+func (x *Token) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Token.ProtoReflect.Descriptor instead.
+func (*Token) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Token) GetPrivateKey() string {
+	if x != nil {
+		return x.PrivateKey
+	}
+	return ""
+}
+
+func (x *Token) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *Token) GetAccessTtl() *durationpb.Duration {
+	if x != nil {
+		return x.AccessTtl
+	}
+	return nil
+}
+
+func (x *Token) GetRefreshTtl() *durationpb.Duration {
+	if x != nil {
+		return x.RefreshTtl
+	}
+	return nil
+}
+
+func (x *Token) GetRotationGrace() *durationpb.Duration {
+	if x != nil {
+		return x.RotationGrace
+	}
+	return nil
+}
+
+func (x *Token) GetRevocationTtl() *durationpb.Duration {
+	if x != nil {
+		return x.RevocationTtl
+	}
+	return nil
+}
+
+// Sms 是短信发送方的配置，修改后需要重启。
+type Sms struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目前只有 log：只写日志，不真正发送
+	Provider string `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// 固定验证码，仅供开发和 e2e 测试；为空时随机生成
+	FixedCode     string `protobuf:"bytes,2,opt,name=fixed_code,json=fixedCode,proto3" json:"fixed_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Sms) Reset() {
+	*x = Sms{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Sms) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Sms) ProtoMessage() {}
+
+func (x *Sms) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Sms.ProtoReflect.Descriptor instead.
+func (*Sms) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Sms) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *Sms) GetFixedCode() string {
+	if x != nil {
+		return x.FixedCode
+	}
+	return ""
+}
+
+// Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
+type Policy struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sms           *Policy_Sms            `protobuf:"bytes,1,opt,name=sms,proto3" json:"sms,omitempty"`
+	Login         *Policy_Login          `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Policy) Reset() {
+	*x = Policy{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Policy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Policy) ProtoMessage() {}
+
+func (x *Policy) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Policy.ProtoReflect.Descriptor instead.
+func (*Policy) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Policy) GetSms() *Policy_Sms {
+	if x != nil {
+		return x.Sms
+	}
+	return nil
+}
+
+func (x *Policy) GetLogin() *Policy_Login {
+	if x != nil {
+		return x.Login
+	}
+	return nil
+}
+
+// Security 修改后需要重启。
+type Security struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	BcryptCost int32                  `protobuf:"varint,1,opt,name=bcrypt_cost,json=bcryptCost,proto3" json:"bcrypt_cost,omitempty"`
+	// 只有请求来自这些地址（CIDR）时，才用 X-Forwarded-For 确定客户端 IP
+	TrustedProxies []string `protobuf:"bytes,2,rep,name=trusted_proxies,json=trustedProxies,proto3" json:"trusted_proxies,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *Security) Reset() {
+	*x = Security{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Security) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Security) ProtoMessage() {}
+
+func (x *Security) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Security.ProtoReflect.Descriptor instead.
+func (*Security) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Security) GetBcryptCost() int32 {
+	if x != nil {
+		return x.BcryptCost
+	}
+	return 0
+}
+
+func (x *Security) GetTrustedProxies() []string {
+	if x != nil {
+		return x.TrustedProxies
+	}
+	return nil
+}
+
+// Cache 修改后需要重启。
+type Cache struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	UserTtl *durationpb.Duration   `protobuf:"bytes,1,opt,name=user_ttl,json=userTtl,proto3" json:"user_ttl,omitempty"`
+	// 不存在的用户 ID 的空值缓存时间
+	NullTtl       *durationpb.Duration `protobuf:"bytes,2,opt,name=null_ttl,json=nullTtl,proto3" json:"null_ttl,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Cache) Reset() {
+	*x = Cache{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Cache) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Cache) ProtoMessage() {}
+
+func (x *Cache) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Cache.ProtoReflect.Descriptor instead.
+func (*Cache) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Cache) GetUserTtl() *durationpb.Duration {
+	if x != nil {
+		return x.UserTtl
+	}
+	return nil
+}
+
+func (x *Cache) GetNullTtl() *durationpb.Duration {
+	if x != nil {
+		return x.NullTtl
+	}
+	return nil
+}
+
+type Policy_Sms struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	CodeTtl *durationpb.Duration   `protobuf:"bytes,1,opt,name=code_ttl,json=codeTtl,proto3" json:"code_ttl,omitempty"`
+	// 同一个验证码最多验证几次，超过后作废
+	MaxVerifyAttempts int32 `protobuf:"varint,2,opt,name=max_verify_attempts,json=maxVerifyAttempts,proto3" json:"max_verify_attempts,omitempty"`
+	// 同一手机号两次发送的最小间隔
+	SendInterval       *durationpb.Duration `protobuf:"bytes,3,opt,name=send_interval,json=sendInterval,proto3" json:"send_interval,omitempty"`
+	DailyLimitPerPhone int32                `protobuf:"varint,4,opt,name=daily_limit_per_phone,json=dailyLimitPerPhone,proto3" json:"daily_limit_per_phone,omitempty"`
+	IpLimit            *conf.RateLimit      `protobuf:"bytes,5,opt,name=ip_limit,json=ipLimit,proto3" json:"ip_limit,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Policy_Sms) Reset() {
+	*x = Policy_Sms{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Policy_Sms) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Policy_Sms) ProtoMessage() {}
+
+func (x *Policy_Sms) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Policy_Sms.ProtoReflect.Descriptor instead.
+func (*Policy_Sms) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{3, 0}
+}
+
+func (x *Policy_Sms) GetCodeTtl() *durationpb.Duration {
+	if x != nil {
+		return x.CodeTtl
+	}
+	return nil
+}
+
+func (x *Policy_Sms) GetMaxVerifyAttempts() int32 {
+	if x != nil {
+		return x.MaxVerifyAttempts
+	}
+	return 0
+}
+
+func (x *Policy_Sms) GetSendInterval() *durationpb.Duration {
+	if x != nil {
+		return x.SendInterval
+	}
+	return nil
+}
+
+func (x *Policy_Sms) GetDailyLimitPerPhone() int32 {
+	if x != nil {
+		return x.DailyLimitPerPhone
+	}
+	return 0
+}
+
+func (x *Policy_Sms) GetIpLimit() *conf.RateLimit {
+	if x != nil {
+		return x.IpLimit
+	}
+	return nil
+}
+
+type Policy_Login struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 统计窗口内密码错误达到该次数后锁定
+	MaxFailures   int32                `protobuf:"varint,1,opt,name=max_failures,json=maxFailures,proto3" json:"max_failures,omitempty"`
+	FailureWindow *durationpb.Duration `protobuf:"bytes,2,opt,name=failure_window,json=failureWindow,proto3" json:"failure_window,omitempty"`
+	LockDuration  *durationpb.Duration `protobuf:"bytes,3,opt,name=lock_duration,json=lockDuration,proto3" json:"lock_duration,omitempty"`
+	IpLimit       *conf.RateLimit      `protobuf:"bytes,4,opt,name=ip_limit,json=ipLimit,proto3" json:"ip_limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Policy_Login) Reset() {
+	*x = Policy_Login{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Policy_Login) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Policy_Login) ProtoMessage() {}
+
+func (x *Policy_Login) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Policy_Login.ProtoReflect.Descriptor instead.
+func (*Policy_Login) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{3, 1}
+}
+
+func (x *Policy_Login) GetMaxFailures() int32 {
+	if x != nil {
+		return x.MaxFailures
+	}
+	return 0
+}
+
+func (x *Policy_Login) GetFailureWindow() *durationpb.Duration {
+	if x != nil {
+		return x.FailureWindow
+	}
+	return nil
+}
+
+func (x *Policy_Login) GetLockDuration() *durationpb.Duration {
+	if x != nil {
+		return x.LockDuration
+	}
+	return nil
+}
+
+func (x *Policy_Login) GetIpLimit() *conf.RateLimit {
+	if x != nil {
+		return x.IpLimit
+	}
+	return nil
+}
+
 var File_account_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_account_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	" account/internal/conf/conf.proto\x12\x15marschat.account.conf\x1a\x0fconf/conf.proto\"\xed\x01\n" +
+	" account/internal/conf/conf.proto\x12\x15marschat.account.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xd0\x04\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
 	"\x05mysql\x18\x03 \x01(\v2\x14.marschat.conf.MySQLR\x05mysql\x12*\n" +
 	"\x05redis\x18\x04 \x01(\v2\x14.marschat.conf.RedisR\x05redis\x12$\n" +
-	"\x03log\x18\x05 \x01(\v2\x12.marschat.conf.LogR\x03logB?Z=github.com/Mars-08042/MarsChat/app/account/internal/conf;confb\x06proto3"
+	"\x03log\x18\x05 \x01(\v2\x12.marschat.conf.LogR\x03log\x12/\n" +
+	"\x04auth\x18\x06 \x01(\v2\x13.marschat.conf.AuthB\x06\xbaH\x03\xc8\x01\x01R\x04auth\x12:\n" +
+	"\x05token\x18\a \x01(\v2\x1c.marschat.account.conf.TokenB\x06\xbaH\x03\xc8\x01\x01R\x05token\x124\n" +
+	"\x03sms\x18\b \x01(\v2\x1a.marschat.account.conf.SmsB\x06\xbaH\x03\xc8\x01\x01R\x03sms\x12=\n" +
+	"\x06policy\x18\t \x01(\v2\x1d.marschat.account.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x12C\n" +
+	"\bsecurity\x18\n" +
+	" \x01(\v2\x1f.marschat.account.conf.SecurityB\x06\xbaH\x03\xc8\x01\x01R\bsecurity\x12:\n" +
+	"\x05cache\x18\v \x01(\v2\x1c.marschat.account.conf.CacheB\x06\xbaH\x03\xc8\x01\x01R\x05cache\"\xfa\x02\n" +
+	"\x05Token\x12(\n" +
+	"\vprivate_key\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
+	"privateKey\x12\x1e\n" +
+	"\x06key_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05keyId\x12E\n" +
+	"\n" +
+	"access_ttl\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\taccessTtl\x12G\n" +
+	"\vrefresh_ttl\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\n" +
+	"refreshTtl\x12H\n" +
+	"\x0erotation_grace\x18\x05 \x01(\v2\x19.google.protobuf.DurationB\x06\xbaH\x03\xc8\x01\x01R\rrotationGrace\x12M\n" +
+	"\x0erevocation_ttl\x18\x06 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\rrevocationTtl\"b\n" +
+	"\x03Sms\x12&\n" +
+	"\bprovider\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05R\x03logR\bprovider\x123\n" +
+	"\n" +
+	"fixed_code\x18\x02 \x01(\tB\x14\xbaH\x11r\x0f2\r^$|^[0-9]{6}$R\tfixedCode\"\xe1\x05\n" +
+	"\x06Policy\x12;\n" +
+	"\x03sms\x18\x01 \x01(\v2!.marschat.account.conf.Policy.SmsB\x06\xbaH\x03\xc8\x01\x01R\x03sms\x12A\n" +
+	"\x05login\x18\x02 \x01(\v2#.marschat.account.conf.Policy.LoginB\x06\xbaH\x03\xc8\x01\x01R\x05login\x1a\xc7\x02\n" +
+	"\x03Sms\x12A\n" +
+	"\bcode_ttl\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\acodeTtl\x127\n" +
+	"\x13max_verify_attempts\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x11maxVerifyAttempts\x12K\n" +
+	"\rsend_interval\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\fsendInterval\x12:\n" +
+	"\x15daily_limit_per_phone\x18\x04 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x12dailyLimitPerPhone\x12;\n" +
+	"\bip_limit\x18\x05 \x01(\v2\x18.marschat.conf.RateLimitB\x06\xbaH\x03\xc8\x01\x01R\aipLimit\x1a\x8c\x02\n" +
+	"\x05Login\x12*\n" +
+	"\fmax_failures\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\vmaxFailures\x12M\n" +
+	"\x0efailure_window\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\rfailureWindow\x12K\n" +
+	"\rlock_duration\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\flockDuration\x12;\n" +
+	"\bip_limit\x18\x04 \x01(\v2\x18.marschat.conf.RateLimitB\x06\xbaH\x03\xc8\x01\x01R\aipLimit\"_\n" +
+	"\bSecurity\x12*\n" +
+	"\vbcrypt_cost\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x0e(\n" +
+	"R\n" +
+	"bcryptCost\x12'\n" +
+	"\x0ftrusted_proxies\x18\x02 \x03(\tR\x0etrustedProxies\"\x8d\x01\n" +
+	"\x05Cache\x12A\n" +
+	"\buser_ttl\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\auserTtl\x12A\n" +
+	"\bnull_ttl\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\anullTtlB?Z=github.com/Mars-08042/MarsChat/app/account/internal/conf;confb\x06proto3"
 
 var (
 	file_account_internal_conf_conf_proto_rawDescOnce sync.Once
@@ -122,26 +669,56 @@ func file_account_internal_conf_conf_proto_rawDescGZIP() []byte {
 	return file_account_internal_conf_conf_proto_rawDescData
 }
 
-var file_account_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_account_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_account_internal_conf_conf_proto_goTypes = []any{
-	(*Bootstrap)(nil),     // 0: marschat.account.conf.Bootstrap
-	(*conf.Server)(nil),   // 1: marschat.conf.Server
-	(*conf.Registry)(nil), // 2: marschat.conf.Registry
-	(*conf.MySQL)(nil),    // 3: marschat.conf.MySQL
-	(*conf.Redis)(nil),    // 4: marschat.conf.Redis
-	(*conf.Log)(nil),      // 5: marschat.conf.Log
+	(*Bootstrap)(nil),           // 0: marschat.account.conf.Bootstrap
+	(*Token)(nil),               // 1: marschat.account.conf.Token
+	(*Sms)(nil),                 // 2: marschat.account.conf.Sms
+	(*Policy)(nil),              // 3: marschat.account.conf.Policy
+	(*Security)(nil),            // 4: marschat.account.conf.Security
+	(*Cache)(nil),               // 5: marschat.account.conf.Cache
+	(*Policy_Sms)(nil),          // 6: marschat.account.conf.Policy.Sms
+	(*Policy_Login)(nil),        // 7: marschat.account.conf.Policy.Login
+	(*conf.Server)(nil),         // 8: marschat.conf.Server
+	(*conf.Registry)(nil),       // 9: marschat.conf.Registry
+	(*conf.MySQL)(nil),          // 10: marschat.conf.MySQL
+	(*conf.Redis)(nil),          // 11: marschat.conf.Redis
+	(*conf.Log)(nil),            // 12: marschat.conf.Log
+	(*conf.Auth)(nil),           // 13: marschat.conf.Auth
+	(*durationpb.Duration)(nil), // 14: google.protobuf.Duration
+	(*conf.RateLimit)(nil),      // 15: marschat.conf.RateLimit
 }
 var file_account_internal_conf_conf_proto_depIdxs = []int32{
-	1, // 0: marschat.account.conf.Bootstrap.server:type_name -> marschat.conf.Server
-	2, // 1: marschat.account.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
-	3, // 2: marschat.account.conf.Bootstrap.mysql:type_name -> marschat.conf.MySQL
-	4, // 3: marschat.account.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
-	5, // 4: marschat.account.conf.Bootstrap.log:type_name -> marschat.conf.Log
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	8,  // 0: marschat.account.conf.Bootstrap.server:type_name -> marschat.conf.Server
+	9,  // 1: marschat.account.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
+	10, // 2: marschat.account.conf.Bootstrap.mysql:type_name -> marschat.conf.MySQL
+	11, // 3: marschat.account.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
+	12, // 4: marschat.account.conf.Bootstrap.log:type_name -> marschat.conf.Log
+	13, // 5: marschat.account.conf.Bootstrap.auth:type_name -> marschat.conf.Auth
+	1,  // 6: marschat.account.conf.Bootstrap.token:type_name -> marschat.account.conf.Token
+	2,  // 7: marschat.account.conf.Bootstrap.sms:type_name -> marschat.account.conf.Sms
+	3,  // 8: marschat.account.conf.Bootstrap.policy:type_name -> marschat.account.conf.Policy
+	4,  // 9: marschat.account.conf.Bootstrap.security:type_name -> marschat.account.conf.Security
+	5,  // 10: marschat.account.conf.Bootstrap.cache:type_name -> marschat.account.conf.Cache
+	14, // 11: marschat.account.conf.Token.access_ttl:type_name -> google.protobuf.Duration
+	14, // 12: marschat.account.conf.Token.refresh_ttl:type_name -> google.protobuf.Duration
+	14, // 13: marschat.account.conf.Token.rotation_grace:type_name -> google.protobuf.Duration
+	14, // 14: marschat.account.conf.Token.revocation_ttl:type_name -> google.protobuf.Duration
+	6,  // 15: marschat.account.conf.Policy.sms:type_name -> marschat.account.conf.Policy.Sms
+	7,  // 16: marschat.account.conf.Policy.login:type_name -> marschat.account.conf.Policy.Login
+	14, // 17: marschat.account.conf.Cache.user_ttl:type_name -> google.protobuf.Duration
+	14, // 18: marschat.account.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
+	14, // 19: marschat.account.conf.Policy.Sms.code_ttl:type_name -> google.protobuf.Duration
+	14, // 20: marschat.account.conf.Policy.Sms.send_interval:type_name -> google.protobuf.Duration
+	15, // 21: marschat.account.conf.Policy.Sms.ip_limit:type_name -> marschat.conf.RateLimit
+	14, // 22: marschat.account.conf.Policy.Login.failure_window:type_name -> google.protobuf.Duration
+	14, // 23: marschat.account.conf.Policy.Login.lock_duration:type_name -> google.protobuf.Duration
+	15, // 24: marschat.account.conf.Policy.Login.ip_limit:type_name -> marschat.conf.RateLimit
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_account_internal_conf_conf_proto_init() }
@@ -155,7 +732,7 @@ func file_account_internal_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_internal_conf_conf_proto_rawDesc), len(file_account_internal_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -20,7 +20,7 @@
 | 表、索引、Redis 键 | [data-model.md](docs/architecture/data-model.md)（按重构步骤重写），设计原则见重构计划 |
 | 分层与横切约定 | [system.md](docs/architecture/system.md)（描述当前代码，按重构步骤更新） |
 | 运行、配置、部署 | [deployment.md](docs/deployment.md)（按重构步骤更新），完整端口表见重构计划 |
-| 参考实现 | `tmp/teamgram-server/`（只读参考，被 git 忽略），对照清单见重构计划 |
+| 参考实现 | `tmp/teamgram-server/`（只读参考，被 git 忽略），对照清单见重构计划。需要阅读其他第三方源码时同样克隆到 `tmp/`，并切到 `go.mod` 中使用的版本，例如 `tmp/kratos` |
 
 ## 工作规则
 
@@ -68,7 +68,7 @@ go test ./...
 | 消息流转或协议变化 | `docs/architecture/data-flow.md` |
 | 配置项、端口、部署方式变化 | `docs/deployment.md` |
 | 重构步骤进展 | `docs/plans/active/backend-refactor.md` |
-| 修复或新发现技术债 | `docs/plans/tech-debt.md`（编号不复用，新问题从 TD-24 起） |
+| 修复或新发现技术债 | `docs/plans/tech-debt.md`（编号不复用，新问题接着文件中最大的编号往后排） |
 | 解决了难定位的问题 | 在 `docs/lessons/` 新增经验文档 |
 
 文档写法见 [docs/README.md 编写规则](docs/README.md#编写规则)。

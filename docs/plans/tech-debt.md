@@ -12,11 +12,35 @@
 
 ## 中
 
-暂无。
+### TD-24 短信只有写日志的发送方
+
+- 发现：2026-11-18，重构步骤 2
+- 位置：`app/account/internal/data/data.go` 的 `NewSmsSender`
+- 现状：开发者暂时没有阿里云短信的 AccessKey、签名和模板，只实现了把验证码写进日志的 `log` 发送方，生产环境无法发送验证码。
+- 处理：配置就绪后实现 `aliyun` 发送方（引入 SDK 前征得同意），并验证发送失败时冷却与计数的回滚。
+
+### TD-26 服务间 gRPC 调用没有认证
+
+- 发现：2026-11-18，重构步骤 2
+- 位置：`api/account/v1/internal.proto`、`app/account/internal/server/server.go`
+- 现状：`AccountInternalService` 只注册在 gRPC 上、不经过令牌校验，安全性依赖服务网络不对外暴露。服务容器化（步骤 5）后，同一网络中的任意容器都能调用。
+- 处理：步骤 5 起评估 mTLS 或服务令牌。
 
 ## 低
 
-暂无。
+### TD-25 资料缓存删除失败时最长有 30 分钟旧数据
+
+- 发现：2026-11-18，重构步骤 2
+- 位置：`app/account/internal/data/user.go` 的 `EvictCache`
+- 现状：修改资料、封禁后在数据库提交之后删除缓存，失败只记 WARN，靠 TTL（30 分钟 ±10%）兜底。
+- 处理：步骤 4 接入 Outbox 发布器后，改为经事件重试删除。
+
+### TD-27 布隆过滤器的失败分支没有自动化测试
+
+- 发现：2026-11-18，重构步骤 2
+- 位置：`app/account/internal/data/user_bloom.go`
+- 现状：miniredis 不支持 RedisBloom 命令，加入失败后的重试、脏标记、多轮重建只在代码审阅中核对过；e2e 只覆盖启动重建、注册后加入、查询不存在的 ID 这些正常路径。
+- 处理：为 data 层增加连接真实 Redis 的集成测试（构建标签 `e2e`），用错误注入覆盖失败分支。
 
 ## 已解决
 

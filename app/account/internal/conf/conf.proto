@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package marschat.account.conf;
 
+import "buf/validate/validate.proto";
 import "conf/conf.proto";
+import "google/protobuf/duration.proto";
 
 option go_package = "github.com/Mars-08042/MarsChat/app/account/internal/conf;conf";
 
@@ -12,4 +14,101 @@ message Bootstrap {
   marschat.conf.MySQL mysql = 3;
   marschat.conf.Redis redis = 4;
   marschat.conf.Log log = 5;
+  marschat.conf.Auth auth = 6 [(buf.validate.field).required = true];
+  Token token = 7 [(buf.validate.field).required = true];
+  Sms sms = 8 [(buf.validate.field).required = true];
+  // 可热更新，见 Policy
+  Policy policy = 9 [(buf.validate.field).required = true];
+  Security security = 10 [(buf.validate.field).required = true];
+  Cache cache = 11 [(buf.validate.field).required = true];
+}
+
+// Token 是签发令牌的配置，修改后需要重启。
+message Token {
+  // Ed25519 私钥种子（32 字节）的 base64 标准编码
+  string private_key = 1 [(buf.validate.field).string.min_len = 1];
+  // 写入 JWT 头部的 kid，轮换密钥时用来区分
+  string key_id = 2 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Duration access_ttl = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  google.protobuf.Duration refresh_ttl = 4 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 刷新令牌轮换后的宽限期：期间再提交上一个令牌视为客户端并发刷新，而不是重放攻击
+  google.protobuf.Duration rotation_grace = 5 [(buf.validate.field).required = true];
+  // 吊销记录在 Redis 中的保留时间，必须不小于 access_ttl（启动时校验）
+  google.protobuf.Duration revocation_ttl = 6 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}
+
+// Sms 是短信发送方的配置，修改后需要重启。
+message Sms {
+  // 目前只有 log：只写日志，不真正发送
+  string provider = 1 [(buf.validate.field).string = {
+    in: ["log"]
+  }];
+  // 固定验证码，仅供开发和 e2e 测试；为空时随机生成
+  string fixed_code = 2 [(buf.validate.field).string.pattern = "^$|^[0-9]{6}$"];
+}
+
+// Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
+message Policy {
+  message Sms {
+    google.protobuf.Duration code_ttl = 1 [
+      (buf.validate.field).required = true,
+      (buf.validate.field).duration.gt = {seconds: 0}
+    ];
+    // 同一个验证码最多验证几次，超过后作废
+    int32 max_verify_attempts = 2 [(buf.validate.field).int32.gt = 0];
+    // 同一手机号两次发送的最小间隔
+    google.protobuf.Duration send_interval = 3 [
+      (buf.validate.field).required = true,
+      (buf.validate.field).duration.gt = {seconds: 0}
+    ];
+    int32 daily_limit_per_phone = 4 [(buf.validate.field).int32.gt = 0];
+    marschat.conf.RateLimit ip_limit = 5 [(buf.validate.field).required = true];
+  }
+  message Login {
+    // 统计窗口内密码错误达到该次数后锁定
+    int32 max_failures = 1 [(buf.validate.field).int32.gt = 0];
+    google.protobuf.Duration failure_window = 2 [
+      (buf.validate.field).required = true,
+      (buf.validate.field).duration.gt = {seconds: 0}
+    ];
+    google.protobuf.Duration lock_duration = 3 [
+      (buf.validate.field).required = true,
+      (buf.validate.field).duration.gt = {seconds: 0}
+    ];
+    marschat.conf.RateLimit ip_limit = 4 [(buf.validate.field).required = true];
+  }
+  Sms sms = 1 [(buf.validate.field).required = true];
+  Login login = 2 [(buf.validate.field).required = true];
+}
+
+// Security 修改后需要重启。
+message Security {
+  int32 bcrypt_cost = 1 [(buf.validate.field).int32 = {
+    gte: 10
+    lte: 14
+  }];
+  // 只有请求来自这些地址（CIDR）时，才用 X-Forwarded-For 确定客户端 IP
+  repeated string trusted_proxies = 2;
+}
+
+// Cache 修改后需要重启。
+message Cache {
+  google.protobuf.Duration user_ttl = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 不存在的用户 ID 的空值缓存时间
+  google.protobuf.Duration null_ttl = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
 }

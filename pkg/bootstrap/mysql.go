@@ -24,6 +24,8 @@ func NewMySQL(c *conf.MySQL, logger *slog.Logger) (*gorm.DB, func(), error) {
 			// 日志中只打印带占位符的 SQL，避免手机号等参数落入日志
 			ParameterizedQueries: true,
 		}),
+		// 把唯一键冲突等驱动错误转换成 gorm.ErrDuplicatedKey 等通用错误，repo 不必依赖 MySQL 错误码
+		TranslateError: true,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("open mysql: %w", err)

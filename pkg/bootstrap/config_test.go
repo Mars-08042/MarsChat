@@ -18,9 +18,11 @@ func TestLoadConfigResolvesEnvPlaceholders(t *testing.T) {
 	t.Setenv(EnvPrefix+"TEST_REDIS_PASSWORD", "secret")
 
 	var c conf.Redis
-	if err := LoadConfig(path, &c); err != nil {
+	cfg, err := LoadConfig(path, &c)
+	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
+	defer cfg.Close()
 	if got := c.GetAddr(); got != "127.0.0.1:16379" {
 		t.Errorf("addr = %q, want default 127.0.0.1:16379", got)
 	}
@@ -43,9 +45,11 @@ func TestLoadConfigEnvOverridesDefault(t *testing.T) {
 	t.Setenv(EnvPrefix+"TEST_REDIS_ADDR", "redis:6379")
 
 	var c conf.Redis
-	if err := LoadConfig(path, &c); err != nil {
+	cfg, err := LoadConfig(path, &c)
+	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
+	defer cfg.Close()
 	if got := c.GetAddr(); got != "redis:6379" {
 		t.Errorf("addr = %q, want redis:6379", got)
 	}

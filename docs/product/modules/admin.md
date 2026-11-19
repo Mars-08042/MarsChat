@@ -1,6 +1,19 @@
 # 后台管理
 
-> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），其中的代码位置已不存在，只作功能参考。新实现见 [后端重构计划](../../plans/active/backend-refactor.md) 步骤 2。
+> **重构说明（2026-11-18）**：“新实现”一节描述 account 服务的当前代码；其后各节描述已移除的旧基线（截至提交 `6624cea`），其中的代码位置已不存在，只作功能参考。
+
+## 新实现（重构步骤 2）
+
+目前只有用户封禁与解封；群聊管控随 social 服务（步骤 3）实现。代码在 `app/account/internal/biz/admin.go`。
+
+| 方法 | HTTP | 说明 |
+|---|---|---|
+| `BanUser` | `POST /v1/admin/users/{user_id}/ban` | 修改状态、吊销全部会话、写 `UserBanned` 事件；提交后写入用户级吊销标记，已签发的访问令牌立即失效。重复封禁幂等 |
+| `UnbanUser` | `POST /v1/admin/users/{user_id}/unban` | 恢复状态；用户需要重新登录 |
+
+- 权限：令牌中的角色必须是管理员，否则返回 `403 PERMISSION_DENIED`；不能封禁自己。
+- 设置管理员没有接口，用 `make grant-admin PHONE=...`（见 [deployment.md](../../deployment.md#设置管理员)），新角色在该用户下次刷新令牌后生效。
+- 被封禁的用户登录时，密码正确才返回 `USER_BANNED`，密码错误仍返回 `INVALID_CREDENTIALS`，不向未认证的人暴露账号状态。
 
 ## 职责
 

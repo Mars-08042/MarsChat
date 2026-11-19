@@ -10,9 +10,11 @@ import (
 // 确保仓库里的配置文件能按 protojson 规则解析，例如时长不能写成 500ms。
 func TestConfigFileParses(t *testing.T) {
 	var bc conf.Bootstrap
-	if err := bootstrap.LoadConfig("../../configs", &bc); err != nil {
+	c, err := bootstrap.LoadConfig("../../configs", &bc)
+	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
+	defer c.Close()
 	if bc.GetServer().GetGrpc().GetAddr() == "" || bc.GetMysql().GetDsn() == "" || bc.GetRedis().GetAddr() == "" {
 		// 不打印整个配置，DSN 里可能带密码
 		t.Error("config not fully loaded: server.grpc.addr, mysql.dsn or redis.addr is empty")

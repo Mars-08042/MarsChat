@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package account.v1;
+
+import "account/v1/account.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/account/v1;v1";
+
+// AccountInternalService 只供其他服务通过 gRPC 调用，不经网关暴露（没有 HTTP 注解）。
+service AccountInternalService {
+  // 批量获取公开资料，不存在的 ID 不出现在结果中。走资料缓存。
+  rpc BatchGetUsers(BatchGetUsersRequest) returns (BatchGetUsersResponse);
+}
+
+message BatchGetUsersRequest {
+  repeated int64 user_ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+    unique: true
+    items: {
+      int64: {gt: 0}
+    }
+  }];
+}
+
+message BatchGetUsersResponse {
+  repeated UserProfile users = 1;
+}

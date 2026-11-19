@@ -1,0 +1,310 @@
+syntax = "proto3";
+
+package account.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/account/v1;v1";
+
+// AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+// 除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
+service AccountService {
+  // 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
+  rpc SendSmsCode(SendSmsCodeRequest) returns (SendSmsCodeResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/sms-codes"
+      body: "*"
+    };
+  }
+  // 手机号加短信验证码注册，成功后直接登录当前设备。
+  rpc Register(RegisterRequest) returns (RegisterResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/register"
+      body: "*"
+    };
+  }
+  // 手机号加密码登录。
+  rpc LoginByPassword(LoginByPasswordRequest) returns (LoginByPasswordResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/login/password"
+      body: "*"
+    };
+  }
+  // 手机号加短信验证码登录。
+  rpc LoginBySms(LoginBySmsRequest) returns (LoginBySmsResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/login/sms"
+      body: "*"
+    };
+  }
+  // 用刷新令牌换取新的令牌对，旧的刷新令牌随即失效。
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/refresh"
+      body: "*"
+    };
+  }
+  // 退出当前设备。
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/logout"
+      body: "*"
+    };
+  }
+  // 获取自己的完整资料。
+  rpc GetMe(GetMeRequest) returns (GetMeResponse) {
+    option (google.api.http) = {get: "/v1/users/me"};
+  }
+  // 修改自己的资料，只修改请求中出现的字段。
+  rpc UpdateMe(UpdateMeRequest) returns (UpdateMeResponse) {
+    option (google.api.http) = {
+      patch: "/v1/users/me"
+      body: "*"
+    };
+  }
+  // 获取其他用户的公开资料。
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = {get: "/v1/users/{user_id}"};
+  }
+  // 列出自己当前有效的登录设备。
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions"};
+  }
+  // 让自己的某个设备下线。
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse) {
+    option (google.api.http) = {delete: "/v1/sessions/{session_id}"};
+  }
+  // 封禁用户（管理员）：吊销其全部会话，之后无法登录。
+  rpc BanUser(BanUserRequest) returns (BanUserResponse) {
+    option (google.api.http) = {
+      post: "/v1/admin/users/{user_id}/ban"
+      body: "*"
+    };
+  }
+  // 解封用户（管理员）。
+  rpc UnbanUser(UnbanUserRequest) returns (UnbanUserResponse) {
+    option (google.api.http) = {
+      post: "/v1/admin/users/{user_id}/unban"
+      body: "*"
+    };
+  }
+}
+
+// 短信验证码用途，不同用途的验证码不能混用。
+enum SmsPurpose {
+  SMS_PURPOSE_UNSPECIFIED = 0;
+  SMS_PURPOSE_REGISTER = 1;
+  SMS_PURPOSE_LOGIN = 2;
+}
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_WEB = 1;
+  PLATFORM_ANDROID = 2;
+  PLATFORM_IOS = 3;
+  PLATFORM_DESKTOP = 4;
+}
+
+enum Gender {
+  GENDER_UNSPECIFIED = 0;
+  GENDER_MALE = 1;
+  GENDER_FEMALE = 2;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ADMIN = 2;
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_NORMAL = 1;
+  USER_STATUS_BANNED = 2;
+}
+
+// Device 描述发起登录的设备。device_id 由客户端生成并持久保存，同一设备重复登录时会替换旧会话。
+message Device {
+  string device_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 64
+    pattern: "^[A-Za-z0-9_-]+$"
+  }];
+  Platform platform = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  string device_name = 3 [(buf.validate.field).string.max_len = 64];
+}
+
+message TokenPair {
+  string access_token = 1;
+  // 访问令牌剩余有效秒数
+  int32 access_expires_in = 2;
+  string refresh_token = 3;
+  // 刷新令牌剩余有效秒数
+  int32 refresh_expires_in = 4;
+}
+
+// User 是用户本人可见的完整资料。
+message User {
+  int64 id = 1;
+  string phone = 2;
+  string nickname = 3;
+  // media 服务的文件 ID，未设置时为空
+  string avatar = 4;
+  Gender gender = 5;
+  // 格式 YYYY-MM-DD，未设置时为空
+  string birthday = 6;
+  string signature = 7;
+  Role role = 8;
+  UserStatus status = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+// UserProfile 是其他用户可见的公开资料，不含手机号。
+message UserProfile {
+  int64 id = 1;
+  string nickname = 2;
+  string avatar = 3;
+  Gender gender = 4;
+  string signature = 5;
+  UserStatus status = 6;
+}
+
+message Session {
+  int64 id = 1;
+  Platform platform = 2;
+  string device_name = 3;
+  string last_ip = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp last_active_at = 6;
+  // 是否为发起本次请求的设备
+  bool current = 7;
+}
+
+message SendSmsCodeRequest {
+  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
+  SmsPurpose purpose = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+}
+
+message SendSmsCodeResponse {
+  // 距离下次可以发送的秒数
+  int32 cooldown_seconds = 1;
+}
+
+message RegisterRequest {
+  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
+  string sms_code = 2 [(buf.validate.field).string.pattern = "^[0-9]{6}$"];
+  // 8～64 位可打印 ASCII 字符，必须同时包含字母和数字
+  string password = 3 [(buf.validate.field).string.pattern = "^[!-~]{8,64}$"];
+  string nickname = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 16
+  }];
+  Device device = 5 [(buf.validate.field).required = true];
+}
+
+message RegisterResponse {
+  User user = 1;
+  TokenPair token = 2;
+}
+
+message LoginByPasswordRequest {
+  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
+  string password = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  Device device = 3 [(buf.validate.field).required = true];
+}
+
+message LoginByPasswordResponse {
+  User user = 1;
+  TokenPair token = 2;
+}
+
+message LoginBySmsRequest {
+  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
+  string sms_code = 2 [(buf.validate.field).string.pattern = "^[0-9]{6}$"];
+  Device device = 3 [(buf.validate.field).required = true];
+}
+
+message LoginBySmsResponse {
+  User user = 1;
+  TokenPair token = 2;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+}
+
+message RefreshTokenResponse {
+  TokenPair token = 1;
+}
+
+message LogoutRequest {}
+
+message LogoutResponse {}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  User user = 1;
+}
+
+message UpdateMeRequest {
+  optional string nickname = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 16
+  }];
+  optional string avatar = 2 [(buf.validate.field).string.max_len = 64];
+  optional Gender gender = 3 [(buf.validate.field).enum.defined_only = true];
+  // 格式 YYYY-MM-DD，传空字符串表示清除
+  optional string birthday = 4 [(buf.validate.field).string.pattern = "^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$"];
+  optional string signature = 5 [(buf.validate.field).string.max_len = 100];
+}
+
+message UpdateMeResponse {
+  User user = 1;
+}
+
+message GetUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message GetUserResponse {
+  UserProfile user = 1;
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message RevokeSessionRequest {
+  int64 session_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message RevokeSessionResponse {}
+
+message BanUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message BanUserResponse {}
+
+message UnbanUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message UnbanUserResponse {}

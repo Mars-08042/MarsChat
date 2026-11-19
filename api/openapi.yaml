@@ -1,0 +1,496 @@
+# Generated with protoc-gen-openapi
+# https://github.com/google/gnostic/tree/master/cmd/protoc-gen-openapi
+
+openapi: 3.0.3
+info:
+    title: AccountService API
+    description: |-
+        AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+         除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
+    version: 0.0.1
+paths:
+    /v1/admin/users/{userId}/ban:
+        post:
+            tags:
+                - AccountService
+            description: 封禁用户（管理员）：吊销其全部会话，之后无法登录。
+            operationId: AccountService_BanUser
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.BanUserRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.BanUserResponse'
+    /v1/admin/users/{userId}/unban:
+        post:
+            tags:
+                - AccountService
+            description: 解封用户（管理员）。
+            operationId: AccountService_UnbanUser
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.UnbanUserRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.UnbanUserResponse'
+    /v1/auth/login/password:
+        post:
+            tags:
+                - AccountService
+            description: 手机号加密码登录。
+            operationId: AccountService_LoginByPassword
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.LoginByPasswordRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.LoginByPasswordResponse'
+    /v1/auth/login/sms:
+        post:
+            tags:
+                - AccountService
+            description: 手机号加短信验证码登录。
+            operationId: AccountService_LoginBySms
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.LoginBySmsRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.LoginBySmsResponse'
+    /v1/auth/logout:
+        post:
+            tags:
+                - AccountService
+            description: 退出当前设备。
+            operationId: AccountService_Logout
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.LogoutRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.LogoutResponse'
+    /v1/auth/refresh:
+        post:
+            tags:
+                - AccountService
+            description: 用刷新令牌换取新的令牌对，旧的刷新令牌随即失效。
+            operationId: AccountService_RefreshToken
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.RefreshTokenRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.RefreshTokenResponse'
+    /v1/auth/register:
+        post:
+            tags:
+                - AccountService
+            description: 手机号加短信验证码注册，成功后直接登录当前设备。
+            operationId: AccountService_Register
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.RegisterRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.RegisterResponse'
+    /v1/auth/sms-codes:
+        post:
+            tags:
+                - AccountService
+            description: 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
+            operationId: AccountService_SendSmsCode
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.SendSmsCodeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.SendSmsCodeResponse'
+    /v1/sessions:
+        get:
+            tags:
+                - AccountService
+            description: 列出自己当前有效的登录设备。
+            operationId: AccountService_ListSessions
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.ListSessionsResponse'
+    /v1/sessions/{sessionId}:
+        delete:
+            tags:
+                - AccountService
+            description: 让自己的某个设备下线。
+            operationId: AccountService_RevokeSession
+            parameters:
+                - name: sessionId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.RevokeSessionResponse'
+    /v1/users/me:
+        get:
+            tags:
+                - AccountService
+            description: 获取自己的完整资料。
+            operationId: AccountService_GetMe
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.GetMeResponse'
+        patch:
+            tags:
+                - AccountService
+            description: 修改自己的资料，只修改请求中出现的字段。
+            operationId: AccountService_UpdateMe
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.UpdateMeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.UpdateMeResponse'
+    /v1/users/{userId}:
+        get:
+            tags:
+                - AccountService
+            description: 获取其他用户的公开资料。
+            operationId: AccountService_GetUser
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.GetUserResponse'
+components:
+    schemas:
+        account.v1.BanUserRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+        account.v1.BanUserResponse:
+            type: object
+            properties: {}
+        account.v1.Device:
+            type: object
+            properties:
+                deviceId:
+                    type: string
+                platform:
+                    type: integer
+                    format: enum
+                deviceName:
+                    type: string
+            description: Device 描述发起登录的设备。device_id 由客户端生成并持久保存，同一设备重复登录时会替换旧会话。
+        account.v1.GetMeResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+        account.v1.GetUserResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.UserProfile'
+        account.v1.ListSessionsResponse:
+            type: object
+            properties:
+                sessions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/account.v1.Session'
+        account.v1.LoginByPasswordRequest:
+            type: object
+            properties:
+                phone:
+                    type: string
+                password:
+                    type: string
+                device:
+                    $ref: '#/components/schemas/account.v1.Device'
+        account.v1.LoginByPasswordResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.LoginBySmsRequest:
+            type: object
+            properties:
+                phone:
+                    type: string
+                smsCode:
+                    type: string
+                device:
+                    $ref: '#/components/schemas/account.v1.Device'
+        account.v1.LoginBySmsResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.LogoutRequest:
+            type: object
+            properties: {}
+        account.v1.LogoutResponse:
+            type: object
+            properties: {}
+        account.v1.RefreshTokenRequest:
+            type: object
+            properties:
+                refreshToken:
+                    type: string
+        account.v1.RefreshTokenResponse:
+            type: object
+            properties:
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.RegisterRequest:
+            type: object
+            properties:
+                phone:
+                    type: string
+                smsCode:
+                    type: string
+                password:
+                    type: string
+                    description: 8～64 位可打印 ASCII 字符，必须同时包含字母和数字
+                nickname:
+                    type: string
+                device:
+                    $ref: '#/components/schemas/account.v1.Device'
+        account.v1.RegisterResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.RevokeSessionResponse:
+            type: object
+            properties: {}
+        account.v1.SendSmsCodeRequest:
+            type: object
+            properties:
+                phone:
+                    type: string
+                purpose:
+                    type: integer
+                    format: enum
+        account.v1.SendSmsCodeResponse:
+            type: object
+            properties:
+                cooldownSeconds:
+                    type: integer
+                    description: 距离下次可以发送的秒数
+                    format: int32
+        account.v1.Session:
+            type: object
+            properties:
+                id:
+                    type: string
+                platform:
+                    type: integer
+                    format: enum
+                deviceName:
+                    type: string
+                lastIp:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                lastActiveAt:
+                    type: string
+                    format: date-time
+                current:
+                    type: boolean
+                    description: 是否为发起本次请求的设备
+        account.v1.TokenPair:
+            type: object
+            properties:
+                accessToken:
+                    type: string
+                accessExpiresIn:
+                    type: integer
+                    description: 访问令牌剩余有效秒数
+                    format: int32
+                refreshToken:
+                    type: string
+                refreshExpiresIn:
+                    type: integer
+                    description: 刷新令牌剩余有效秒数
+                    format: int32
+        account.v1.UnbanUserRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+        account.v1.UnbanUserResponse:
+            type: object
+            properties: {}
+        account.v1.UpdateMeRequest:
+            type: object
+            properties:
+                nickname:
+                    type: string
+                avatar:
+                    type: string
+                gender:
+                    type: integer
+                    format: enum
+                birthday:
+                    type: string
+                    description: 格式 YYYY-MM-DD，传空字符串表示清除
+                signature:
+                    type: string
+        account.v1.UpdateMeResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+        account.v1.User:
+            type: object
+            properties:
+                id:
+                    type: string
+                phone:
+                    type: string
+                nickname:
+                    type: string
+                avatar:
+                    type: string
+                    description: media 服务的文件 ID，未设置时为空
+                gender:
+                    type: integer
+                    format: enum
+                birthday:
+                    type: string
+                    description: 格式 YYYY-MM-DD，未设置时为空
+                signature:
+                    type: string
+                role:
+                    type: integer
+                    format: enum
+                status:
+                    type: integer
+                    format: enum
+                createdAt:
+                    type: string
+                    format: date-time
+            description: User 是用户本人可见的完整资料。
+        account.v1.UserProfile:
+            type: object
+            properties:
+                id:
+                    type: string
+                nickname:
+                    type: string
+                avatar:
+                    type: string
+                gender:
+                    type: integer
+                    format: enum
+                signature:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
+            description: UserProfile 是其他用户可见的公开资料，不含手机号。
+tags:
+    - name: AccountService

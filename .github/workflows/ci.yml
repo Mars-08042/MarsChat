@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # proto 兼容性检查要与基准分支或上一次推送比较，需要完整历史
+          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -26,6 +29,23 @@ jobs:
 
       - name: proto 规范检查
         run: buf lint
+
+      # 规则为 FILE（buf.yaml）：删除或改动已发布的字段、改字段号等会导致已生成代码不兼容的修改都会失败
+      - name: proto 兼容性检查
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            against="origin/$BASE_REF"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            against="$BEFORE"
+          else
+            echo "没有可比较的基准提交（新分支的第一次推送），跳过"
+            exit 0
+          fi
+          buf breaking --against ".git#ref=$against"
 
       - name: 生成代码与提交内容一致
         run: |

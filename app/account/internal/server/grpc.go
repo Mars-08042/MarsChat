@@ -1,17 +1,18 @@
 package server
 
 import (
-	"github.com/go-kratos/kratos/v3/middleware/recovery"
 	"github.com/go-kratos/kratos/v3/transport/grpc"
 
+	v1 "github.com/Mars-08042/MarsChat/api/account/v1"
+	"github.com/Mars-08042/MarsChat/app/account/internal/service"
 	"github.com/Mars-08042/MarsChat/pkg/conf"
 )
 
-// NewGRPCServer 创建 gRPC 服务器。Kratos 默认注册 grpc.health.v1 健康服务，
-// 服务启动时为 SERVING，停止时切换为 NOT_SERVING。
-func NewGRPCServer(c *conf.Server) *grpc.Server {
+// NewGRPCServer 创建 gRPC 服务器，同时提供对外接口和内部接口。Kratos 默认注册 grpc.health.v1
+// 健康服务，服务启动时为 SERVING，停止时切换为 NOT_SERVING。
+func NewGRPCServer(c *conf.Server, mws Middlewares, account *service.AccountService, internal *service.InternalService) *grpc.Server {
 	opts := []grpc.ServerOption{
-		grpc.Middleware(recovery.Recovery()),
+		grpc.Middleware(mws...),
 	}
 	if addr := c.GetGrpc().GetAddr(); addr != "" {
 		opts = append(opts, grpc.Address(addr))
@@ -19,5 +20,8 @@ func NewGRPCServer(c *conf.Server) *grpc.Server {
 	if t := c.GetGrpc().GetTimeout(); t != nil {
 		opts = append(opts, grpc.Timeout(t.AsDuration()))
 	}
-	return grpc.NewServer(opts...)
+	srv := grpc.NewServer(opts...)
+	v1.RegisterAccountServiceServer(srv, account)
+	v1.RegisterAccountInternalServiceServer(srv, internal)
+	return srv
 }

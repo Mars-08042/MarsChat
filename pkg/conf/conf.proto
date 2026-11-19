@@ -4,6 +4,7 @@ syntax = "proto3";
 // 按需组合这里的消息。
 package marschat.conf;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/duration.proto";
 
 option go_package = "github.com/Mars-08042/MarsChat/pkg/conf;conf";
@@ -54,4 +55,21 @@ message Log {
   string level = 1;
   // text 或 json
   string format = 2;
+}
+
+// Auth 是校验访问令牌所需的配置，各服务共用。签发令牌的私钥只在 account 中配置。
+message Auth {
+  // Ed25519 公钥（32 字节）的 base64 标准编码
+  string public_key = 1 [(buf.validate.field).string.min_len = 1];
+  string issuer = 2 [(buf.validate.field).string.min_len = 1];
+  string audience = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+// RateLimit 表示滑动窗口限流：window 时间内最多 limit 次。
+message RateLimit {
+  int32 limit = 1 [(buf.validate.field).int32.gt = 0];
+  google.protobuf.Duration window = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
 }

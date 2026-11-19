@@ -17,12 +17,16 @@ help: ## 列出可用命令
 conf: ## 生成配置 proto 的 Go 代码
 	buf generate --template buf.gen.conf.yaml
 
+.PHONY: api
+api: ## 生成接口 proto 的 gRPC、HTTP 和 OpenAPI 代码
+	buf generate --template buf.gen.yaml
+
 .PHONY: wire
 wire: ## 生成依赖注入代码
 	$(WIRE) $(foreach s,$(SERVICES),./app/$(s)/cmd/$(s))
 
 .PHONY: gen
-gen: conf wire ## 重新生成全部代码
+gen: conf api wire ## 重新生成全部代码
 
 .PHONY: lint
 lint: ## proto 规范检查
@@ -37,8 +41,9 @@ test: ## 单元测试
 	go test ./...
 
 .PHONY: e2e
-e2e: ## 端到端测试，需要先 make up 并启动服务
-	go test -tags e2e -count=1 ./test/e2e/...
+e2e: ## 端到端测试，需要先 make up、make migrate-account 并启动服务
+	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
+	set -a && . ./.env && set +a && go test -tags e2e -count=1 ./test/e2e/...
 
 .PHONY: build
 build: ## 构建全部服务到 bin/
@@ -56,6 +61,18 @@ down: ## 停止依赖组件，保留数据卷
 .PHONY: ps
 ps: ## 查看依赖组件状态
 	docker compose ps
+
+# 数据库迁移，例如 make migrate-account；回滚一步：make migrate-account ARGS="down 1"
+migrate-%: ## 执行服务的数据库迁移，默认 up
+	docker compose run --rm migrate-$* $(or $(ARGS),up)
+
+.PHONY: keys
+keys: ## 生成开发用 JWT 密钥对并写入 .env（已有时不覆盖）
+	go run ./tools/jwtkey -env .env
+
+.PHONY: grant-admin
+grant-admin: ## 把已注册用户设为管理员，例如 make grant-admin PHONE=13800000000
+	sh scripts/grant-admin.sh "$(PHONE)"
 
 # 在宿主机运行服务，自动加载 .env
 # 命令行里只用 ASCII：GnuWin32 make 3.81 按 ANSI 代码页（GBK）把命令传给 sh，

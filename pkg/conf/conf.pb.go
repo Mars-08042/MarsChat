@@ -10,6 +10,7 @@
 package conf
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -336,6 +337,121 @@ func (x *Log) GetFormat() string {
 	return ""
 }
 
+// Auth 是校验访问令牌所需的配置，各服务共用。签发令牌的私钥只在 account 中配置。
+type Auth struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Ed25519 公钥（32 字节）的 base64 标准编码
+	PublicKey     string `protobuf:"bytes,1,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	Issuer        string `protobuf:"bytes,2,opt,name=issuer,proto3" json:"issuer,omitempty"`
+	Audience      string `protobuf:"bytes,3,opt,name=audience,proto3" json:"audience,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Auth) Reset() {
+	*x = Auth{}
+	mi := &file_conf_conf_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Auth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Auth) ProtoMessage() {}
+
+func (x *Auth) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_conf_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Auth.ProtoReflect.Descriptor instead.
+func (*Auth) Descriptor() ([]byte, []int) {
+	return file_conf_conf_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Auth) GetPublicKey() string {
+	if x != nil {
+		return x.PublicKey
+	}
+	return ""
+}
+
+func (x *Auth) GetIssuer() string {
+	if x != nil {
+		return x.Issuer
+	}
+	return ""
+}
+
+func (x *Auth) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+// RateLimit 表示滑动窗口限流：window 时间内最多 limit 次。
+type RateLimit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Window        *durationpb.Duration   `protobuf:"bytes,2,opt,name=window,proto3" json:"window,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RateLimit) Reset() {
+	*x = RateLimit{}
+	mi := &file_conf_conf_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RateLimit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RateLimit) ProtoMessage() {}
+
+func (x *RateLimit) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_conf_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RateLimit.ProtoReflect.Descriptor instead.
+func (*RateLimit) Descriptor() ([]byte, []int) {
+	return file_conf_conf_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RateLimit) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *RateLimit) GetWindow() *durationpb.Duration {
+	if x != nil {
+		return x.Window
+	}
+	return nil
+}
+
 type Server_HTTP struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Addr          string                 `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
@@ -346,7 +462,7 @@ type Server_HTTP struct {
 
 func (x *Server_HTTP) Reset() {
 	*x = Server_HTTP{}
-	mi := &file_conf_conf_proto_msgTypes[5]
+	mi := &file_conf_conf_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -358,7 +474,7 @@ func (x *Server_HTTP) String() string {
 func (*Server_HTTP) ProtoMessage() {}
 
 func (x *Server_HTTP) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[5]
+	mi := &file_conf_conf_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -398,7 +514,7 @@ type Server_GRPC struct {
 
 func (x *Server_GRPC) Reset() {
 	*x = Server_GRPC{}
-	mi := &file_conf_conf_proto_msgTypes[6]
+	mi := &file_conf_conf_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -410,7 +526,7 @@ func (x *Server_GRPC) String() string {
 func (*Server_GRPC) ProtoMessage() {}
 
 func (x *Server_GRPC) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[6]
+	mi := &file_conf_conf_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -452,7 +568,7 @@ type Registry_Consul struct {
 
 func (x *Registry_Consul) Reset() {
 	*x = Registry_Consul{}
-	mi := &file_conf_conf_proto_msgTypes[7]
+	mi := &file_conf_conf_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +580,7 @@ func (x *Registry_Consul) String() string {
 func (*Registry_Consul) ProtoMessage() {}
 
 func (x *Registry_Consul) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[7]
+	mi := &file_conf_conf_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -498,7 +614,7 @@ var File_conf_conf_proto protoreflect.FileDescriptor
 
 const file_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"\x0fconf/conf.proto\x12\rmarschat.conf\x1a\x1egoogle/protobuf/duration.proto\"\x8a\x02\n" +
+	"\x0fconf/conf.proto\x12\rmarschat.conf\x1a\x1bbuf/validate/validate.proto\x1a\x1egoogle/protobuf/duration.proto\"\x8a\x02\n" +
 	"\x06Server\x12.\n" +
 	"\x04http\x18\x01 \x01(\v2\x1a.marschat.conf.Server.HTTPR\x04http\x12.\n" +
 	"\x04grpc\x18\x02 \x01(\v2\x1a.marschat.conf.Server.GRPCR\x04grpc\x1aO\n" +
@@ -528,7 +644,15 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\rwrite_timeout\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\fwriteTimeout\"3\n" +
 	"\x03Log\x12\x14\n" +
 	"\x05level\x18\x01 \x01(\tR\x05level\x12\x16\n" +
-	"\x06format\x18\x02 \x01(\tR\x06formatB.Z,github.com/Mars-08042/MarsChat/pkg/conf;confb\x06proto3"
+	"\x06format\x18\x02 \x01(\tR\x06format\"t\n" +
+	"\x04Auth\x12&\n" +
+	"\n" +
+	"public_key\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tpublicKey\x12\x1f\n" +
+	"\x06issuer\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06issuer\x12#\n" +
+	"\baudience\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\baudience\"j\n" +
+	"\tRateLimit\x12\x1d\n" +
+	"\x05limit\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x05limit\x12>\n" +
+	"\x06window\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\x06windowB.Z,github.com/Mars-08042/MarsChat/pkg/conf;confb\x06proto3"
 
 var (
 	file_conf_conf_proto_rawDescOnce sync.Once
@@ -542,34 +666,37 @@ func file_conf_conf_proto_rawDescGZIP() []byte {
 	return file_conf_conf_proto_rawDescData
 }
 
-var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_conf_conf_proto_goTypes = []any{
 	(*Server)(nil),              // 0: marschat.conf.Server
 	(*Registry)(nil),            // 1: marschat.conf.Registry
 	(*MySQL)(nil),               // 2: marschat.conf.MySQL
 	(*Redis)(nil),               // 3: marschat.conf.Redis
 	(*Log)(nil),                 // 4: marschat.conf.Log
-	(*Server_HTTP)(nil),         // 5: marschat.conf.Server.HTTP
-	(*Server_GRPC)(nil),         // 6: marschat.conf.Server.GRPC
-	(*Registry_Consul)(nil),     // 7: marschat.conf.Registry.Consul
-	(*durationpb.Duration)(nil), // 8: google.protobuf.Duration
+	(*Auth)(nil),                // 5: marschat.conf.Auth
+	(*RateLimit)(nil),           // 6: marschat.conf.RateLimit
+	(*Server_HTTP)(nil),         // 7: marschat.conf.Server.HTTP
+	(*Server_GRPC)(nil),         // 8: marschat.conf.Server.GRPC
+	(*Registry_Consul)(nil),     // 9: marschat.conf.Registry.Consul
+	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
 }
 var file_conf_conf_proto_depIdxs = []int32{
-	5,  // 0: marschat.conf.Server.http:type_name -> marschat.conf.Server.HTTP
-	6,  // 1: marschat.conf.Server.grpc:type_name -> marschat.conf.Server.GRPC
-	7,  // 2: marschat.conf.Registry.consul:type_name -> marschat.conf.Registry.Consul
-	8,  // 3: marschat.conf.MySQL.conn_max_lifetime:type_name -> google.protobuf.Duration
-	8,  // 4: marschat.conf.MySQL.slow_threshold:type_name -> google.protobuf.Duration
-	8,  // 5: marschat.conf.Redis.dial_timeout:type_name -> google.protobuf.Duration
-	8,  // 6: marschat.conf.Redis.read_timeout:type_name -> google.protobuf.Duration
-	8,  // 7: marschat.conf.Redis.write_timeout:type_name -> google.protobuf.Duration
-	8,  // 8: marschat.conf.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	8,  // 9: marschat.conf.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	7,  // 0: marschat.conf.Server.http:type_name -> marschat.conf.Server.HTTP
+	8,  // 1: marschat.conf.Server.grpc:type_name -> marschat.conf.Server.GRPC
+	9,  // 2: marschat.conf.Registry.consul:type_name -> marschat.conf.Registry.Consul
+	10, // 3: marschat.conf.MySQL.conn_max_lifetime:type_name -> google.protobuf.Duration
+	10, // 4: marschat.conf.MySQL.slow_threshold:type_name -> google.protobuf.Duration
+	10, // 5: marschat.conf.Redis.dial_timeout:type_name -> google.protobuf.Duration
+	10, // 6: marschat.conf.Redis.read_timeout:type_name -> google.protobuf.Duration
+	10, // 7: marschat.conf.Redis.write_timeout:type_name -> google.protobuf.Duration
+	10, // 8: marschat.conf.RateLimit.window:type_name -> google.protobuf.Duration
+	10, // 9: marschat.conf.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	10, // 10: marschat.conf.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }
@@ -583,7 +710,7 @@ func file_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conf_conf_proto_rawDesc), len(file_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
