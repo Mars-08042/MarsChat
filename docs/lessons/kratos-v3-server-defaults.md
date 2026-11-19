@@ -1,6 +1,6 @@
 # Kratos v3 服务端的默认组件不能直接用：日志泄露敏感数据、HTTP 不按 protobuf JSON 收发
 
-- 涉及：[pkg/middleware/accesslog/accesslog.go](../../pkg/middleware/accesslog/accesslog.go)、[pkg/jsoncodec/jsoncodec.go](../../pkg/jsoncodec/jsoncodec.go)、[pkg/bootstrap/encoding.go](../../pkg/bootstrap/encoding.go)、[app/account/internal/server/server.go](../../app/account/internal/server/server.go)；Kratos 源码 `github.com/go-kratos/kratos/v3@v3.0.0` 的 `middleware/logging/logging.go`、`middleware/recovery/recovery.go`、`errors/errors.go`、`encoding/json/json.go`、`transport/http/codec.go`
+- 涉及：[pkg/middleware/accesslog/accesslog.go](../../pkg/middleware/accesslog/accesslog.go)、[pkg/jsoncodec/jsoncodec.go](../../pkg/jsoncodec/jsoncodec.go)、[pkg/bootstrap/encoding.go](../../pkg/bootstrap/encoding.go)、[pkg/bootstrap/middleware.go](../../pkg/bootstrap/middleware.go)；Kratos 源码 `github.com/go-kratos/kratos/v3@v3.0.0` 的 `middleware/logging/logging.go`、`middleware/recovery/recovery.go`、`errors/errors.go`、`encoding/json/json.go`、`transport/http/codec.go`
 - 发现时间：2026-11-18，重构步骤 2 实现 account 服务时
 
 两个问题的共同点：照着 Kratos 示例直接挂上默认的中间件和编码，功能上都能跑通，问题只在特定输入或审查日志时才暴露。
@@ -94,7 +94,7 @@ Kratos 提供了 contrib 兼容包 `contrib/encoding/json/v3`，行为相同，�
 
 ## 预防
 
-- 不使用 Kratos 自带的 `logging`、`recovery` 中间件；新服务的中间件链照 account 的 `server.go` 组装，`accesslog` 放在最外层。
+- 不使用 Kratos 自带的 `logging`、`recovery` 中间件；新服务的中间件链用 `bootstrap.ServerMiddlewares` 组装（步骤 3 从 account 的 `server.go` 抽出），`accesslog` 在最外层。
 - 任何会写日志的地方都不要整体打印请求、响应或配置对象，只挑需要的字段；手机号用 `biz.MaskPhone` 脱敏。
 - 新服务都通过 `pkg/bootstrap` 启动，不要绕过它直接创建 HTTP 服务器，否则 `pkg/jsoncodec` 不会生效。
 - 升级 Kratos 时，检查 `encoding/json`、`logging`、`recovery`、`errors.FromError` 的行为是否有变化。`pkg/jsoncodec` 和 `pkg/middleware/accesslog` 的测试会先失败。

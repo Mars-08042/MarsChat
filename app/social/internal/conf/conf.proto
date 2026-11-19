@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package marschat.social.conf;
 
+import "buf/validate/validate.proto";
 import "conf/conf.proto";
+import "google/protobuf/duration.proto";
 
 option go_package = "github.com/Mars-08042/MarsChat/app/social/internal/conf;conf";
 
@@ -12,4 +14,57 @@ message Bootstrap {
   marschat.conf.MySQL mysql = 3;
   marschat.conf.Redis redis = 4;
   marschat.conf.Log log = 5;
+  marschat.conf.Auth auth = 6 [(buf.validate.field).required = true];
+  Account account = 7 [(buf.validate.field).required = true];
+  Cache cache = 8 [(buf.validate.field).required = true];
+  // 可热更新，见 Policy
+  Policy policy = 9 [(buf.validate.field).required = true];
+}
+
+// Account 是调用 account 服务的配置，修改后需要重启。
+message Account {
+  // gRPC 地址，默认 discovery:///marschat-account 经 Consul 发现
+  string endpoint = 1 [(buf.validate.field).string.min_len = 1];
+  // 单次调用超时
+  google.protobuf.Duration timeout = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}
+
+// Cache 修改后需要重启。
+message Cache {
+  google.protobuf.Duration group_ttl = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  google.protobuf.Duration members_ttl = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 不存在的群 ID 的空值缓存时间
+  google.protobuf.Duration null_ttl = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}
+
+// Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
+message Policy {
+  // 每人发送好友申请的频率
+  marschat.conf.RateLimit friend_request = 1 [(buf.validate.field).required = true];
+  // 每人建群的频率
+  marschat.conf.RateLimit group_create = 2 [(buf.validate.field).required = true];
+  // 每人申请入群的频率（直接加入的群也计入）
+  marschat.conf.RateLimit join_request = 3 [(buf.validate.field).required = true];
+  // 群成员上限（含群主）。调低时不移除已有成员，只影响之后的加入
+  int32 max_group_members = 4 [(buf.validate.field).int32 = {
+    gte: 2
+    lte: 2000
+  }];
+  // 建群时初始成员上限（不含群主）
+  int32 max_initial_members = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
 }

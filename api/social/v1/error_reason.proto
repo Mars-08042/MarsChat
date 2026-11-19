@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package social.v1;
+
+option go_package = "github.com/Mars-08042/MarsChat/api/social/v1;v1";
+
+// ErrorReason 是 social 服务的业务错误原因，原样作为 Kratos 错误的 reason 返回。
+// 访问令牌缺失、无效、过期或已吊销时，reason 为 UNAUTHORIZED（由 pkg/auth 返回）；
+// 请求参数不符合校验规则时，reason 为 VALIDATOR。
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+
+  // 400：操作对象不能是自己（加自己为好友、拉黑自己、禁言自己等）
+  CANNOT_TARGET_SELF = 1;
+
+  // 403：任何一方拉黑了另一方，不能申请好友
+  FRIEND_REQUEST_NOT_ALLOWED = 10;
+  // 403：对方不是好友（单聊发消息、邀请入群）
+  NOT_FRIENDS = 11;
+  // 403：任何一方拉黑了另一方，不能单聊
+  BLOCKED = 12;
+  // 403：当前角色不能执行该群操作
+  GROUP_PERMISSION_DENIED = 13;
+  // 403：当前用户不是群成员
+  NOT_GROUP_MEMBER = 14;
+  // 403：当前用户被单人禁言
+  MEMBER_MUTED = 15;
+  // 403：群开启了全员禁言，只有群主和管理员能发言
+  GROUP_MUTED = 16;
+
+  // 404：用户不存在或已封禁
+  USER_NOT_FOUND = 20;
+  // 404：好友申请不存在，或不是发给当前用户的
+  FRIEND_REQUEST_NOT_FOUND = 21;
+  // 404：群不存在
+  GROUP_NOT_FOUND = 22;
+  // 404：入群申请不存在
+  GROUP_JOIN_REQUEST_NOT_FOUND = 23;
+  // 404：操作对象不是群成员
+  GROUP_MEMBER_NOT_FOUND = 24;
+
+  // 409：已经是好友
+  ALREADY_FRIENDS = 30;
+  // 409：申请已被处理（同意、拒绝或失效）
+  REQUEST_ALREADY_HANDLED = 31;
+  // 409：已经是群成员
+  ALREADY_GROUP_MEMBER = 32;
+  // 409：群成员已达上限
+  GROUP_FULL = 33;
+  // 409：群已解散
+  GROUP_DISMISSED = 34;
+  // 409：群资料已被他人修改，需要重新读取后再改
+  GROUP_VERSION_CONFLICT = 35;
+  // 409：群主不能直接退群，需要先转让群主
+  OWNER_CANNOT_LEAVE = 36;
+
+  // 429：操作过于频繁，metadata 中 retry_after_seconds 为需要等待的秒数
+  RATE_LIMITED = 40;
+
+  // 503：依赖的服务不可用，可以稍后重试
+  DEPENDENCY_UNAVAILABLE = 50;
+}

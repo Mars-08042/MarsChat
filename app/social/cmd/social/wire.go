@@ -10,12 +10,17 @@ import (
 	"github.com/go-kratos/kratos/v3"
 	"github.com/google/wire"
 
+	"github.com/Mars-08042/MarsChat/app/social/internal/biz"
+	"github.com/Mars-08042/MarsChat/app/social/internal/conf"
 	"github.com/Mars-08042/MarsChat/app/social/internal/data"
 	"github.com/Mars-08042/MarsChat/app/social/internal/server"
+	"github.com/Mars-08042/MarsChat/app/social/internal/service"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
-	"github.com/Mars-08042/MarsChat/pkg/conf"
+	pkgconf "github.com/Mars-08042/MarsChat/pkg/conf"
 )
 
-func wireApp(*conf.Server, *conf.Registry, *conf.MySQL, *conf.Redis, *slog.Logger) (*kratos.App, func(), error) {
-	panic(wire.Build(server.ProviderSet, data.ProviderSet, bootstrap.NewConsulRegistry, newApp))
+func wireApp(*pkgconf.Server, *pkgconf.Registry, *pkgconf.MySQL, *pkgconf.Redis, *pkgconf.Auth,
+	*conf.Account, *conf.Cache, *biz.PolicyHolder, *slog.Logger) (*kratos.App, func(), error) {
+	panic(wire.Build(server.ProviderSet, service.ProviderSet, biz.ProviderSet, data.ProviderSet,
+		bootstrap.NewConsulRegistry, newApp))
 }

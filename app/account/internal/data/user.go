@@ -12,6 +12,7 @@ import (
 
 	"github.com/Mars-08042/MarsChat/app/account/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/account/internal/conf"
+	"github.com/Mars-08042/MarsChat/pkg/bloom"
 	"github.com/Mars-08042/MarsChat/pkg/cache"
 )
 
@@ -80,7 +81,7 @@ func userCacheKey(id int64) string {
 type userRepo struct {
 	d      *Data
 	cache  *cache.Cache[cachedUser]
-	bloom  *userBloom
+	bloom  *bloom.Filter
 	logger *slog.Logger
 }
 
@@ -92,10 +93,15 @@ func NewUserRepo(d *Data, c *conf.Cache, logger *slog.Logger) biz.UserRepo {
 			TTL:     c.GetUserTtl().AsDuration(),
 			NullTTL: c.GetNullTtl().AsDuration(),
 		}, logger),
-		bloom:  newUserBloom(d, logger),
 		logger: logger,
 	}
-	r.bloom.ensureReady(context.Background())
+	r.bloom = bloom.New(d.rdb, bloom.Options{
+		Key:       "account:user_bf",
+		Capacity:  1_000_000,
+		ErrorRate: 0.001,
+		Scan:      r.scanIDs,
+	}, logger)
+	r.bloom.EnsureReady(context.Background())
 	return r
 }
 
@@ -188,7 +194,7 @@ func (r *userRepo) GetCached(ctx context.Context, id int64) (*biz.User, error) {
 	v, err := r.cache.Get(ctx, userCacheKey(id), func(ctx context.Context) (cachedUser, error) {
 		// 只在缓存未命中时查布隆过滤器：命中时少一次 Redis 往返；
 		// 判定不存在时同样写入空值标记，短时间内重复的非法 ID 连过滤器也不用查
-		if !r.bloom.mightExist(ctx, id) {
+		if !r.bloom.MightExist(ctx, id) {
 			return cachedUser{}, cache.ErrNotFound
 		}
 		po, err := r.findPO(ctx, "id = ?", id)
@@ -252,5 +258,13 @@ func (r *userRepo) EvictCache(ctx context.Context, id int64) {
 }
 
 func (r *userRepo) OnRegistered(ctx context.Context, id int64) {
-	r.bloom.add(context.WithoutCancel(ctx), id)
+	r.bloom.Add(ctx, id)
+}
+
+// scanIDs 供布隆过滤器重建时分页扫描全部用户 ID。
+func (r *userRepo) scanIDs(ctx context.Context, after int64, limit int) ([]int64, error) {
+	var ids []int64
+	err := r.d.db.WithContext(ctx).Model(&userPO{}).
+		Where("id > ?", after).Order("id").Limit(limit).Pluck("id", &ids).Error
+	return ids, err
 }

@@ -41,7 +41,7 @@ test: ## 单元测试
 	go test ./...
 
 .PHONY: e2e
-e2e: ## 端到端测试，需要先 make up、make migrate-account 并启动服务
+e2e: ## 端到端测试，需要先 make up、迁移各服务（make migrate-account、make migrate-social）并启动服务
 	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
 	set -a && . ./.env && set +a && go test -tags e2e -count=1 ./test/e2e/...
 

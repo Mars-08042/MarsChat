@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package social.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+import "social/v1/social.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/social/v1;v1";
+
+// SocialInternalService 只供其他服务通过 gRPC 调用，不经网关暴露（没有 HTTP 注解）。
+service SocialInternalService {
+  // 校验发送者能否向会话发消息，message 每条消息调用一次。允许时返回空响应；
+  // 不允许时返回带原因的业务错误（NOT_FRIENDS、BLOCKED、NOT_GROUP_MEMBER、MEMBER_MUTED、GROUP_MUTED 等），
+  // 调用方原样转给客户端。
+  rpc CheckSendPermission(CheckSendPermissionRequest) returns (CheckSendPermissionResponse);
+  // 返回群的全部成员，delivery 每条群消息调用一次。走成员列表缓存。
+  rpc ListAllGroupMembers(ListAllGroupMembersRequest) returns (ListAllGroupMembersResponse);
+  // 批量获取群资料，不存在的 ID 不出现在结果中。走群资料缓存。
+  rpc BatchGetGroups(BatchGetGroupsRequest) returns (BatchGetGroupsResponse);
+}
+
+// 会话对端的类型。
+enum PeerType {
+  PEER_TYPE_UNSPECIFIED = 0;
+  // 单聊，peer_id 为对方用户 ID
+  PEER_TYPE_USER = 1;
+  // 群聊，peer_id 为群 ID
+  PEER_TYPE_GROUP = 2;
+}
+
+message CheckSendPermissionRequest {
+  int64 sender_id = 1 [(buf.validate.field).int64.gt = 0];
+  PeerType peer_type = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  int64 peer_id = 3 [(buf.validate.field).int64.gt = 0];
+}
+
+message CheckSendPermissionResponse {}
+
+message ListAllGroupMembersRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+// GroupMemberState 是投递和权限校验需要的成员信息。
+message GroupMemberState {
+  int64 user_id = 1;
+  GroupRole role = 2;
+  // 单人禁言截止时间，未禁言时不返回；调用方自行与当前时间比较
+  google.protobuf.Timestamp muted_until = 3;
+}
+
+message ListAllGroupMembersResponse {
+  repeated GroupMemberState members = 1;
+}
+
+message BatchGetGroupsRequest {
+  repeated int64 group_ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+    unique: true
+    items: {
+      int64: {gt: 0}
+    }
+  }];
+}
+
+message BatchGetGroupsResponse {
+  // my_role 不填
+  repeated Group groups = 1;
+}

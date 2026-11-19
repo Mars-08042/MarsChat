@@ -7,9 +7,11 @@
 package conf
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	conf "github.com/Mars-08042/MarsChat/pkg/conf"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -23,12 +25,17 @@ const (
 )
 
 type Bootstrap struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Server        *conf.Server           `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
-	Registry      *conf.Registry         `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
-	Mysql         *conf.MySQL            `protobuf:"bytes,3,opt,name=mysql,proto3" json:"mysql,omitempty"`
-	Redis         *conf.Redis            `protobuf:"bytes,4,opt,name=redis,proto3" json:"redis,omitempty"`
-	Log           *conf.Log              `protobuf:"bytes,5,opt,name=log,proto3" json:"log,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Server   *conf.Server           `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
+	Registry *conf.Registry         `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
+	Mysql    *conf.MySQL            `protobuf:"bytes,3,opt,name=mysql,proto3" json:"mysql,omitempty"`
+	Redis    *conf.Redis            `protobuf:"bytes,4,opt,name=redis,proto3" json:"redis,omitempty"`
+	Log      *conf.Log              `protobuf:"bytes,5,opt,name=log,proto3" json:"log,omitempty"`
+	Auth     *conf.Auth             `protobuf:"bytes,6,opt,name=auth,proto3" json:"auth,omitempty"`
+	Account  *Account               `protobuf:"bytes,7,opt,name=account,proto3" json:"account,omitempty"`
+	Cache    *Cache                 `protobuf:"bytes,8,opt,name=cache,proto3" json:"cache,omitempty"`
+	// 可热更新，见 Policy
+	Policy        *Policy `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -98,17 +105,264 @@ func (x *Bootstrap) GetLog() *conf.Log {
 	return nil
 }
 
+func (x *Bootstrap) GetAuth() *conf.Auth {
+	if x != nil {
+		return x.Auth
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetAccount() *Account {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetCache() *Cache {
+	if x != nil {
+		return x.Cache
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetPolicy() *Policy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+// Account 是调用 account 服务的配置，修改后需要重启。
+type Account struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// gRPC 地址，默认 discovery:///marschat-account 经 Consul 发现
+	Endpoint string `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	// 单次调用超时
+	Timeout       *durationpb.Duration `protobuf:"bytes,2,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Account) Reset() {
+	*x = Account{}
+	mi := &file_social_internal_conf_conf_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Account) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Account) ProtoMessage() {}
+
+func (x *Account) ProtoReflect() protoreflect.Message {
+	mi := &file_social_internal_conf_conf_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Account.ProtoReflect.Descriptor instead.
+func (*Account) Descriptor() ([]byte, []int) {
+	return file_social_internal_conf_conf_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Account) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *Account) GetTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.Timeout
+	}
+	return nil
+}
+
+// Cache 修改后需要重启。
+type Cache struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	GroupTtl   *durationpb.Duration   `protobuf:"bytes,1,opt,name=group_ttl,json=groupTtl,proto3" json:"group_ttl,omitempty"`
+	MembersTtl *durationpb.Duration   `protobuf:"bytes,2,opt,name=members_ttl,json=membersTtl,proto3" json:"members_ttl,omitempty"`
+	// 不存在的群 ID 的空值缓存时间
+	NullTtl       *durationpb.Duration `protobuf:"bytes,3,opt,name=null_ttl,json=nullTtl,proto3" json:"null_ttl,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Cache) Reset() {
+	*x = Cache{}
+	mi := &file_social_internal_conf_conf_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Cache) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Cache) ProtoMessage() {}
+
+func (x *Cache) ProtoReflect() protoreflect.Message {
+	mi := &file_social_internal_conf_conf_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Cache.ProtoReflect.Descriptor instead.
+func (*Cache) Descriptor() ([]byte, []int) {
+	return file_social_internal_conf_conf_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Cache) GetGroupTtl() *durationpb.Duration {
+	if x != nil {
+		return x.GroupTtl
+	}
+	return nil
+}
+
+func (x *Cache) GetMembersTtl() *durationpb.Duration {
+	if x != nil {
+		return x.MembersTtl
+	}
+	return nil
+}
+
+func (x *Cache) GetNullTtl() *durationpb.Duration {
+	if x != nil {
+		return x.NullTtl
+	}
+	return nil
+}
+
+// Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
+type Policy struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 每人发送好友申请的频率
+	FriendRequest *conf.RateLimit `protobuf:"bytes,1,opt,name=friend_request,json=friendRequest,proto3" json:"friend_request,omitempty"`
+	// 每人建群的频率
+	GroupCreate *conf.RateLimit `protobuf:"bytes,2,opt,name=group_create,json=groupCreate,proto3" json:"group_create,omitempty"`
+	// 每人申请入群的频率（直接加入的群也计入）
+	JoinRequest *conf.RateLimit `protobuf:"bytes,3,opt,name=join_request,json=joinRequest,proto3" json:"join_request,omitempty"`
+	// 群成员上限（含群主）。调低时不移除已有成员，只影响之后的加入
+	MaxGroupMembers int32 `protobuf:"varint,4,opt,name=max_group_members,json=maxGroupMembers,proto3" json:"max_group_members,omitempty"`
+	// 建群时初始成员上限（不含群主）
+	MaxInitialMembers int32 `protobuf:"varint,5,opt,name=max_initial_members,json=maxInitialMembers,proto3" json:"max_initial_members,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *Policy) Reset() {
+	*x = Policy{}
+	mi := &file_social_internal_conf_conf_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Policy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Policy) ProtoMessage() {}
+
+func (x *Policy) ProtoReflect() protoreflect.Message {
+	mi := &file_social_internal_conf_conf_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Policy.ProtoReflect.Descriptor instead.
+func (*Policy) Descriptor() ([]byte, []int) {
+	return file_social_internal_conf_conf_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Policy) GetFriendRequest() *conf.RateLimit {
+	if x != nil {
+		return x.FriendRequest
+	}
+	return nil
+}
+
+func (x *Policy) GetGroupCreate() *conf.RateLimit {
+	if x != nil {
+		return x.GroupCreate
+	}
+	return nil
+}
+
+func (x *Policy) GetJoinRequest() *conf.RateLimit {
+	if x != nil {
+		return x.JoinRequest
+	}
+	return nil
+}
+
+func (x *Policy) GetMaxGroupMembers() int32 {
+	if x != nil {
+		return x.MaxGroupMembers
+	}
+	return 0
+}
+
+func (x *Policy) GetMaxInitialMembers() int32 {
+	if x != nil {
+		return x.MaxInitialMembers
+	}
+	return 0
+}
+
 var File_social_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_social_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"\x1fsocial/internal/conf/conf.proto\x12\x14marschat.social.conf\x1a\x0fconf/conf.proto\"\xed\x01\n" +
+	"\x1fsocial/internal/conf/conf.proto\x12\x14marschat.social.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xd8\x03\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
 	"\x05mysql\x18\x03 \x01(\v2\x14.marschat.conf.MySQLR\x05mysql\x12*\n" +
 	"\x05redis\x18\x04 \x01(\v2\x14.marschat.conf.RedisR\x05redis\x12$\n" +
-	"\x03log\x18\x05 \x01(\v2\x12.marschat.conf.LogR\x03logB>Z<github.com/Mars-08042/MarsChat/app/social/internal/conf;confb\x06proto3"
+	"\x03log\x18\x05 \x01(\v2\x12.marschat.conf.LogR\x03log\x12/\n" +
+	"\x04auth\x18\x06 \x01(\v2\x13.marschat.conf.AuthB\x06\xbaH\x03\xc8\x01\x01R\x04auth\x12?\n" +
+	"\aaccount\x18\a \x01(\v2\x1d.marschat.social.conf.AccountB\x06\xbaH\x03\xc8\x01\x01R\aaccount\x129\n" +
+	"\x05cache\x18\b \x01(\v2\x1b.marschat.social.conf.CacheB\x06\xbaH\x03\xc8\x01\x01R\x05cache\x12<\n" +
+	"\x06policy\x18\t \x01(\v2\x1c.marschat.social.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\"p\n" +
+	"\aAccount\x12#\n" +
+	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"\xd8\x01\n" +
+	"\x05Cache\x12C\n" +
+	"\tgroup_ttl\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\bgroupTtl\x12G\n" +
+	"\vmembers_ttl\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\n" +
+	"membersTtl\x12A\n" +
+	"\bnull_ttl\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\anullTtl\"\xcf\x02\n" +
+	"\x06Policy\x12G\n" +
+	"\x0efriend_request\x18\x01 \x01(\v2\x18.marschat.conf.RateLimitB\x06\xbaH\x03\xc8\x01\x01R\rfriendRequest\x12C\n" +
+	"\fgroup_create\x18\x02 \x01(\v2\x18.marschat.conf.RateLimitB\x06\xbaH\x03\xc8\x01\x01R\vgroupCreate\x12C\n" +
+	"\fjoin_request\x18\x03 \x01(\v2\x18.marschat.conf.RateLimitB\x06\xbaH\x03\xc8\x01\x01R\vjoinRequest\x126\n" +
+	"\x11max_group_members\x18\x04 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xd0\x0f(\x02R\x0fmaxGroupMembers\x12:\n" +
+	"\x13max_initial_members\x18\x05 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xf4\x03(\x00R\x11maxInitialMembersB>Z<github.com/Mars-08042/MarsChat/app/social/internal/conf;confb\x06proto3"
 
 var (
 	file_social_internal_conf_conf_proto_rawDescOnce sync.Once
@@ -122,26 +376,43 @@ func file_social_internal_conf_conf_proto_rawDescGZIP() []byte {
 	return file_social_internal_conf_conf_proto_rawDescData
 }
 
-var file_social_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_social_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_social_internal_conf_conf_proto_goTypes = []any{
-	(*Bootstrap)(nil),     // 0: marschat.social.conf.Bootstrap
-	(*conf.Server)(nil),   // 1: marschat.conf.Server
-	(*conf.Registry)(nil), // 2: marschat.conf.Registry
-	(*conf.MySQL)(nil),    // 3: marschat.conf.MySQL
-	(*conf.Redis)(nil),    // 4: marschat.conf.Redis
-	(*conf.Log)(nil),      // 5: marschat.conf.Log
+	(*Bootstrap)(nil),           // 0: marschat.social.conf.Bootstrap
+	(*Account)(nil),             // 1: marschat.social.conf.Account
+	(*Cache)(nil),               // 2: marschat.social.conf.Cache
+	(*Policy)(nil),              // 3: marschat.social.conf.Policy
+	(*conf.Server)(nil),         // 4: marschat.conf.Server
+	(*conf.Registry)(nil),       // 5: marschat.conf.Registry
+	(*conf.MySQL)(nil),          // 6: marschat.conf.MySQL
+	(*conf.Redis)(nil),          // 7: marschat.conf.Redis
+	(*conf.Log)(nil),            // 8: marschat.conf.Log
+	(*conf.Auth)(nil),           // 9: marschat.conf.Auth
+	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
+	(*conf.RateLimit)(nil),      // 11: marschat.conf.RateLimit
 }
 var file_social_internal_conf_conf_proto_depIdxs = []int32{
-	1, // 0: marschat.social.conf.Bootstrap.server:type_name -> marschat.conf.Server
-	2, // 1: marschat.social.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
-	3, // 2: marschat.social.conf.Bootstrap.mysql:type_name -> marschat.conf.MySQL
-	4, // 3: marschat.social.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
-	5, // 4: marschat.social.conf.Bootstrap.log:type_name -> marschat.conf.Log
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	4,  // 0: marschat.social.conf.Bootstrap.server:type_name -> marschat.conf.Server
+	5,  // 1: marschat.social.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
+	6,  // 2: marschat.social.conf.Bootstrap.mysql:type_name -> marschat.conf.MySQL
+	7,  // 3: marschat.social.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
+	8,  // 4: marschat.social.conf.Bootstrap.log:type_name -> marschat.conf.Log
+	9,  // 5: marschat.social.conf.Bootstrap.auth:type_name -> marschat.conf.Auth
+	1,  // 6: marschat.social.conf.Bootstrap.account:type_name -> marschat.social.conf.Account
+	2,  // 7: marschat.social.conf.Bootstrap.cache:type_name -> marschat.social.conf.Cache
+	3,  // 8: marschat.social.conf.Bootstrap.policy:type_name -> marschat.social.conf.Policy
+	10, // 9: marschat.social.conf.Account.timeout:type_name -> google.protobuf.Duration
+	10, // 10: marschat.social.conf.Cache.group_ttl:type_name -> google.protobuf.Duration
+	10, // 11: marschat.social.conf.Cache.members_ttl:type_name -> google.protobuf.Duration
+	10, // 12: marschat.social.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
+	11, // 13: marschat.social.conf.Policy.friend_request:type_name -> marschat.conf.RateLimit
+	11, // 14: marschat.social.conf.Policy.group_create:type_name -> marschat.conf.RateLimit
+	11, // 15: marschat.social.conf.Policy.join_request:type_name -> marschat.conf.RateLimit
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_social_internal_conf_conf_proto_init() }
@@ -155,7 +426,7 @@ func file_social_internal_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_social_internal_conf_conf_proto_rawDesc), len(file_social_internal_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

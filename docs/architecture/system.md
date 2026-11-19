@@ -1,10 +1,10 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 2（2026-11-18）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 3（2026-11-19）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
-- 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 仍是空骨架，只能启动、连接依赖并注册到 Consul。
+- 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)。
 - 开发阶段服务运行在宿主机，监听 `127.0.0.1`；MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。服务从步骤 5 起打包进容器。
 - 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
@@ -24,13 +24,14 @@ app/<服务>/
   migrations/            版本化 SQL 迁移（golang-migrate 格式）
 api/<服务>/v1/           接口契约 *.proto 及生成代码；api/openapi.yaml 为生成的 OpenAPI 文档
 pkg/conf/                跨服务共用的配置消息（conf.proto）
-pkg/bootstrap/           启动公共组件：配置加载与热更新、日志、注册中心、MySQL、Redis、健康检查
+pkg/bootstrap/           启动公共组件：配置加载与热更新、日志、注册中心、MySQL、Redis、健康检查、服务端中间件链
 pkg/balancer/            设置 Kratos gRPC 负载均衡的全局选择器（修复 v3.0.0 的初始化顺序问题）
 pkg/jsoncodec/           HTTP 的 json codec 按 protobuf JSON 规则处理 proto 消息（Kratos v3 默认不这样做）
 pkg/middleware/accesslog/ 访问日志、panic 恢复与内部错误脱敏中间件
 pkg/auth/                访问令牌签发（只有 account 使用）、校验中间件、吊销名单、当前用户
 pkg/idgen/               snowflake ID，节点号用 Redis 租约分配
-pkg/cache/               Cache-Aside 缓存组件
+pkg/cache/               Cache-Aside 缓存组件，可选跨实例重建锁
+pkg/bloom/               RedisBloom ID 布隆过滤器（就绪标记、脏标记、分布式重建）
 pkg/ratelimit/           Redis 滑动窗口限流
 pkg/outbox/              事务 Outbox 的写入端
 pkg/clientip/            按可信代理解析客户端 IP
@@ -59,12 +60,12 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 
 ## 4. 启动流程
 
-以 account 为例（[main.go](../../app/account/cmd/account/main.go)）：
+以 account 为例（[main.go](../../app/account/cmd/account/main.go)），social 相同：
 
 1. 读取 `-conf` 指定的配置目录（默认 `app/account/configs`），解析到 `conf.Bootstrap` 并按 protovalidate 规则校验，不合法时启动失败。配置对象保持打开，用于热更新。
 2. 按 `log` 配置创建 `slog` 日志器，设为 Kratos 默认日志器。
 3. 用 `policy` 段创建 `biz.PolicyHolder`，并监听配置文件的 `policy` 段（见 5.1）。
-4. `wireApp` 创建：Consul 注册中心、Redis 客户端（ping 一次）、MySQL 连接池（`gorm.Open` 立即 ping）、snowflake 生成器（抢占节点号租约）、各 repo 与用例、gRPC 与 HTTP 服务器。令牌密钥不合法、公钥与私钥不匹配、`revocation_ttl` 小于访问令牌有效期、固定验证码配在非 `log` 发送方上时都会启动失败。任一依赖不可用时退出，退出码为 1。用户 ID 布隆过滤器未就绪时在后台重建，不阻塞启动。
+4. `wireApp` 创建：Consul 注册中心、Redis 客户端（ping 一次）、MySQL 连接池（`gorm.Open` 立即 ping）、snowflake 生成器（抢占节点号租约）、各 repo 与用例、gRPC 与 HTTP 服务器。令牌密钥不合法、公钥与私钥不匹配、`revocation_ttl` 小于访问令牌有效期、固定验证码配在非 `log` 发送方上时都会启动失败。任一依赖不可用时退出，退出码为 1。布隆过滤器（account 的用户 ID、social 的群 ID）未就绪时在后台重建，不阻塞启动。social 的 account 客户端是惰性连接，account 不可用不影响 social 启动。
 5. `app.Run()` 启动服务器并注册到 Consul；收到 SIGINT/SIGTERM 后先从 Consul 注销，再停止服务器，最后按创建的逆序释放节点号租约、关闭 MySQL、Redis。
 
 ## 5. 横切约定
@@ -75,7 +76,7 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 - 配置文件中的 `${XXX}` 引用环境变量 `MARSCHAT_XXX`，`${XXX:默认值}` 在变量缺失时取默认值。默认值对应本地开发环境，密码只能来自环境变量。引用的变量缺失且没有默认值时会替换成空字符串，不会报错，密码缺失会在连接依赖时失败。
 - 时长字段按 protobuf `Duration` 的 JSON 格式书写，单位只能是秒（`0.5s`、`3600s`），写成 `500ms`、`1h` 会导致启动失败。每个服务都有解析真实配置文件的单元测试。
 - 配置结构用 protovalidate 规则约束（例如限额必须大于 0），加载时校验。
-- **热更新**：`bootstrap.WatchConfig` 监听某一段配置，文件变化后重新解析、校验，通过才原子替换，不通过时保留旧值并记录错误日志。目前只有 account 的 `policy` 段（短信与登录防护的限额）热更新，读取方每个请求取一次快照；其余配置修改后需要重启。
+- **热更新**：`bootstrap.WatchConfig` 监听某一段配置，文件变化后重新解析、校验，通过才原子替换，不通过时保留旧值并记录错误日志。目前 account 的 `policy` 段（短信与登录防护的限额）和 social 的 `policy` 段（申请、建群频率与群成员上限）热更新，读取方每个请求取一次快照；其余配置修改后需要重启。
 
 ### 5.2 日志
 
@@ -89,12 +90,15 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 - 注册中心是 Consul，服务名为 `marschat-<服务>`。实例 ID 为 `<服务名>-<主机名>-<进程号>`：Consul 要求同一 agent 上的实例 ID 唯一，本地多个服务共用一台主机，只用主机名会互相覆盖。
 - 实例注册时登记 gRPC 和 HTTP 两个端点，带 TTL 心跳检查（每 10 秒上报，20 秒未上报变为 critical，critical 持续 10 分钟后注销）。发现方只拿到检查通过的实例。
 - `registry.consul.health_check` 控制是否让 Consul 主动 TCP 探测服务端口。本地开发时为 `false`：服务监听宿主机 `127.0.0.1`，容器里的 Consul 探测不到。服务容器化（步骤 5）后开启。
-- 服务间调用用 Kratos gRPC 客户端，地址写成 `discovery:///marschat-<服务>`，负载均衡为加权轮询（wrr）。
+- 服务间调用用 Kratos gRPC 客户端，地址写成 `discovery:///marschat-<服务>`，负载均衡为加权轮询（wrr）。目前唯一的调用是 social → account 的 `BatchGetUsers`（[account.go](../../app/social/internal/data/account.go)）：
+  - 超时 1 秒（`account.timeout`），同时是服务发现首次解析的等待上限；客户端没有重试与熔断，步骤 5 加入。
+  - 连接惰性建立（`grpc.NewClient`），被调用方暂时不可用不影响调用方启动；就绪探针也不检查它，被调用方故障时调用方降级运行，而不是被摘掉流量。
+  - 失败时 data 层统一包装成 `biz.ErrUnavailable`，由 biz 决定是返回 `503 DEPENDENCY_UNAVAILABLE`（写操作需要的校验）还是降级（列表资料补全留空并记 WARN）。
 - Kratos v3.0.0 的 gRPC 负载均衡器在包初始化时就读取了全局选择器，而默认选择器设置得更晚，经服务发现调用会空指针 panic。`pkg/balancer` 在更早的初始化阶段设置选择器，`pkg/bootstrap` 匿名导入了它；不使用 bootstrap 的程序（如 e2e 测试）要自己匿名导入 `pkg/balancer`。原因与验证见 [lessons/kratos-grpc-selector-nil.md](../lessons/kratos-grpc-selector-nil.md)。
 
 ### 5.4 中间件与鉴权
 
-HTTP 与 gRPC 共用同一条中间件链（[server.go](../../app/account/internal/server/server.go)），从外到内：
+HTTP 与 gRPC 共用同一条中间件链，由 [bootstrap.ServerMiddlewares](../../pkg/bootstrap/middleware.go) 组装，各服务只提供“哪些操作需要登录”的判断函数（account 用公开接口白名单，social 的对外接口全部需要登录）。从外到内：
 
 1. `accesslog`：访问日志、panic 恢复；非 Kratos 错误（数据库、Redis 等）记日志后换成 `500 INTERNAL`，不把内部信息返回给客户端。
 2. 令牌校验 `pkg/auth.Server`，用 Kratos `selector` 只作用于需要登录的接口。公开接口用白名单列出，新增的接口默认需要登录。
@@ -106,7 +110,7 @@ HTTP 与 gRPC 共用同一条中间件链（[server.go](../../app/account/intern
 - 校验：解析阶段只接受 EdDSA（防算法混淆），检查签发方、受众、过期时间和签发时间；再用一次 `MGET` 查 Redis 吊销名单（会话级、用户级），最后把 `auth.Principal`（用户 ID、会话 ID、角色、签发时间）放进 context，业务代码用 `auth.FromContext` 取。
 - Redis 故障时吊销检查放行并记 WARN（开发者确认的取舍）。
 - 刷新令牌、吊销名单的细节见 [account 设计 3.2](../design/account-service.md#32-令牌)，键见 [data-model.md](data-model.md#3-redis-键)。
-- 内部接口（如 `AccountInternalService`）只注册在 gRPC 上，不经过令牌校验；服务网络不对外暴露，服务间认证（mTLS）为后续扩展。
+- 内部接口（`AccountInternalService`、`SocialInternalService`）只注册在 gRPC 上，不经过令牌校验；服务网络不对外暴露，服务间认证见 TD-26。
 
 客户端 IP：`pkg/clientip` 只在请求来自 `security.trusted_proxies` 中的地址时才读取 `X-Forwarded-For`，并取最右边一个不可信的地址；默认不信任任何代理，步骤 5 填入网关地址。
 
@@ -136,16 +140,24 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - 依赖 `buf.build/googleapis/googleapis`（HTTP 注解）和 `buf.build/bufbuild/protovalidate`（校验规则），版本锁定在 `buf.lock`。
 - 兼容性检查规则为 `FILE`：CI 中与基准分支（PR）或上一次推送比较，删除字段、修改字段号等破坏已生成代码的改动会失败。
 
-### 5.7 错误
+### 5.7 缓存与布隆过滤器
 
-- 业务错误用 Kratos errors，错误原因在各服务 proto 的 `ErrorReason` 枚举中定义（account 见 [error_reason.proto](../../api/account/v1/error_reason.proto)），在 biz 层的 `errors.go` 中手写构造函数，不使用 errors 代码生成器。HTTP 状态码随错误类型确定：参数与验证码错误 400、凭据无效 401、封禁与无权限 403、不存在 404、冲突 409、限流 429、依赖故障 503。
+- 读缓存统一用 `pkg/cache`（Cache-Aside）：空值标记防穿透、singleflight 合并本实例的并发回源、TTL ±10% 抖动、Redis 故障时直接回源。写操作先提交数据库，再删除缓存；删除失败记 WARN，靠 TTL 兜底（TD-25）。
+- 热点键开启 `Options.RebuildLock`（目前只有群成员列表）：未命中时抢 `{key}:lock`（`SET NX PX 3000`），抢到的实例回源、回填后校验持有者再释放；没抢到的每 50 毫秒重读一次，最多 200 毫秒，仍未命中就直接回源。宁可多一次查询，也不让请求失败。
+- 按 ID 查询、容易被随机 ID 穿透的数据（用户、群）在缓存未命中时先查 `pkg/bloom`。只有就绪标记和过滤器都在时才信任“不存在”；新 ID 在提交后加入，失败重试仍不成功则写脏标记并重建；多实例用 Redis 锁保证只有一个在重建。批量接口的 ID 来自内部数据，不查过滤器。
+- `BF.EXISTS` 在 go-redis v9 默认的 RESP3 下返回布尔值，读取用 `Cmd.Bool()`，见 [lessons/redis-resp3-reply-types.md](../lessons/redis-resp3-reply-types.md)。
+
+### 5.8 错误
+
+- 业务错误用 Kratos errors，错误原因在各服务 proto 的 `ErrorReason` 枚举中定义（[account](../../api/account/v1/error_reason.proto)、[social](../../api/social/v1/error_reason.proto)），在 biz 层的 `errors.go` 中手写构造函数，不使用 errors 代码生成器。HTTP 状态码随错误类型确定：参数与验证码错误 400、凭据无效 401、封禁与无权限 403、不存在 404、冲突 409、限流 429、依赖故障 503。
 - 错误体为 `{"code", "reason", "message", "metadata"}`。`message` 是给用户看的中文提示；客户端按 `reason` 分支处理，不解析 `message`。
 - 限流类错误（429）在 `metadata.retry_after_seconds` 中给出需要等待的秒数。
 - 框架产生的错误：令牌缺失、无效、过期或已吊销统一为 `401 UNAUTHORIZED`；参数不合法为 `400 VALIDATOR`；请求体无法解码为 `400 CODEC`；内部错误为 `500 INTERNAL`，不带细节。
 
-### 5.8 测试
+### 5.9 测试
 
-- 单元测试不依赖外部服务，`go test ./...` 即可运行。biz 层用内存假 repo；Redis 相关逻辑（Lua 脚本、限流、缓存、ID 租约、吊销名单）用 miniredis。
+- 单元测试不依赖外部服务，`go test ./...` 即可运行。biz 层用内存假 repo；Redis 相关逻辑（Lua 脚本、限流、缓存与重建锁、ID 租约、吊销名单）用 miniredis。
+- miniredis 不支持 RedisBloom，`pkg/bloom` 的测试在 `test/e2e/bloom_test.go`，连真实 Redis，用“把过滤器的键改成字符串”注入 `BF.INSERT` 失败。
 - 依赖 compose 环境和已启动服务的测试放在 `test/e2e`，带 `e2e` 构建标签，用 `make e2e` 运行；它会加载 `.env`，测试用其中的密码直接连 Redis、MySQL 做准备工作（清理本机 IP 的限流计数、设置管理员）。
 
 ## 6. 关键技术组件

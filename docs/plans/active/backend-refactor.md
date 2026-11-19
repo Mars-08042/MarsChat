@@ -138,11 +138,14 @@
 
 ### 3. social 服务
 
-- [ ] 好友：申请、同意、拒绝、删除、拉黑。群组：创建、直接加入或审核加入、成员与角色、退出、解散、禁言。
-- [ ] 对内 gRPC：发言权限校验（给 message 用）、群成员列表（给 delivery 用，接入缓存组件）。
-- [ ] 群资料修改用乐观锁；建群、入群、退群经 Outbox 发事件，由 message 创建或更新会话（跨服务最终一致）。
-- [ ] 以旧模块文档 [contact.md](../../product/modules/contact.md)、[group.md](../../product/modules/group.md) 为功能基线，同时修正 TD-16、TD-17 中的逻辑错误。
-- [ ] 验证：单元测试；HTTP 接口冒烟测试。
+设计：[social-service.md](../../design/social-service.md)。
+
+- [x] 好友：申请、同意、拒绝、删除、拉黑。群组：创建、直接加入或审核加入、邀请好友、成员与角色、转让、退出、解散、禁言。
+- [x] 对内 gRPC：发言权限校验（给 message 用）、群成员列表（给 delivery 用，接入缓存组件并开启跨实例重建锁）、批量群资料。
+- [x] 群资料修改用乐观锁；好友与群的变化写 Outbox 事件。由 message 创建或更新会话属于步骤 4（发布器与消费方）。
+- [x] 以旧模块文档 [contact.md](../../product/modules/contact.md)、[group.md](../../product/modules/group.md) 为功能基线，同时修正 TD-01、TD-16、TD-17 中的逻辑错误。
+- [x] 公共组件：`pkg/bloom`（从 account 抽出，补上 TD-27 的失败分支测试）、`pkg/cache` 重建锁、`bootstrap.ServerMiddlewares`；social 经 Consul 调用 account。
+- [x] 验证：单元测试；e2e 经 HTTP 和 gRPC 调用主要接口（代替手工冒烟测试）；关键查询 `EXPLAIN`。
 
 ### 4. 核心消息链路（各服务单实例）
 
@@ -220,7 +223,11 @@
 
 步骤 1 已完成（2026-11-18），提交 `6685aae`。
 
-步骤 2 已完成（2026-11-18），阿里云短信除外（TD-24）。设计 [account-service.md](../../design/account-service.md) 已采纳，实施中的调整记在其第 8 节。验证：`buf lint`、`go vet`、`go build`、`go test -race ./...`、`make e2e`（6 个用例）通过，关键查询 `EXPLAIN` 已核对。下一步：步骤 3（social）。
+步骤 2 已完成（2026-11-18），提交 `bfe2778`，阿里云短信除外（TD-24）。设计 [account-service.md](../../design/account-service.md) 已采纳，实施中的调整记在其第 8 节。验证：`buf lint`、`go vet`、`go build`、`go test -race ./...`、`make e2e`（6 个用例）通过，关键查询 `EXPLAIN` 已核对。
+
+步骤 3 已完成（2026-11-19）。设计 [social-service.md](../../design/social-service.md) 已采纳（第 8 节的 7 个问题均按推荐方案确认），实施中的调整记在其第 9 节。验证：`buf lint`、`go vet`（含 `e2e` 标签）、`go build`、`go test -race ./...`、`make gen` 后无差异、`make e2e`（17 个用例，连续两次）通过，`EXPLAIN` 已在造数据的临时库中核对。
+
+下一步：步骤 4 核心消息链路。
 
 ## 遇到的问题
 
@@ -230,5 +237,6 @@
 - 2026-11-18：`make run-account` 报 `unexpected EOF while looking for matching '"'`。GnuWin32 make 3.81 按 GBK 代码页把命令行传给 sh，echo 中文提示的 UTF-8 字节和相邻引号组成了非法字符，引号丢失。Makefile 的命令行改为只用 ASCII，并加了注释。
 - 2026-11-18：account 的 HTTP 接口不接受枚举名字、int64 输出为数字。Kratos v3 的 `json` codec 改为纯标准库实现，不再按 protobuf JSON 处理 proto 消息。新增 `pkg/jsoncodec` 覆盖注册，见 [lessons/kratos-v3-server-defaults.md](../../lessons/kratos-v3-server-defaults.md)。
 - 2026-11-18：Kratos 自带的 `logging` 中间件会把请求体（含密码、验证码、刷新令牌）写进日志，`recovery` 记录 panic 时也打印请求体；非 Kratos 错误的原文会返回给客户端。改用自己实现的 `pkg/middleware/accesslog`，见同一篇 lesson。
+- 2026-11-19：补 TD-27 的布隆过滤器集成测试时发现，`BF.EXISTS` 在 go-redis v9 默认的 RESP3 下返回布尔值，原代码按整数读取，读取失败后放行，account 的用户 ID 过滤器从步骤 2 起没有拦截过任何 ID。已改用 `Cmd.Bool()` 并在解析失败时记 WARN，见 [lessons/redis-resp3-reply-types.md](../../lessons/redis-resp3-reply-types.md)。
 
 - Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、MinIO、监控组件加多实例服务）在 Docker Desktop 上的内存占用未实测，步骤 5 前评估，必要时按步骤分组启动。

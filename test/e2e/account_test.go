@@ -43,8 +43,8 @@ type apiError struct {
 	Metadata map[string]string `json:"metadata"`
 }
 
-// call 按 protobuf JSON 收发，与浏览器客户端一致。返回 HTTP 状态码和错误体（成功时为 nil）。
-func call(t *testing.T, method, path, token string, req, resp proto.Message) (int, *apiError) {
+// callAt 按 protobuf JSON 调用 base 地址的服务，与浏览器客户端一致。返回 HTTP 状态码和错误体（成功时为 nil）。
+func callAt(t *testing.T, base, method, path, token string, req, resp proto.Message) (int, *apiError) {
 	t.Helper()
 	var body io.Reader
 	if req != nil {
@@ -54,7 +54,7 @@ func call(t *testing.T, method, path, token string, req, resp proto.Message) (in
 		}
 		body = bytes.NewReader(b)
 	}
-	r, err := http.NewRequest(method, accountHTTP+path, body)
+	r, err := http.NewRequest(method, base+path, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +84,12 @@ func call(t *testing.T, method, path, token string, req, resp proto.Message) (in
 		}
 	}
 	return res.StatusCode, nil
+}
+
+// call 调用 account。
+func call(t *testing.T, method, path, token string, req, resp proto.Message) (int, *apiError) {
+	t.Helper()
+	return callAt(t, accountHTTP, method, path, token, req, resp)
 }
 
 func mustCall(t *testing.T, method, path, token string, req, resp proto.Message) {

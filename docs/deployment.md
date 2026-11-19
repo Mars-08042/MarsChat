@@ -63,6 +63,7 @@ Consul UI：<http://127.0.0.1:18500>。
 
 ```bash
 make migrate-account                    # 执行全部未执行的迁移（up）
+make migrate-social
 make migrate-account ARGS="down 1"      # 回滚一步
 make migrate-account ARGS="version"     # 查看当前版本
 ```
@@ -78,7 +79,9 @@ make run-account   # HTTP 127.0.0.1:18010，gRPC 127.0.0.1:19010
 make run-social    # HTTP 127.0.0.1:18020，gRPC 127.0.0.1:19020
 ```
 
-`make run-<服务>` 会加载 `.env`，再执行 `go run ./app/<服务>/cmd/<服务> -conf app/<服务>/configs`。服务启动时连接 MySQL、Redis 并注册到 Consul，任一依赖不可用会直接退出。account 首次启动前要先执行 `make migrate-account`。
+`make run-<服务>` 会加载 `.env`，再执行 `go run ./app/<服务>/cmd/<服务> -conf app/<服务>/configs`。服务启动时连接 MySQL、Redis 并注册到 Consul，任一依赖不可用会直接退出。首次启动前要先执行对应的 `make migrate-<服务>`。
+
+social 经 Consul 发现并调用 account（申请好友时确认对方存在、列表补全昵称和头像）。account 未启动时 social 照常启动和运行：申请好友返回 `503 DEPENDENCY_UNAVAILABLE`，列表接口返回不带资料的数据并记 WARN。
 
 在终端按 Ctrl+C 停止服务。按 Kratos 的停机流程，服务会先从 Consul 注销再退出（未在 Windows 终端中实测）。进程被强制结束时来不及注销，Consul 中的实例在 20 秒内变为 critical、不再被发现，10 分钟后自动删除。
 
@@ -87,7 +90,7 @@ make run-social    # HTTP 127.0.0.1:18020，gRPC 127.0.0.1:19020
 ```bash
 curl -s http://127.0.0.1:18010/healthz   # 存活探针
 curl -s http://127.0.0.1:18010/readyz    # 就绪探针，检查 MySQL 和 Redis
-make e2e                                 # 服务发现与 account 全流程，见“开发命令”
+make e2e                                 # 服务发现、account 与 social 全流程，见“开发命令”
 ```
 
 调用 account 的 HTTP 接口时要带 `Content-Type: application/json`，否则请求体按表单解析。开发环境短信验证码固定为 `000000`（只写日志的发送方，见下方配置），例如：
@@ -130,6 +133,7 @@ make grant-admin PHONE=13800000001
 | `MARSCHAT_LOG_FORMAT` | `text` | `text` 或 `json` |
 | `MARSCHAT_JWT_KEY_ID` | `dev-1` | 访问令牌头部的 `kid`，为轮换密钥预留 |
 | `MARSCHAT_SMS_FIXED_CODE` | `000000` | 开发与 e2e 用的固定验证码，只允许和 `log` 发送方一起使用；置空则随机生成 6 位并写入日志 |
+| `MARSCHAT_ACCOUNT_ENDPOINT` | `discovery:///marschat-account` | social 调用 account 的 gRPC 地址；也可以写 `127.0.0.1:19010` 这样的直连地址 |
 
 本地开发时 `registry.consul.health_check` 为 `false`，原因见 [system.md](architecture/system.md#53-服务注册与发现)。
 
@@ -144,6 +148,15 @@ account 的主要配置段（默认值见 [config.yaml](../app/account/configs/c
 | `cache` | 资料缓存 1800 秒、空值标记 60 秒 | 重启 |
 | `policy` | 短信：有效期 300 秒、验证 5 次、发送间隔 60 秒、每号每日 10 条、每 IP 每小时 20 次；登录：15 分钟内错 5 次锁定 15 分钟、每 IP 每分钟 20 次 | **热更新**：保存配置文件后自动生效，日志出现 `config reloaded key=policy`；值不合法时保留旧值并记录 ERROR |
 
+social 的主要配置段（默认值见 [config.yaml](../app/social/configs/config.yaml)）：
+
+| 配置段 | 内容 | 生效方式 |
+|---|---|---|
+| `auth` | 同 account | 重启 |
+| `account` | account 地址、调用超时 1 秒 | 重启 |
+| `cache` | 群资料 1800 秒、成员列表 1800 秒、空值标记 60 秒 | 重启 |
+| `policy` | 每人每小时 20 条好友申请、每人每天建 10 个群、每人每小时 20 次入群、群成员上限 500、建群初始成员上限 50 | **热更新**，同 account；调低群成员上限不会移除已有成员 |
+
 阿里云短信发送方尚未实现（没有 AccessKey、签名和模板），生产环境不能使用 `log` 发送方。
 
 ## 开发命令
@@ -154,7 +167,7 @@ account 的主要配置段（默认值见 [config.yaml](../app/account/configs/c
 | `make lint` | `buf lint` |
 | `make vet` / `make test` | `go vet ./...` / `go test ./...` |
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |
-| `make e2e` | 端到端测试，需要依赖组件已启动、account 已迁移、account 和 social 都已运行；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数 |
+| `make e2e` | 端到端测试，需要依赖组件已启动、account 与 social 已迁移并都在运行；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理 |
 | `make keys` | 生成 JWT 密钥对写入 `.env` |
 | `make migrate-<服务>` | 数据库迁移，`ARGS` 传子命令 |
 | `make grant-admin PHONE=…` | 设置管理员 |

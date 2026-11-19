@@ -32,3 +32,33 @@ redis:
 log:
   level: ${LOG_LEVEL:info}
   format: ${LOG_FORMAT:text}
+
+# 访问令牌校验（各服务相同）
+auth:
+  public_key: ${JWT_PUBLIC_KEY}
+  issuer: marschat-account
+  audience: marschat
+
+# 以下各段修改后需要重启
+account:
+  endpoint: ${ACCOUNT_ENDPOINT:discovery:///marschat-account}
+  timeout: 1s
+
+cache:
+  group_ttl: 1800s
+  members_ttl: 1800s
+  null_ttl: 60s
+
+# 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
+policy:
+  friend_request:
+    limit: 20
+    window: 3600s
+  group_create:
+    limit: 10
+    window: 86400s
+  join_request:
+    limit: 20
+    window: 3600s
+  max_group_members: 500
+  max_initial_members: 50

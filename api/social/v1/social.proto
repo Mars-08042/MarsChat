@@ -1,0 +1,558 @@
+syntax = "proto3";
+
+package social.v1;
+
+import "account/v1/account.proto";
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/social/v1;v1";
+
+// SocialService 是面向客户端的好友与群接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+// 全部接口都需要在 Authorization 头携带 Bearer 访问令牌，当前用户取自令牌。
+//
+// 列表接口都是游标分页：第一页 cursor 传 0，之后传上一页返回的 next_cursor；
+// next_cursor 为 0 表示没有更多数据。limit 为 0 时取 20，最大 100。
+// 列表中的用户资料（profile）来自 account 服务，account 不可用时为空，客户端显示占位。
+service SocialService {
+  // 申请添加好友。对方已经向我发出待处理申请时直接成为好友；已有我发出的待处理申请时更新附言。
+  rpc SendFriendRequest(SendFriendRequestRequest) returns (SendFriendRequestResponse) {
+    option (google.api.http) = {
+      post: "/v1/friend-requests"
+      body: "*"
+    };
+  }
+  // 列出收到的待处理好友申请，按时间倒序。
+  rpc ListReceivedFriendRequests(ListReceivedFriendRequestsRequest) returns (ListReceivedFriendRequestsResponse) {
+    option (google.api.http) = {get: "/v1/friend-requests/received"};
+  }
+  // 列出发出的好友申请（全部状态），按时间倒序。
+  rpc ListSentFriendRequests(ListSentFriendRequestsRequest) returns (ListSentFriendRequestsResponse) {
+    option (google.api.http) = {get: "/v1/friend-requests/sent"};
+  }
+  // 同意好友申请，只有接收方可以操作。
+  rpc AcceptFriendRequest(AcceptFriendRequestRequest) returns (AcceptFriendRequestResponse) {
+    option (google.api.http) = {
+      post: "/v1/friend-requests/{request_id}/accept"
+      body: "*"
+    };
+  }
+  // 拒绝好友申请，只有接收方可以操作。
+  rpc RejectFriendRequest(RejectFriendRequestRequest) returns (RejectFriendRequestResponse) {
+    option (google.api.http) = {
+      post: "/v1/friend-requests/{request_id}/reject"
+      body: "*"
+    };
+  }
+  // 列出好友，按用户 ID 递增。
+  rpc ListFriends(ListFriendsRequest) returns (ListFriendsResponse) {
+    option (google.api.http) = {get: "/v1/friends"};
+  }
+  // 删除好友，双方的关系同时删除。对方不是好友时也返回成功。
+  rpc DeleteFriend(DeleteFriendRequest) returns (DeleteFriendResponse) {
+    option (google.api.http) = {delete: "/v1/friends/{user_id}"};
+  }
+  // 拉黑用户。不删除好友关系；任何一方拉黑另一方后，双方都不能单聊、不能互发好友申请。重复拉黑返回成功。
+  rpc BlockUser(BlockUserRequest) returns (BlockUserResponse) {
+    option (google.api.http) = {
+      post: "/v1/blocks"
+      body: "*"
+    };
+  }
+  // 解除拉黑。没有拉黑时也返回成功。
+  rpc UnblockUser(UnblockUserRequest) returns (UnblockUserResponse) {
+    option (google.api.http) = {delete: "/v1/blocks/{user_id}"};
+  }
+  // 列出我拉黑的用户，按用户 ID 递增。
+  rpc ListBlockedUsers(ListBlockedUsersRequest) returns (ListBlockedUsersResponse) {
+    option (google.api.http) = {get: "/v1/blocks"};
+  }
+
+  // 创建群，可以带上初始成员（必须是创建者的好友）。
+  rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {
+    option (google.api.http) = {
+      post: "/v1/groups"
+      body: "*"
+    };
+  }
+  // 获取群资料。非成员看不到群公告；已解散的群仍可查询。
+  rpc GetGroup(GetGroupRequest) returns (GetGroupResponse) {
+    option (google.api.http) = {get: "/v1/groups/{group_id}"};
+  }
+  // 修改群资料（群主、管理员），只修改请求中出现的字段。version 与当前版本不一致时返回 GROUP_VERSION_CONFLICT。
+  rpc UpdateGroup(UpdateGroupRequest) returns (UpdateGroupResponse) {
+    option (google.api.http) = {
+      patch: "/v1/groups/{group_id}"
+      body: "*"
+    };
+  }
+  // 列出我加入的群，按群 ID 递增。
+  rpc ListMyGroups(ListMyGroupsRequest) returns (ListMyGroupsResponse) {
+    option (google.api.http) = {get: "/v1/groups"};
+  }
+  // 加入群。直接加入的群立即入群；需审核的群生成入群申请。
+  rpc JoinGroup(JoinGroupRequest) returns (JoinGroupResponse) {
+    option (google.api.http) = {
+      post: "/v1/groups/{group_id}/join"
+      body: "*"
+    };
+  }
+  // 列出群的待处理入群申请（群主、管理员），按时间倒序。
+  rpc ListGroupJoinRequests(ListGroupJoinRequestsRequest) returns (ListGroupJoinRequestsResponse) {
+    option (google.api.http) = {get: "/v1/groups/{group_id}/join-requests"};
+  }
+  // 同意入群申请（群主、管理员）。
+  rpc AcceptGroupJoinRequest(AcceptGroupJoinRequestRequest) returns (AcceptGroupJoinRequestResponse) {
+    option (google.api.http) = {
+      post: "/v1/group-join-requests/{request_id}/accept"
+      body: "*"
+    };
+  }
+  // 拒绝入群申请（群主、管理员）。
+  rpc RejectGroupJoinRequest(RejectGroupJoinRequestRequest) returns (RejectGroupJoinRequestResponse) {
+    option (google.api.http) = {
+      post: "/v1/group-join-requests/{request_id}/reject"
+      body: "*"
+    };
+  }
+  // 邀请好友入群（群主、管理员），不需要审核；已是成员的人跳过。
+  rpc AddGroupMembers(AddGroupMembersRequest) returns (AddGroupMembersResponse) {
+    option (google.api.http) = {
+      post: "/v1/groups/{group_id}/members"
+      body: "*"
+    };
+  }
+  // 列出群成员（仅成员可见），按用户 ID 递增。
+  rpc ListGroupMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse) {
+    option (google.api.http) = {get: "/v1/groups/{group_id}/members"};
+  }
+  // 移除群成员。群主可以移除管理员和成员，管理员只能移除成员。
+  rpc RemoveGroupMember(RemoveGroupMemberRequest) returns (RemoveGroupMemberResponse) {
+    option (google.api.http) = {delete: "/v1/groups/{group_id}/members/{user_id}"};
+  }
+  // 设置或取消管理员（群主）。
+  rpc SetGroupMemberRole(SetGroupMemberRoleRequest) returns (SetGroupMemberRoleResponse) {
+    option (google.api.http) = {
+      put: "/v1/groups/{group_id}/members/{user_id}/role"
+      body: "*"
+    };
+  }
+  // 禁言或解除禁言。群主可以禁言管理员和成员，管理员只能禁言成员。
+  rpc MuteGroupMember(MuteGroupMemberRequest) returns (MuteGroupMemberResponse) {
+    option (google.api.http) = {
+      put: "/v1/groups/{group_id}/members/{user_id}/mute"
+      body: "*"
+    };
+  }
+  // 转让群主（群主）。新群主必须是成员，原群主变为管理员。
+  rpc TransferGroupOwner(TransferGroupOwnerRequest) returns (TransferGroupOwnerResponse) {
+    option (google.api.http) = {
+      post: "/v1/groups/{group_id}/transfer"
+      body: "*"
+    };
+  }
+  // 退出群。群主需要先转让群主。
+  rpc LeaveGroup(LeaveGroupRequest) returns (LeaveGroupResponse) {
+    option (google.api.http) = {
+      post: "/v1/groups/{group_id}/leave"
+      body: "*"
+    };
+  }
+  // 解散群（群主或系统管理员）。
+  rpc DismissGroup(DismissGroupRequest) returns (DismissGroupResponse) {
+    option (google.api.http) = {
+      post: "/v1/groups/{group_id}/dismiss"
+      body: "*"
+    };
+  }
+}
+
+// 好友申请与入群申请的状态。
+enum RequestStatus {
+  REQUEST_STATUS_UNSPECIFIED = 0;
+  REQUEST_STATUS_PENDING = 1;
+  REQUEST_STATUS_ACCEPTED = 2;
+  REQUEST_STATUS_REJECTED = 3;
+  // 拉黑、对方已经入群、群解散等原因导致申请不再有效
+  REQUEST_STATUS_EXPIRED = 4;
+}
+
+enum JoinMode {
+  JOIN_MODE_UNSPECIFIED = 0;
+  // 申请即入群
+  JOIN_MODE_FREE = 1;
+  // 需要群主或管理员审核
+  JOIN_MODE_APPROVAL = 2;
+}
+
+enum GroupRole {
+  // 不是群成员
+  GROUP_ROLE_UNSPECIFIED = 0;
+  GROUP_ROLE_MEMBER = 1;
+  GROUP_ROLE_ADMIN = 2;
+  GROUP_ROLE_OWNER = 3;
+}
+
+enum GroupStatus {
+  GROUP_STATUS_UNSPECIFIED = 0;
+  GROUP_STATUS_NORMAL = 1;
+  GROUP_STATUS_DISMISSED = 2;
+}
+
+message FriendRequest {
+  int64 id = 1;
+  int64 from_user_id = 2;
+  int64 to_user_id = 3;
+  string message = 4;
+  RequestStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  // 重复申请会刷新附言和该时间
+  google.protobuf.Timestamp updated_at = 7;
+  // 对方（收到的申请为申请人，发出的申请为接收方）的公开资料
+  account.v1.UserProfile peer = 8;
+}
+
+message Friend {
+  int64 user_id = 1;
+  account.v1.UserProfile profile = 2;
+  // 成为好友的时间
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message BlockedUser {
+  int64 user_id = 1;
+  account.v1.UserProfile profile = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message Group {
+  int64 id = 1;
+  string name = 2;
+  // media 服务的文件 ID，未设置时为空
+  string avatar = 3;
+  // 群公告，非成员查询时为空
+  string notice = 4;
+  int64 owner_id = 5;
+  JoinMode join_mode = 6;
+  // 全员禁言，开启后只有群主和管理员能发言
+  bool mute_all = 7;
+  int32 member_count = 8;
+  GroupStatus status = 9;
+  // 资料版本号，修改资料时带上
+  int32 version = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  // 当前用户在群里的角色，不是成员时为 GROUP_ROLE_UNSPECIFIED
+  GroupRole my_role = 13;
+}
+
+message GroupMember {
+  int64 user_id = 1;
+  GroupRole role = 2;
+  // 单人禁言截止时间，未禁言或已过期时不返回
+  google.protobuf.Timestamp muted_until = 3;
+  // 邀请人，自己加入时为 0
+  int64 inviter_id = 4;
+  google.protobuf.Timestamp joined_at = 5;
+  account.v1.UserProfile profile = 6;
+}
+
+message GroupJoinRequest {
+  int64 id = 1;
+  int64 group_id = 2;
+  int64 user_id = 3;
+  string message = 4;
+  RequestStatus status = 5;
+  // 处理人，未处理时为 0
+  int64 handled_by = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  // 申请人的公开资料
+  account.v1.UserProfile profile = 9;
+}
+
+message SendFriendRequestRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 附言
+  string message = 2 [(buf.validate.field).string.max_len = 100];
+}
+
+message SendFriendRequestResponse {
+  // 新建或更新的待处理申请；直接成为好友时不返回
+  FriendRequest request = 1;
+  // 对方已经向我发出过申请，双方直接成为好友
+  bool became_friends = 2;
+}
+
+message ListReceivedFriendRequestsRequest {
+  int64 cursor = 1 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListReceivedFriendRequestsResponse {
+  repeated FriendRequest requests = 1;
+  int64 next_cursor = 2;
+}
+
+message ListSentFriendRequestsRequest {
+  int64 cursor = 1 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListSentFriendRequestsResponse {
+  repeated FriendRequest requests = 1;
+  int64 next_cursor = 2;
+}
+
+message AcceptFriendRequestRequest {
+  int64 request_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message AcceptFriendRequestResponse {}
+
+message RejectFriendRequestRequest {
+  int64 request_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message RejectFriendRequestResponse {}
+
+message ListFriendsRequest {
+  int64 cursor = 1 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListFriendsResponse {
+  repeated Friend friends = 1;
+  int64 next_cursor = 2;
+}
+
+message DeleteFriendRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message DeleteFriendResponse {}
+
+message BlockUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message BlockUserResponse {}
+
+message UnblockUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message UnblockUserResponse {}
+
+message ListBlockedUsersRequest {
+  int64 cursor = 1 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListBlockedUsersResponse {
+  repeated BlockedUser users = 1;
+  int64 next_cursor = 2;
+}
+
+message CreateGroupRequest {
+  string name = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 30
+  }];
+  string avatar = 2 [(buf.validate.field).string.max_len = 64];
+  string notice = 3 [(buf.validate.field).string.max_len = 500];
+  JoinMode join_mode = 4 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // 初始成员，必须是创建者的好友，不含创建者本人；数量上限由服务端配置（默认 50）
+  repeated int64 member_ids = 5 [(buf.validate.field).repeated = {
+    max_items: 500
+    unique: true
+    items: {
+      int64: {gt: 0}
+    }
+  }];
+}
+
+message CreateGroupResponse {
+  Group group = 1;
+}
+
+message GetGroupRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message GetGroupResponse {
+  Group group = 1;
+}
+
+message UpdateGroupRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 客户端读到的资料版本号
+  int32 version = 2 [(buf.validate.field).int32.gt = 0];
+  optional string name = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 30
+  }];
+  optional string avatar = 4 [(buf.validate.field).string.max_len = 64];
+  optional string notice = 5 [(buf.validate.field).string.max_len = 500];
+  optional JoinMode join_mode = 6 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  optional bool mute_all = 7;
+}
+
+message UpdateGroupResponse {
+  Group group = 1;
+}
+
+message ListMyGroupsRequest {
+  int64 cursor = 1 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListMyGroupsResponse {
+  repeated Group groups = 1;
+  int64 next_cursor = 2;
+}
+
+message JoinGroupRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 附言，只在需审核的群中保存
+  string message = 2 [(buf.validate.field).string.max_len = 100];
+}
+
+message JoinGroupResponse {
+  // 已经入群
+  bool joined = 1;
+  // 需审核的群返回待处理的入群申请
+  GroupJoinRequest request = 2;
+}
+
+message ListGroupJoinRequestsRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 cursor = 2 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListGroupJoinRequestsResponse {
+  repeated GroupJoinRequest requests = 1;
+  int64 next_cursor = 2;
+}
+
+message AcceptGroupJoinRequestRequest {
+  int64 request_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message AcceptGroupJoinRequestResponse {}
+
+message RejectGroupJoinRequestRequest {
+  int64 request_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message RejectGroupJoinRequestResponse {}
+
+message AddGroupMembersRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 被邀请人，必须都是操作者的好友
+  repeated int64 user_ids = 2 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+    unique: true
+    items: {
+      int64: {gt: 0}
+    }
+  }];
+}
+
+message AddGroupMembersResponse {
+  // 实际加入的用户，不含原本已是成员的人
+  repeated int64 added_user_ids = 1;
+}
+
+message ListGroupMembersRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 cursor = 2 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListGroupMembersResponse {
+  repeated GroupMember members = 1;
+  int64 next_cursor = 2;
+}
+
+message RemoveGroupMemberRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 user_id = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+message RemoveGroupMemberResponse {}
+
+message SetGroupMemberRoleRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 user_id = 2 [(buf.validate.field).int64.gt = 0];
+  // 只能设为成员或管理员，转让群主用 TransferGroupOwner
+  GroupRole role = 3 [(buf.validate.field).enum = {
+    in: [1, 2]
+  }];
+}
+
+message SetGroupMemberRoleResponse {}
+
+message MuteGroupMemberRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 user_id = 2 [(buf.validate.field).int64.gt = 0];
+  // 禁言时长，0 表示解除禁言，最长 30 天
+  int32 duration_seconds = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 2592000
+  }];
+}
+
+message MuteGroupMemberResponse {
+  // 禁言截止时间，解除禁言时不返回
+  google.protobuf.Timestamp muted_until = 1;
+}
+
+message TransferGroupOwnerRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 new_owner_id = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+message TransferGroupOwnerResponse {}
+
+message LeaveGroupRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message LeaveGroupResponse {}
+
+message DismissGroupRequest {
+  int64 group_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message DismissGroupResponse {}

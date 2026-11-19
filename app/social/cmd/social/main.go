@@ -11,6 +11,7 @@ import (
 	"github.com/go-kratos/kratos/v3/transport/grpc"
 	"github.com/go-kratos/kratos/v3/transport/http"
 
+	"github.com/Mars-08042/MarsChat/app/social/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/social/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 )
@@ -59,7 +60,14 @@ func run() error {
 		slog.String("service.version", Version),
 	)
 
-	app, cleanup, err := wireApp(bc.GetServer(), bc.GetRegistry(), bc.GetMysql(), bc.GetRedis(), logger)
+	// 只有 policy 段热更新，其余配置修改后需要重启
+	policy := biz.NewPolicyHolder(bc.GetPolicy())
+	if err := bootstrap.WatchConfig(c, "policy", func() *conf.Policy { return &conf.Policy{} }, policy.Store, logger); err != nil {
+		return fmt.Errorf("watch policy config: %w", err)
+	}
+
+	app, cleanup, err := wireApp(bc.GetServer(), bc.GetRegistry(), bc.GetMysql(), bc.GetRedis(), bc.GetAuth(),
+		bc.GetAccount(), bc.GetCache(), policy, logger)
 	if err != nil {
 		return fmt.Errorf("init app: %w", err)
 	}

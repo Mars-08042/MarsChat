@@ -1,6 +1,6 @@
 # 数据模型
 
-> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 2（2026-11-18）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
+> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 3（2026-11-19）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
 
 ## 1. 数据库与账号
 
@@ -77,6 +77,73 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 事务边界见 [account 设计 3.6](../design/account-service.md#36-事务与事件)。登录事务先 `SELECT ... FOR UPDATE` 锁住用户行，与封禁互斥。
 
+### 2.2 social（`marschat_social`，迁移 `000001_init`）
+
+**friendships**：一段好友关系存两行（A→B 与 B→A），在同一事务中插入（`INSERT IGNORE`）和删除。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `user_id` / `friend_id` | `BIGINT` | 主键 `(user_id, friend_id)` |
+| `created_at` | `DATETIME(3)` | 成为好友的时间 |
+
+**friend_requests**：保留历史，被拒绝后再申请生成新记录。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `BIGINT` PK | snowflake，也是列表游标 |
+| `from_user_id` / `to_user_id` | `BIGINT` | |
+| `message` | `VARCHAR(100)` | 附言，重复申请时覆盖 |
+| `status` | `TINYINT` | 1 待处理、2 已同意、3 已拒绝、4 已失效（拉黑） |
+| `created_at` / `updated_at` / `handled_at` | `DATETIME(3)`（`handled_at` 可空） | |
+| `pending_flag` | 虚拟生成列 `IF(status = 1, 1, NULL)` | 只用于唯一索引 `uk_pending` |
+
+**blocks**：单向拉黑，主键 `(user_id, blocked_id)`，另有 `created_at`。不影响好友关系。
+
+**chat_groups**（`GROUPS` 是 MySQL 8 的保留字）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `BIGINT` PK | snowflake，与用户 ID 共用节点号空间 |
+| `name` / `avatar` / `notice` | `VARCHAR(32)` / `VARCHAR(64)` / `VARCHAR(500)` | 名称接口限制 1～30 个字符，去掉首尾空白后不能为空 |
+| `owner_id` | `BIGINT` | 冗余，转让群主时修改 |
+| `join_mode` | `TINYINT` | 1 直接加入、2 需审核 |
+| `mute_all` | `TINYINT` | 全员禁言 |
+| `member_count` | `INT` | 在锁住群行的事务内维护，与成员行数一致 |
+| `status` | `TINYINT` | 1 正常、2 已解散 |
+| `version` | `INT` | 资料乐观锁；修改资料、转让群主、解散时加一 |
+| `created_at` / `updated_at` / `dismissed_at` | `DATETIME(3)` | `updated_at` 只随资料变化，成员进出不更新 |
+
+**group_members**：退群、被移除直接删除行，历史由事件记录。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `group_id` / `user_id` | `BIGINT` | 主键 `(group_id, user_id)` |
+| `role` | `TINYINT` | 1 成员、2 管理员、3 群主 |
+| `muted_until` | `DATETIME(3) NULL` | 单人禁言截止时间，过期自动失效 |
+| `inviter_id` | `BIGINT` | 邀请人，自己加入或审核通过为 0 |
+| `joined_at` | `DATETIME(3)` | |
+
+**group_join_requests**：结构同 `friend_requests`，用 `group_id`、`user_id` 代替两个用户 ID，另有 `handled_by`（处理人，自动失效为 0）。状态 4 已失效用于被邀请入群、群解散。
+
+**outbox_events**：同构。social 写入的事件见 [events.proto](../../api/social/v1/events.proto)（topic `marschat.social.events`；群事件按群 ID、好友事件按两人中较小的 ID、申请事件按接收方 ID 分区）。
+
+索引与查询（`EXPLAIN` 于 2026-11-19 在 MySQL 9.7.4 上核对，临时库中每张表造了 1 万～5 万行数据并 `ANALYZE`）：
+
+| 索引 | 查询 | 说明 |
+|---|---|---|
+| `friendships.PRIMARY` | 是否好友 `WHERE user_id = ? AND friend_id = ?`；好友列表 `WHERE user_id = ? AND friend_id > ? ORDER BY friend_id LIMIT n`；邀请时过滤好友 `friend_id IN (...)` | 常量查找 / 主键范围扫描 |
+| `blocks.PRIMARY` | 双向拉黑检查 `WHERE (user_id, blocked_id) IN ((a, b), (b, a))` | 覆盖索引上的两个点范围 |
+| `friend_requests.uk_pending (from_user_id, to_user_id, pending_flag)` | 查、改某一对用户的待处理申请 `... AND pending_flag = 1` | 待处理之外的记录这一列为 NULL，不占唯一约束；同时兜底并发申请（冲突时整个事务重试一次） |
+| `friend_requests.idx_to (to_user_id, status, id)` | 收到的待处理申请 `WHERE to_user_id = ? AND status = 1 AND id < ? ORDER BY id DESC` | 倒序范围扫描，无排序 |
+| `friend_requests.idx_from (from_user_id, id)` | 发出的申请 `WHERE from_user_id = ? [AND id < ?] ORDER BY id DESC` | 某个用户的申请只有几十条时，优化器可能改用 `uk_pending` 的 `from_user_id` 前缀加排序；单个用户 5000 条时走 `idx_from` 倒序扫描，只读 21 行 |
+| `chat_groups.PRIMARY` | 成员变化前锁群行 `WHERE id = ? FOR UPDATE`；布隆过滤器重建扫描 | |
+| `group_members.PRIMARY` | 成员列表、成员列表缓存回源 `WHERE group_id = ? [AND user_id > ?] ORDER BY user_id`；操作者与对象的成员行 | 主键前缀，无排序 |
+| `group_members.idx_user (user_id, group_id)` | 我的群 `WHERE user_id = ? AND group_id > ? ORDER BY group_id`；`FilterMembers` 的 `group_id = ? AND user_id IN (...)` 也会选它 | |
+| `group_join_requests.idx_group (group_id, status, id)` | 群的待处理申请（倒序）；解散时 `UPDATE ... WHERE group_id = ? AND status = 1` | |
+| `group_join_requests.uk_pending (group_id, user_id, pending_flag)` | 查某人对某群的待处理申请；邀请时让被邀请人的申请失效 | |
+
+单聊发言权限是 2 次主键查询（拉黑、好友），群聊发言权限读群资料缓存和成员列表缓存。事务边界与并发控制见 [social 设计 3.4、3.9](../design/social-service.md#34-群)。
+
 ## 3. Redis 键
 
 所有键带服务前缀。限额类数值来自可热更新的 `policy` 配置，表中为默认值。
@@ -96,6 +163,13 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `account:rl:sms_ip:{ip}` | ZSET | 窗口长度 | `pkg/ratelimit` 滑动窗口 | 每 IP 每小时 20 次发码；Redis 故障时拒绝发码 |
 | `account:rl:login_ip:{ip}` | ZSET | 窗口长度 | 同上 | 每 IP 每分钟 20 次登录；Redis 故障时放行 |
 | `account:login_fail:{phone}` | String 计数 | 首次失败起 15 分钟；达到 5 次时改为锁定 15 分钟 | 密码错误时加一；登录成功后删除 | 密码错误锁定 |
+| `social:group:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10%；空值标记 1 分钟 | 资料修改、成员数变化、转让、解散后删除 | 群资料缓存，未命中时先查群 ID 布隆过滤器 |
+| `social:group:members:{id}` | String（1 字节标记 + JSON 数组：用户 ID、角色、禁言截止） | 30 分钟 ±10% | 任何成员、角色、禁言变化后删除 | 全部成员，供发言权限校验和投递；开启跨实例重建锁 |
+| `social:group:members:{id}:lock` | String，值为持有者随机串 | 3 秒 | 缓存未命中时 `SET NX PX`，回填后校验持有者再删除 | 重建锁：没抢到的实例每 50 毫秒重读缓存，最多 200 毫秒，之后直接回源 |
+| `social:group_bf`、`:ready`、`:dirty`、`:rebuild` | 同 `account:user_bf*` | 同上 | 建群后 `BF.INSERT` | 群 ID 布隆过滤器（`pkg/bloom`），含已解散的群 |
+| `social:rl:friend_request:{uid}` | ZSET | 窗口长度 | `pkg/ratelimit` | 每人每小时 20 条好友申请 |
+| `social:rl:group_create:{uid}` | ZSET | 窗口长度 | 同上 | 每人每天（滑动 24 小时）建 10 个群 |
+| `social:rl:join_request:{uid}` | ZSET | 窗口长度 | 同上 | 每人每小时 20 次入群（直接加入也计入）；social 的限流在 Redis 故障时都放行 |
 | `idgen:node:{n}` | String，值为实例 ID | 30 秒，每 10 秒续期 | 启动时 `SET NX` 抢占节点号 | snowflake 节点号租约（所有服务共用 0～1023） |
 
 ## 附录：旧基线表结构（已移除）

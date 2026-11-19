@@ -29,7 +29,7 @@ account 服务，设计与规则细节见 [account-service.md](../../design/acco
 | `RevokeSession` | `DELETE /v1/sessions/{session_id}` | 是 | 踢掉自己的某个设备 |
 | `AccountInternalService.BatchGetUsers` | 仅 gRPC | 否（内网） | 批量公开资料，不存在的 ID 跳过 |
 
-`device` 为 `deviceId`（客户端生成并持久保存，8～64 位字母数字、`_`、`-`）、`platform`、`deviceName`。错误原因与 HTTP 状态码见 [system.md](../../architecture/system.md#57-错误)。
+`device` 为 `deviceId`（客户端生成并持久保存，8～64 位字母数字、`_`、`-`）、`platform`、`deviceName`。错误原因与 HTTP 状态码见 [system.md](../../architecture/system.md#58-错误)。
 
 ## 职责
 

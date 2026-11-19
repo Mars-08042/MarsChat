@@ -88,7 +88,7 @@ services:
       timeout: 3s
       retries: 20
 
-  # 数据库迁移任务，带 profile 所以 make up 不会启动，由 make migrate-account 按需运行
+  # 数据库迁移任务，带 profile 所以 make up 不会启动，由 make migrate-<服务> 按需运行
   migrate-account:
     image: migrate/migrate:v4.20.1
     profiles: ["migrate"]
@@ -101,6 +101,19 @@ services:
       - ./app/account/migrations:/migrations:ro
     # 密码从环境变量展开，不写进 compose 文件；"$$@" 接收 docker compose run 传入的子命令（up、down 1 等）
     entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://account:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_account?multiStatements=true\" \"$$@\"", "migrate"]
+    command: ["up"]
+
+  migrate-social:
+    image: migrate/migrate:v4.20.1
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${MARSCHAT_SOCIAL_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_SOCIAL_DB_PASSWORD}
+    volumes:
+      - ./app/social/migrations:/migrations:ro
+    entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://social:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_social?multiStatements=true\" \"$$@\"", "migrate"]
     command: ["up"]
 
 volumes:

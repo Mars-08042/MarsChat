@@ -7,8 +7,11 @@
 package main
 
 import (
+	"github.com/Mars-08042/MarsChat/app/social/internal/biz"
+	conf2 "github.com/Mars-08042/MarsChat/app/social/internal/conf"
 	"github.com/Mars-08042/MarsChat/app/social/internal/data"
 	"github.com/Mars-08042/MarsChat/app/social/internal/server"
+	"github.com/Mars-08042/MarsChat/app/social/internal/service"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 	"github.com/Mars-08042/MarsChat/pkg/conf"
 	"github.com/go-kratos/kratos/v3"
@@ -17,25 +20,61 @@ import (
 
 // Injectors from wire.go:
 
-func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, logger *slog.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, auth *conf.Auth, account *conf2.Account, cache *conf2.Cache, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
 	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
 	if err != nil {
 		return nil, nil, err
 	}
-	grpcServer := server.NewGRPCServer(confServer)
-	db, cleanup, err := bootstrap.NewMySQL(mySQL, logger)
+	client, cleanup, err := bootstrap.NewRedis(redis, logger)
 	if err != nil {
 		return nil, nil, err
 	}
-	client, cleanup2, err := bootstrap.NewRedis(redis, logger)
+	middlewares, err := server.NewMiddlewares(auth, client, logger)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	db, cleanup2, err := bootstrap.NewMySQL(mySQL, logger)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
 	dataData := data.NewData(db, client)
-	httpServer := server.NewHTTPServer(confServer, dataData, logger)
+	transaction := data.NewTransaction(dataData)
+	friendRepo := data.NewFriendRepo(dataData)
+	friendRequestRepo := data.NewFriendRequestRepo(dataData)
+	blockRepo := data.NewBlockRepo(dataData)
+	eventRepo := data.NewEventRepo(dataData)
+	accountInternalServiceClient, cleanup3, err := data.NewAccountClient(account, consulRegistry, logger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	userService := data.NewUserService(accountInternalServiceClient)
+	idGenerator, cleanup4, err := data.NewIDGenerator(client, logger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	rateLimiter := data.NewRateLimiter(client)
+	friendUsecase := biz.NewFriendUsecase(transaction, friendRepo, friendRequestRepo, blockRepo, eventRepo, userService, idGenerator, rateLimiter, policyHolder, logger)
+	groupRepo := data.NewGroupRepo(dataData, cache, logger)
+	memberRepo := data.NewMemberRepo(dataData, cache, logger)
+	joinRequestRepo := data.NewJoinRequestRepo(dataData)
+	groupUsecase := biz.NewGroupUsecase(transaction, groupRepo, memberRepo, joinRequestRepo, friendRepo, eventRepo, idGenerator, rateLimiter, policyHolder, logger)
+	profileLoader := biz.NewProfileLoader(userService, logger)
+	socialService := service.NewSocialService(friendUsecase, groupUsecase, profileLoader)
+	permissionUsecase := biz.NewPermissionUsecase(friendRepo, blockRepo, groupUsecase, memberRepo)
+	internalService := service.NewInternalService(permissionUsecase, groupUsecase)
+	grpcServer := server.NewGRPCServer(confServer, middlewares, socialService, internalService)
+	httpServer := server.NewHTTPServer(confServer, middlewares, dataData, socialService, logger)
 	app := newApp(logger, consulRegistry, grpcServer, httpServer)
 	return app, func() {
+		cleanup4()
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil

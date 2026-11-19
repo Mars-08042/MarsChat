@@ -1,6 +1,6 @@
 // Package cache 实现 Cache-Aside 读缓存，内置三类问题的防护：
 //   - 穿透：回源结果为“不存在”时缓存空值标记（较短 TTL）；
-//   - 击穿：进程内用 singleflight 合并同一个键的并发回源；
+//   - 击穿：进程内用 singleflight 合并同一个键的并发回源；热点键可开启跨实例重建锁（Options.RebuildLock）；
 //   - 雪崩：TTL 加随机抖动；Redis 不可用时直接回源，不让缓存故障变成整体故障。
 //
 // 写操作由调用方先更新数据库，再调用 Delete 删除缓存。
@@ -8,11 +8,12 @@ package cache
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
+	mrand "math/rand/v2"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -31,12 +32,29 @@ const (
 	loadTimeout = 3 * time.Second
 	// TTL 随机抖动幅度，避免同一时间写入的键同时过期
 	jitterRatio = 0.1
+
+	// 重建锁的过期时间，覆盖一次回源的耗时（回源超时为 loadTimeout）
+	lockTTL = 3 * time.Second
+	// 没抢到重建锁时每隔 lockPollInterval 重读一次缓存，最多 lockPolls 次（共 200 毫秒）
+	lockPollInterval = 50 * time.Millisecond
+	lockPolls        = 4
 )
+
+// 只有持有者才能释放重建锁，防止回源超过锁的有效期后误删别人的锁
+var releaseLockScript = redis.NewScript(`
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0`)
 
 // Options 是缓存参数。
 type Options struct {
 	TTL     time.Duration
 	NullTTL time.Duration
+	// RebuildLock 开启跨实例重建锁：未命中时先抢 {key}:lock，抢到的实例回源并回填；
+	// 没抢到的实例短暂轮询缓存，等不到再直接回源，宁可多一次查询也不让请求失败。
+	// singleflight 只能合并本实例的请求，多实例同时读同一个热点键时才需要开启。
+	RebuildLock bool
 }
 
 // Cache 缓存类型为 T 的值，用 JSON 编码。
@@ -81,6 +99,23 @@ func (c *Cache[T]) load(ctx context.Context, key string, load func(ctx context.C
 	res, err, _ := c.sf.Do(key, func() (any, error) {
 		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), loadTimeout)
 		defer cancel()
+		if fill && c.opts.RebuildLock {
+			release, err := c.tryLock(lctx, key)
+			switch {
+			case err != nil:
+				c.logger.Warn("cache rebuild lock failed, loading directly", slog.String("key", key), slog.Any("error", err))
+			case release != nil:
+				// 回填之后才释放：等待中的实例在锁释放前就能读到新值
+				defer release()
+			default:
+				if v, found, ok := c.waitFilled(lctx, key); ok {
+					if !found {
+						return nil, ErrNotFound
+					}
+					return v, nil
+				}
+			}
+		}
 		v, err := load(lctx)
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return nil, err
@@ -97,6 +132,42 @@ func (c *Cache[T]) load(ctx context.Context, key string, load func(ctx context.C
 		return zero, err
 	}
 	return res.(T), nil
+}
+
+// tryLock 抢重建锁。抢到时返回释放函数；锁被别的实例持有时返回 nil, nil。
+func (c *Cache[T]) tryLock(ctx context.Context, key string) (func(), error) {
+	lockKey := key + ":lock"
+	token := rand.Text()
+	ok, err := c.rdb.SetNX(ctx, lockKey, token, lockTTL).Result()
+	if err != nil || !ok {
+		return nil, err
+	}
+	return func() {
+		if err := releaseLockScript.Run(context.WithoutCancel(ctx), c.rdb, []string{lockKey}, token).Err(); err != nil {
+			c.logger.Warn("cache rebuild lock release failed", slog.String("key", key), slog.Any("error", err))
+		}
+	}, nil
+}
+
+// waitFilled 等待持锁的实例回填，读到值（包括空值标记）时 ok 为 true。
+func (c *Cache[T]) waitFilled(ctx context.Context, key string) (v T, found, ok bool) {
+	ticker := time.NewTicker(lockPollInterval)
+	defer ticker.Stop()
+	for range lockPolls {
+		select {
+		case <-ctx.Done():
+			return v, false, false
+		case <-ticker.C:
+		}
+		data, err := c.rdb.Get(ctx, key).Bytes()
+		if err != nil {
+			continue
+		}
+		if v, found, err := c.decode(data); err == nil {
+			return v, found, true
+		}
+	}
+	return v, false, false
 }
 
 // GetMany 批量读取，返回命中或回源得到的值（不存在的键不在结果中）。
@@ -216,6 +287,6 @@ func (c *Cache[T]) decode(data []byte) (v T, found bool, err error) {
 
 // withJitter 返回 ttl × [1-jitterRatio, 1+jitterRatio) 之间的随机值。
 func withJitter(ttl time.Duration) time.Duration {
-	f := 1 + jitterRatio*(2*rand.Float64()-1)
+	f := 1 + jitterRatio*(2*mrand.Float64()-1)
 	return time.Duration(float64(ttl) * f)
 }

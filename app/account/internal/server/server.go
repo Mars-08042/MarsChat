@@ -5,16 +5,13 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/go-kratos/kratos/contrib/middleware/validate/v3"
 	"github.com/go-kratos/kratos/v3/middleware"
-	"github.com/go-kratos/kratos/v3/middleware/selector"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
 
 	v1 "github.com/Mars-08042/MarsChat/api/account/v1"
-	"github.com/Mars-08042/MarsChat/pkg/auth"
+	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 	"github.com/Mars-08042/MarsChat/pkg/conf"
-	"github.com/Mars-08042/MarsChat/pkg/middleware/accesslog"
 )
 
 // ProviderSet 是 server 层的依赖提供者。
@@ -37,16 +34,7 @@ func requiresAuth(_ context.Context, operation string) bool {
 	return strings.HasPrefix(operation, "/account.v1.AccountService/") && !publicOperations[operation]
 }
 
-// NewMiddlewares 组装中间件，顺序为：访问日志与 panic 恢复 → 令牌校验 → 参数校验。
-// 先鉴权再校验参数，未登录的请求拿不到参数校验的错误信息。
+// NewMiddlewares 组装公共中间件链，见 bootstrap.ServerMiddlewares。
 func NewMiddlewares(c *conf.Auth, rdb *redis.Client, logger *slog.Logger) (Middlewares, error) {
-	authMW, err := auth.Server(c, rdb, logger)
-	if err != nil {
-		return nil, err
-	}
-	return Middlewares{
-		accesslog.Server(logger),
-		selector.Server(authMW).Match(requiresAuth).Build(),
-		validate.ProtoValidate(),
-	}, nil
+	return bootstrap.ServerMiddlewares(c, rdb, logger, requiresAuth)
 }
