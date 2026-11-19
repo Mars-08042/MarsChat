@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # 只安装 buf，lint 由下面的步骤执行；版本与本地保持一致
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: 1.71.0
+          setup_only: true
+
+      - name: proto 规范检查
+        run: buf lint
+
+      - name: 生成代码与提交内容一致
+        run: |
+          make gen
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "生成代码与提交内容不一致，请在本地执行 make gen 后提交："
+            git status --porcelain
+            git diff
+            exit 1
+          fi
+
+      - name: go.mod 已整理
+        run: go mod tidy -diff
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: 构建
+        run: go build ./...
+
+      - name: 单元测试
+        run: go test -race ./...

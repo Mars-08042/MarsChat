@@ -20,7 +20,7 @@
 
 ![申请与联系关系的状态](../../images/contact-state.svg)
 
-状态取值见 [data-model.md](../../architecture/data-model.md#3-枚举)。
+状态取值见 [data-model.md](../../architecture/data-model.md#旧基线枚举)。
 
 ## 核心流程
 

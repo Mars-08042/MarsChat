@@ -18,8 +18,8 @@
 | 消息、WebSocket、多端同步、通话信令 | [ADR-0006](docs/architecture/adr/0006-message-sync-model.md)；[data-flow.md](docs/architecture/data-flow.md) 按重构步骤重写 |
 | 某个业务功能 | [features.md](docs/product/features.md) → `docs/product/modules/`（旧基线，作为功能基线） |
 | 表、索引、Redis 键 | [data-model.md](docs/architecture/data-model.md)（按重构步骤重写），设计原则见重构计划 |
-| 分层与横切约定 | [system.md](docs/architecture/system.md)（步骤 1 完成后重写，此前以 ADR-0005 为准） |
-| 运行、配置、部署 | [deployment.md](docs/deployment.md)（按重构步骤重写），端口表见重构计划 |
+| 分层与横切约定 | [system.md](docs/architecture/system.md)（描述当前代码，按重构步骤更新） |
+| 运行、配置、部署 | [deployment.md](docs/deployment.md)（按重构步骤更新），完整端口表见重构计划 |
 | 参考实现 | `tmp/teamgram-server/`（只读参考，被 git 忽略），对照清单见重构计划 |
 
 ## 工作规则
@@ -32,7 +32,7 @@
 
 ## 开发约束
 
-- 新代码遵循 ADR-0005 的约定：接口契约写在 `api/<服务>/v1/*.proto`，服务代码按 Kratos v3 分层放在 `app/<服务>/`，跨服务公共代码放 `pkg/`；业务错误用 Kratos errors；日志用 `slog`。步骤 1 完成后细则写入 `system.md`，届时以 `system.md` 为准。
+- 新代码遵循 ADR-0005 的约定：接口契约写在 `api/<服务>/v1/*.proto`，服务代码按 Kratos v3 分层放在 `app/<服务>/`，跨服务公共代码放 `pkg/`；业务错误用 Kratos errors；日志用 `slog`。细则以 `system.md` 为准。
 - 数据库与缓存遵循重构计划中的“数据库与缓存设计原则”。表结构变更写 SQL 迁移，不用 AutoMigrate。
 - 代码注释用中文。
 - 容器宿主机端口为默认端口 + 10000，只绑定 `127.0.0.1`；应用服务 HTTP 用 `18xx0`、gRPC 用 `19xx0`。完整端口表见重构计划。
@@ -46,14 +46,15 @@
 改完后按顺序运行能跑的最轻量检查：
 
 ```bash
-buf lint                 # 步骤 1 引入 buf 配置后可用
+buf lint                 # 或 make lint
 go vet ./...             # 不要加 -mod=mod，它会改写 go.mod
 go build ./...
 go test ./...
 ```
 
-- 步骤 0 结束时仓库中还没有 Go 代码，以上命令在步骤 1 完成后才有意义。`tmp/teamgram-server` 有自己的 `go.mod`，不在 `./...` 范围内。
-- 单元测试尽量不依赖外部服务；需要 Compose 环境的端到端测试放在 `test/e2e`。
+- 改了 proto 或 `wire.go` 后先 `make gen`，生成代码与源文件一起提交，CI 会检查两者一致。
+- `tmp/teamgram-server` 有自己的 `go.mod`，不在 `./...` 范围内。
+- 单元测试尽量不依赖外部服务；需要 Compose 环境的端到端测试放在 `test/e2e`（构建标签 `e2e`，用 `make e2e` 运行）。
 - 不为了通过检查而修改测试预期、跳过断言或吞掉错误。
 
 ## 文档同步

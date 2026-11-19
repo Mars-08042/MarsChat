@@ -1,6 +1,6 @@
 # 文档索引
 
-> **重构说明（2026-11-18）**：后端正在 `dev` 分支按 [后端重构计划](plans/active/backend-refactor.md) 重写，目标架构见 [ADR-0005](architecture/adr/0005-distributed-architecture.md)、[ADR-0006](architecture/adr/0006-message-sync-model.md)。下列 `product/`、`architecture/`（ADR 除外）和 `deployment.md` 仍描述已移除的旧基线，将按重构步骤逐篇重写。
+> **重构说明（2026-11-18）**：后端正在 `dev` 分支按 [后端重构计划](plans/active/backend-refactor.md) 重写，目标架构见 [ADR-0005](architecture/adr/0005-distributed-architecture.md)、[ADR-0006](architecture/adr/0006-message-sync-model.md)。`system.md`、`data-model.md`、`deployment.md` 已按新后端重写（步骤 1）；其余 `product/`、`architecture/`（ADR 除外）文档仍描述已移除的旧基线，将按重构步骤逐篇重写。
 
 ## 目录
 
@@ -15,7 +15,7 @@ docs/
 │   ├── data-model.md        表结构、枚举、Redis 键
 │   ├── data-flow.md         请求、消息、信令的流转与消息格式
 │   └── adr/                 架构决策记录
-├── deployment.md            运行依赖、配置、硬编码项、部署步骤
+├── deployment.md            运行依赖、依赖组件、配置、开发命令
 ├── plans/                   正在做什么、还有什么问题
 │   └── tech-debt.md         技术债与已知问题
 ├── lessons/                 踩过的坑与预防措施
@@ -54,6 +54,8 @@ docs/
 |---|---|
 | [av-signaling-no-echo.md](lessons/av-signaling-no-echo.md) | 通话信令回显给发送方会导致自己收到自己的通话请求 |
 | [static-path-normalization.md](lessons/static-path-normalization.md) | 静态资源地址存完整 URL，换服务器地址后全部失效 |
+| [kratos-grpc-selector-nil.md](lessons/kratos-grpc-selector-nil.md) | Kratos v3.0.0 的 gRPC 负载均衡器在 init 时存下了空的全局选择器，经服务发现调用会 panic |
+| [docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md) | Hyper-V 后端的 Docker Desktop 挂载未授权目录时，compose 会一直等待共享确认 |
 
 ## 编写规则
 

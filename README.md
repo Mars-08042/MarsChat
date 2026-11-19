@@ -2,7 +2,7 @@
 
 MarsChat 是一个前后端分离的 Web 即时通讯系统，提供联系人、单聊群聊、文件传输、一对一音视频通话和后台管理。后端为 Go 单体服务，前端为 Vue 3 单页应用。
 
-> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），其中的启动方式已不可用。后端正在 `dev` 分支按 [后端重构计划](docs/plans/active/backend-refactor.md) 用 Kratos v3 重写为微服务，前端之后用 React 重写；目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)。本文将在重构完成时重写。
+> **重构说明（2026-11-18）**：除“快速开始”和“开发检查”两节已按新后端更新外，本文描述的是已移除的旧基线（截至提交 `6624cea`）。后端正在 `dev` 分支按 [后端重构计划](docs/plans/active/backend-refactor.md) 用 Kratos v3 重写为微服务，前端之后用 React 重写；目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)。本文将在重构完成时重写。
 
 ## 核心功能
 
@@ -39,34 +39,21 @@ docs/                   项目文档
 
 ## 快速开始
 
-需要 Go 1.27.3、MySQL、Redis、Node.js 与 pnpm 11.22.0。本地使用 HTTP / WS，无需证书。
+重构中的后端需要 Go 1.27.3、Docker Desktop 和 buf 1.71.0，在 Git Bash 中执行：
 
-本地开发使用根目录 `compose.yaml` 启动 MySQL、Redis、Kafka，复用已有镜像并禁止自动拉取。宿主机端口分别为 `13307`、`16381`、`19093`。首次运行请按 [本地开发步骤](docs/deployment.md#本地开发windows--powershell) 准备 `.env`、`configs/config_local.toml`（`httpEnabled = true`）和日志、上传目录，再执行：
-
-```powershell
-# 在项目根目录启动依赖
-docker compose up -d --pull never --wait --wait-timeout 120
-
-# 后端（在入口目录运行，静态文件和日志按相对路径解析）
-Set-Location cmd/mars_chat_server
-go run .
-
-# 前端（另开终端，从项目根目录执行）
-Set-Location web/chat-server
-pnpm install --frozen-lockfile
-pnpm serve
+```bash
+cp .env.example .env    # 填入本地密码
+make up                 # 启动 MySQL、Redis、Kafka、Consul
+make run-account        # 另开终端运行 make run-social
 ```
 
-访问 `http://localhost:8080`；后端为 `http://127.0.0.1:8000`。切回 HTTPS 的方法见部署文档。
+完整步骤、端口和配置说明见 [deployment.md](docs/deployment.md)。前端尚未重写，暂无启动方式。
 
 ## 开发检查
 
 ```bash
-go vet ./cmd/... ./internal/... ./pkg/... ./api/...
-go build ./cmd/mars_chat_server
+make lint vet test build
 ```
-
-`test/` 下的测试目前无法编译，且依赖真实的数据库与固定路径的配置文件。
 
 ## 文档
 

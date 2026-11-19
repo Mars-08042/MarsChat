@@ -1,66 +1,56 @@
 # 数据模型
 
-> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线表结构（截至提交 `6624cea`），只作功能参考。新表按服务分库重新设计，在各重构步骤中写入本文，设计原则见 [后端重构计划](../plans/active/backend-refactor.md)。
+> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 1（2026-11-18）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
 
-> 权威来源：`internal/model/*.go`（表结构）、`pkg/enum/**`（状态值）。表由 `internal/dao/gorm.go` 在启动时 `AutoMigrate` 自动创建，仓库中没有 SQL 迁移脚本。
+## 1. 数据库与账号
 
-## 1. 表关系
+每个服务一个库、一个账号，账号只有本库的权限，服务之间不能跨库读写，跨服务数据通过接口或事件获取。
 
-```
-user_info (U...)  ──1:N──  user_contact  ──N:1──  user_info / group_info
-     │                    （每条记录 = 某用户视角下的一个联系人或群）
-     ├──1:N──  contact_apply  ──N:1──  user_info / group_info
-     ├──1:N──  session        ──N:1──  user_info / group_info（按 send_id 归属）
-     └──1:N──  message        ──N:1──  user_info / group_info（receive_id）
+| 服务 | 库 | 账号 | 密码环境变量 | 引入步骤 |
+|---|---|---|---|---|
+| account | `marschat_account` | `account` | `MARSCHAT_ACCOUNT_DB_PASSWORD` | 1 |
+| social | `marschat_social` | `social` | `MARSCHAT_SOCIAL_DB_PASSWORD` | 1 |
+| message | `marschat_message` | `message` | `MARSCHAT_MESSAGE_DB_PASSWORD` | 1（建库），4（建表） |
+| media | `marschat_media` | `media` | `MARSCHAT_MEDIA_DB_PASSWORD` | 1（建库），6（建表） |
 
-group_info (G...)  members 列以 JSON 数组保存成员 uuid，member_cnt 冗余计数
-```
+access 和 delivery 不持有数据库，状态放在 Redis。
 
-表之间没有数据库外键，关联完全靠 uuid 字符串和首字母前缀（见 [system.md](system.md#52-id-规则)）。
+- 库和账号由 [deploy/mysql/init/01-create-databases.sh](../../deploy/mysql/init/01-create-databases.sh) 创建，只在 MySQL 数据卷首次初始化时执行。新增服务库时修改该脚本，已有数据卷需要手动建库或重建数据卷。
+- 字符集 `utf8mb4`，排序规则 `utf8mb4_0900_ai_ci`。
+- 连接参数 `loc=UTC&parseTime=true`：时间列按 UTC 读写，展示时再转换时区。
 
-## 2. 表结构要点
+## 2. 表
+
+暂无。表结构从步骤 2 起用版本化 SQL 迁移创建，每张表在这里记录字段、索引及对应的查询。
+
+## 3. Redis 键
+
+暂无。键名、TTL 和失效方式从步骤 2 起在这里记录。
+
+## 附录：旧基线表结构（已移除）
+
+旧单体使用单库 `marschat`，6 张表由 GORM `AutoMigrate` 创建，代码已在步骤 0 删除（最后版本见提交 `6624cea` 中的 `internal/model/`）。下表只用于对照功能，新设计不沿用这些结构。
 
 | 表 | 关键字段 | 说明 |
 |---|---|---|
-| `user_info` | `uuid`、`telephone`(char 11)、`password`(char 18，明文)、`nickname`、`avatar`、`gender`、`birthday`、`signature`、`is_admin`、`status`、`deleted_at` | 手机号是登录名；`last_online_at`、`last_offline_at` 未被写入 |
-| `group_info` | `uuid`、`name`、`notice`、`members`(JSON)、`member_cnt`、`owner_id`、`add_mode`、`avatar`、`status`、`deleted_at` | 解散群聊只写 `deleted_at`，不会把 `status` 置为 2 |
+| `user_info` | `uuid`、`telephone`、`password`（明文）、`nickname`、`avatar`、`gender`、`birthday`、`signature`、`is_admin`、`status`、`deleted_at` | 手机号是登录名 |
+| `group_info` | `uuid`、`name`、`notice`、`members`（JSON 数组）、`member_cnt`、`owner_id`、`add_mode`、`avatar`、`status`、`deleted_at` | 成员存在 JSON 列里 |
 | `user_contact` | `user_id`、`contact_id`、`contact_type`、`status`、`deleted_at` | 好友关系双向各一条；群关系只有“用户→群”一条 |
-| `contact_apply` | `uuid`、`user_id`(申请人)、`contact_id`(被申请的用户或群)、`contact_type`、`status`、`message`、`last_apply_at` | 同一对 (申请人, 目标) 复用一条记录 |
-| `session` | `uuid`、`send_id`(会话所有者)、`receive_id`、`receive_name`、`avatar`、`deleted_at` | 会话按所有者单向存储：A 打开与 B 的会话只创建 A 的记录；`last_message`、`last_message_at` 未被写入 |
-| `message` | `uuid`、`session_id`、`type`、`content`、`url`、`send_id`、`send_name`、`send_avatar`、`receive_id`、`file_*`、`status`、`av_data`、`created_at` | 单聊按 (send_id, receive_id) 双向查询，群聊按 receive_id 查询；`send_at` 未被写入 |
+| `contact_apply` | `uuid`、`user_id`、`contact_id`、`contact_type`、`status`、`message`、`last_apply_at` | 同一对（申请人，目标）复用一条记录 |
+| `session` | `uuid`、`send_id`、`receive_id`、`receive_name`、`avatar`、`deleted_at` | 会话按所有者单向存储 |
+| `message` | `uuid`、`session_id`、`type`、`content`、`url`、`send_id`、`receive_id`、`file_*`、`status`、`av_data`、`created_at` | 单聊按（send_id，receive_id）双向查询 |
 
-## 3. 枚举
+### 旧基线枚举
 
-| 枚举 | 取值 | 代码位置 |
-|---|---|---|
-| 用户状态 `user_info.status` | 0 正常、1 禁用 | `user_status_enum` |
-| 群状态 `group_info.status` | 0 正常、1 禁用、2 解散（未使用） | `group_status_enum` |
-| 加群方式 `group_info.add_mode` | 0 直接加入、1 需审核 | `add_mode_enum` |
-| 联系类型 `contact_type` | 0 用户、1 群聊 | `contact_type_enum` |
-| 联系状态 `user_contact.status` | 0 正常、1 被拉黑、2 拉黑、3 被删除、4 删除、5 被禁言（未使用）、6 退出群聊、7 被踢出群聊（未使用） | `contact_status_enum` |
-| 申请状态 `contact_apply.status` | 0 申请中、1 通过、2 拒绝、3 拉黑 | `contact_apply_status_enum` |
-| 消息类型 `message.type` | 0 文本、1 语音（未实现）、2 文件、3 音视频通话信令 | `message_type_enum` |
-| 消息状态 `message.status` | 0 未发送、1 已发送 | `message_status_enum` |
+| 枚举 | 取值 |
+|---|---|
+| 用户状态 `user_info.status` | 0 正常、1 禁用 |
+| 群状态 `group_info.status` | 0 正常、1 禁用、2 解散（未使用） |
+| 加群方式 `group_info.add_mode` | 0 直接加入、1 需审核 |
+| 联系类型 `contact_type` | 0 用户、1 群聊 |
+| 联系状态 `user_contact.status` | 0 正常、1 被拉黑、2 拉黑、3 被删除、4 删除、5 被禁言（未使用）、6 退出群聊、7 被踢出群聊（未使用） |
+| 申请状态 `contact_apply.status` | 0 申请中、1 通过、2 拒绝、3 拉黑 |
+| 消息类型 `message.type` | 0 文本、1 语音（未实现）、2 文件、3 音视频通话信令 |
+| 消息状态 `message.status` | 0 未发送、1 已发送 |
 
-> 注意：`internal/model/user_contact.go` 字段注释中 1～4 的含义与枚举顺序相反。实际写入逻辑与枚举一致（例如拉黑时操作者记 2、对方记 1），**以枚举为准**（TD-19）。
-
-状态流转见 [contact.md](../product/modules/contact.md)。
-
-## 4. Redis 键
-
-所有缓存键的 TTL 为 `constants.REDIS_TIMEOUT` 分钟（当前为 1）。值均为响应结构体数组的 JSON 字符串。
-
-| 键 | 内容 | 写入方 | 失效方 |
-|---|---|---|---|
-| `auth_code_<手机号>` | 6 位短信验证码，TTL 1 分钟 | `sms.VerificationCode` | 登录或注册校验通过后删除 |
-| `contact_user_list_<uuid>` | 好友列表 | `GetUserList` | 删除好友、通过好友申请（只清操作者一方） |
-| `my_joined_group_list_<uuid>` | 我加入的群 | `LoadMyJoinedGroup` | 解散群、移除成员（按前缀全清）；退群、直接进群、通过加群申请的清理键名有误，实际无效 |
-| `contact_mygroup_list_<uuid>` | 我创建的群 | `LoadMyGroup` | 建群、解散（只清群主）、删除群聊（按前缀全清） |
-| `session_list_<uuid>` | 单聊会话列表 | `GetUserSessionList` | 创建会话、删除会话 |
-| `group_session_list_<uuid>` | 群聊会话列表 | `GetGroupSessionList` | 创建/删除会话、退群、解散（只清群主）、删除群聊与移除成员（按前缀全清） |
-| `message_list_<发送方>_<接收方>`、`group_messagelist_<群>` | 消息列表 | **无**（写入代码已注释） | — |
-| `group_info_<群>`、`group_memberlist_<群>`、`user_info_<uuid>`、`session_<a>_<b>*` | 详情缓存 | **无**（只读不写） | — |
-
-后两行的键当前不会出现，相关读取分支总是回源 MySQL，转发服务里的“追加消息到缓存”分支也不会触发（TD-09）。
-
-服务正常退出时会执行 `DeleteAllRedisKeys`，清空当前 Redis 库的**所有**键（TD-06）。
+旧基线的业务规则见 `docs/product/modules/` 下的模块文档，旧的 Redis 键设计见提交 `6624cea` 中本文的第 4 节。

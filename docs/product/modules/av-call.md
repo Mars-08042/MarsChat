@@ -27,7 +27,7 @@
 - `start_call`、`receive_call`、`reject_call` 会写入 `message` 表，作为通话记录；`sdp`、`candidate`、`PEER_LEAVE` 不落库。
 - 信令不回显给发送方（[lessons/av-signaling-no-echo.md](../../lessons/av-signaling-no-echo.md)）。
 - 对方不在线时信令被丢弃，主叫端没有超时或“对方不在线”提示。
-- `ICE_CFG` 为空，只能在可以直接互通的网络中建立连接；公网使用需要配置 STUN/TURN（[deployment.md](../../deployment.md#turn-与-ice-配置)）。
+- `ICE_CFG` 为空，只能在可以直接互通的网络中建立连接；公网使用需要配置 STUN/TURN（旧部署文档的 TURN 与 ICE 配置一节，见提交 `6624cea` 中的 `docs/deployment.md`）。
 - 群聊页面也显示通话按钮，但后端不转发群聊通话信令，因此群聊通话不可用。
 
 ## 相关问题

@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+// 各服务共用的配置片段。服务自己的 Bootstrap 定义在 app/<服务>/internal/conf/conf.proto，
+// 按需组合这里的消息。
+package marschat.conf;
+
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/pkg/conf;conf";
+
+message Server {
+  message HTTP {
+    string addr = 1;
+    google.protobuf.Duration timeout = 2;
+  }
+  message GRPC {
+    string addr = 1;
+    google.protobuf.Duration timeout = 2;
+  }
+  HTTP http = 1;
+  GRPC grpc = 2;
+}
+
+message Registry {
+  message Consul {
+    string address = 1;
+    // 是否让 Consul 主动 TCP 探测服务端口。本地开发时服务监听宿主机 127.0.0.1，
+    // 容器里的 Consul 探测不到，所以关闭，只保留 TTL 心跳；服务容器化后开启。
+    bool health_check = 2;
+  }
+  Consul consul = 1;
+}
+
+message MySQL {
+  string dsn = 1;
+  int32 max_open_conns = 2;
+  int32 max_idle_conns = 3;
+  google.protobuf.Duration conn_max_lifetime = 4;
+  // 超过该耗时的 SQL 记一条 warn 日志
+  google.protobuf.Duration slow_threshold = 5;
+}
+
+message Redis {
+  string addr = 1;
+  string password = 2;
+  int32 db = 3;
+  google.protobuf.Duration dial_timeout = 4;
+  google.protobuf.Duration read_timeout = 5;
+  google.protobuf.Duration write_timeout = 6;
+}
+
+message Log {
+  // debug、info、warn、error
+  string level = 1;
+  // text 或 json
+  string format = 2;
+}

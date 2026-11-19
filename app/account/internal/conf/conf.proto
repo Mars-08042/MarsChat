@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package marschat.account.conf;
+
+import "conf/conf.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/app/account/internal/conf;conf";
+
+message Bootstrap {
+  marschat.conf.Server server = 1;
+  marschat.conf.Registry registry = 2;
+  marschat.conf.MySQL mysql = 3;
+  marschat.conf.Redis redis = 4;
+  marschat.conf.Log log = 5;
+}

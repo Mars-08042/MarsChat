@@ -71,12 +71,12 @@
 | 消费幂等 | 至少一次投递下不重复处理 | 4、5 |
 | Outbox 多实例发布（`FOR UPDATE SKIP LOCKED`） | 多个 message 实例并发发布时不重复、不加分布式锁 | 5 |
 | Redis 在线路由 + 定向推送 | WebSocket 多实例下跨节点投递 | 4、5 |
-| 缓存三类问题防护（见上节） | 穿透、击穿、雪崩 | 1、2、3 |
+| 缓存三类问题防护（见上节） | 穿透、击穿、雪崩 | 2、3 |
 | 限流（网关入口 + Redis 按用户滑动窗口） | 防刷消息、防短信轰炸 | 2、4、5 |
 | 短信防刷（发送间隔、每日上限、按 IP 限流、验证次数上限、一次性使用） | 短信成本与暴力破解 | 2 |
 | JWT + 刷新令牌轮换 + Redis 吊销名单 | 无状态鉴权，同时支持退出、封禁即时失效 | 2 |
-| snowflake 节点号用 Redis 租约分配 | 多实例生成 ID 不冲突 | 1 |
-| protovalidate 参数校验 | 在接口契约中声明校验规则 | 1 |
+| snowflake 节点号用 Redis 租约分配 | 多实例生成 ID 不冲突 | 2 |
+| protovalidate 参数校验 | 在接口契约中声明校验规则 | 2 |
 | 超时、重试（仅幂等调用）、熔断 | 依赖故障时不雪崩 | 5 |
 | 优雅停机（access 通知客户端重连、先从 Consul 摘除） | 滚动发布不丢消息 | 5 |
 | 链路追踪、指标、告警、慢查询日志 | 定位延迟与故障，验证索引 | 8 |
@@ -100,16 +100,34 @@
 
 ### 1. 基础设施与工程骨架
 
-- [ ] 新 `compose.yaml`：MySQL、Redis、Kafka（KRaft）、Consul，含健康检查和 topic 初始化。
-- [ ] 单 Go module 的 monorepo（module 路径 `github.com/Mars-08042/MarsChat`）：`api/<服务>/v1/*.proto`；`app/<服务>/` 按 Kratos v3 分层（`cmd`、`internal/{biz,data,service,server,conf}`、`configs`）；跨服务公共代码放 `pkg/`。
-- [ ] 用 buf 管理 proto：lint、breaking 检查，生成 gRPC、HTTP、errors 和 OpenAPI 代码；接入 protovalidate；生成命令能在 Git Bash 下运行。
-- [ ] 公共能力：错误码、配置加载与环境变量覆盖、`slog` 日志、Consul 注册发现、OpenTelemetry 中间件、snowflake ID（节点号用 Redis 租约分配）、GORM 数据访问、按服务分库的 SQL 迁移（用 `migrate/migrate` 镜像执行）、带三类防护的缓存组件、Redis 限流组件。
-- [ ] 确认 Kratos v3 的 Consul 注册组件、JWT 组件和参数校验的接入方式（v3 已把 JWT、OpenTelemetry 拆到 contrib 模块）。
-- [ ] GitHub Actions：buf lint、go vet、单测、构建（推送后才会运行，推送需开发者同意）。
-- [ ] 验证：`buf lint`、`go vet ./...`、`go build ./...`；两个空服务注册到 Consul 后能互相调用。
+- [x] 新 `compose.yaml`：MySQL 9.7.4、Redis 8.8.4、Kafka 4.4.0（KRaft）、Consul 2.1.0，含健康检查；MySQL 初始化脚本为每个服务建库建账号。
+- [x] 单 Go module 的 monorepo：`app/account`、`app/social` 按 Kratos v3 分层（`cmd`、`internal/{conf,data,server}`、`configs`），公共启动组件在 `pkg/bootstrap`，共用配置消息在 `pkg/conf`。
+- [x] buf 管理配置 proto：`buf.yaml`（`pkg`、`app` 两个模块）、`buf.gen.conf.yaml`（`protoc-gen-go` 用 `go run` 固定版本）；`make gen` 在 Git Bash 下可运行，两次生成结果一致。
+- [x] 公共能力：配置加载与 `MARSCHAT_` 环境变量覆盖、`slog` 日志（GORM 日志接入）、Consul 注册发现（含 `pkg/balancer` 对 Kratos 负载均衡器的修复）、GORM 连接池、Redis 客户端、存活与就绪探针；wire 依赖注入；Makefile。
+- [x] 确认 Kratos v3 接入方式：Consul 注册用 `contrib/registry/consul/v3`（默认 TCP 检查加 TTL 心跳）；gRPC 服务默认注册健康服务；JWT、OpenTelemetry、参数校验在 contrib 模块中，具体接入随使用它们的步骤确定。
+- [x] GitHub Actions：buf lint、生成代码一致性、`go mod tidy -diff`、go vet、构建、`go test -race`（推送后才会运行，推送需开发者同意）。
+- [x] 验证（2026-11-18）：
+  - `buf lint`、`go vet ./...`、`go build ./...`、`go test ./...`、`go mod tidy -diff` 通过；`make gen` 两次结果一致。
+  - 四个容器健康；四个服务账号只能访问本库（访问其他库被拒绝），字符集 `utf8mb4` / `utf8mb4_0900_ai_ci`；Redis 无密码访问被拒绝；Consul 有 leader；四个宿主机端口可连接。
+  - account、social 启动后注册到 Consul（gRPC 与 HTTP 两个端点，TTL 检查 passing），`/healthz`、`/readyz` 返回 200，`make e2e` 通过。
+  - 强制结束服务进程后，TTL 到期实例变为 critical，服务发现返回 0 个实例。
+  - 未验证：Kafka 外部监听器的收发（宿主机暂无 Kafka 客户端，步骤 4 验证）；收到 Ctrl+C 时从 Consul 主动注销（后台任务只能强制结束进程，需要在终端中手动验证）；CI（未推送）。
+
+实施中的调整（2026-11-18）：以下内容在步骤 1 还没有使用方，按“简单优先”移到第一次用到它们的步骤，避免先写出没有调用者的代码。
+
+| 内容 | 移到 | 原因 |
+|---|---|---|
+| 接口 proto 的 gRPC、HTTP、OpenAPI 生成，buf breaking 检查，protovalidate | 2 | 步骤 1 还没有接口 proto |
+| 错误码 | 2 | 随第一个业务接口确定；用 Kratos errors 手写构造，不用 errors 代码生成器 |
+| snowflake ID、SQL 迁移（`migrate/migrate` 镜像）、带三类防护的缓存组件、Redis 限流组件 | 2 | account 是第一个使用方 |
+| Kafka topic 初始化 | 4 | 第一个 topic 随 Outbox 发布器出现 |
+| OpenTelemetry 中间件 | 8 | 与 Jaeger 一起接入 |
+
+另外，“两个空服务互相调用”改为由端到端测试通过服务发现调用两个服务的 gRPC 健康检查，服务之间真正的调用从步骤 3 开始。本地开发时 Consul 只用 TTL 心跳，不做 TCP 探测（服务监听宿主机 `127.0.0.1`，容器里的 Consul 探测不到），步骤 5 服务容器化后开启。
 
 ### 2. account 服务
 
+- [ ] 从步骤 1 移入的公共能力：接口 proto 生成（gRPC、HTTP、OpenAPI）、buf breaking 检查、protovalidate、错误码、snowflake ID（节点号用 Redis 租约分配）、按服务分库的 SQL 迁移（`migrate/migrate` 镜像）、带三类防护的缓存组件、Redis 限流组件。
 - [ ] 手机号加短信验证码注册；密码登录与短信验证码登录；刷新令牌、退出、个人资料、设备列表与踢设备、管理员封禁。
 - [ ] 短信：阿里云短信，开发环境用只写日志的假实现；验证码存 Redis，加上发送间隔、每日上限、按 IP 限流、验证次数上限，验证后立即失效。
 - [ ] 密码用 bcrypt 哈希；JWT 访问令牌加按设备签发的刷新令牌（使用后轮换）；退出和封禁时写入 Redis 吊销名单；提供公共 JWT 中间件给其他服务复用。
@@ -128,7 +146,7 @@
 
 - [ ] access：WebSocket 接入、握手校验令牌、心跳、每连接有界发送队列（满了断开慢连接）、帧协议用 proto 定义、Redis 在线路由（用户 → 设备 → 实例，TTL 随心跳续期）、按用户限制发送频率、收到封禁事件断开连接。
 - [ ] message：会话模型（读扩散）、按 `client_msg_id` 幂等（唯一约束）、事务内用行锁分配会话 seq、消息与 Outbox 同事务、历史游标分页、会话列表（最后一条消息、未读数）、已读位置、按游标补拉（完整、分批、缺口过大重载三种结果）。
-- [ ] Outbox 发布器与 Kafka（按会话分区）；delivery 最小实现：消费事件（幂等）、查在线路由、推送给在线设备并排除发起设备。
+- [ ] Outbox 发布器与 Kafka（按会话分区，topic 由初始化任务显式创建）；delivery 最小实现：消费事件（幂等）、查在线路由、推送给在线设备并排除发起设备。
 - [ ] 在 `test/e2e` 编写端到端测试（Go WebSocket 客户端），覆盖：发送确认、重复发送只存一条、断线补齐、多端同步、已读与未读。
 
 ### 5. 网关与多实例
@@ -196,8 +214,15 @@
 
 ## 当前进度与下一步
 
-步骤 0 已完成（2026-11-18）。旧的本地配置（含阿里云短信 AccessKey）未保留，步骤 2 接入短信时重新配置。下一步：步骤 1，搭建基础设施与工程骨架。
+步骤 0 已完成（2026-11-18）。旧的本地配置（含阿里云短信 AccessKey）未保留，步骤 2 接入短信时重新配置。
+
+步骤 1 已完成（2026-11-18）。下一步：步骤 2，account 服务。
 
 ## 遇到的问题
+
+- 2026-11-18：`docker compose up` 创建 MySQL 容器时一直卡住。原因是本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录（`deploy/mysql/init`）前要在 File sharing 中授权，未授权时 CLI 会等待弹窗确认。Redis、Kafka、Consul 只用命名卷，不受影响。在 Docker Desktop 中授权共享后 MySQL 正常初始化；建议把项目根目录加入 File sharing，已写入 [deployment.md](../../deployment.md#首次配置) 和 [lessons/docker-desktop-bind-mount-hang.md](../../lessons/docker-desktop-bind-mount-hang.md)。
+- 2026-11-18：配置中的时长写成 `500ms`、`1h` 时解析失败。Kratos 用 protojson 解析 `google.protobuf.Duration`，只接受以秒为单位的写法（`0.5s`、`3600s`）。已改正配置，并为每个服务加了解析真实配置文件的单元测试。
+- 2026-11-18：`make e2e` 通过服务发现调用时 panic（`transport/grpc/balancer.go:52` 空指针）。Kratos v3.0.0 的 gRPC 负载均衡器在包初始化时就存下了全局选择器，默认选择器设置得更晚，存下的是 nil。新增 `pkg/balancer` 利用 Go 的包初始化顺序提前设置选择器，见 [lessons/kratos-grpc-selector-nil.md](../../lessons/kratos-grpc-selector-nil.md)。升级 Kratos 时检查上游是否已修复。
+- 2026-11-18：`make run-account` 报 `unexpected EOF while looking for matching '"'`。GnuWin32 make 3.81 按 GBK 代码页把命令行传给 sh，echo 中文提示的 UTF-8 字节和相邻引号组成了非法字符，引号丢失。Makefile 的命令行改为只用 ASCII，并加了注释。
 
 - Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、MinIO、监控组件加多实例服务）在 Docker Desktop 上的内存占用未实测，步骤 5 前评估，必要时按步骤分组启动。

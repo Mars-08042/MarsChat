@@ -1,0 +1,19 @@
+version: v2
+modules:
+  # 跨服务共用的配置片段
+  - path: pkg
+    lint:
+      use:
+        - STANDARD
+      # 配置 proto 不是对外契约，不要求版本后缀；包名统一加 marschat 前缀避免与依赖冲突，不要求与目录一致
+      except:
+        - PACKAGE_VERSION_SUFFIX
+        - PACKAGE_DIRECTORY_MATCH
+  # 各服务自己的 Bootstrap 配置
+  - path: app
+    lint:
+      use:
+        - STANDARD
+      except:
+        - PACKAGE_VERSION_SUFFIX
+        - PACKAGE_DIRECTORY_MATCH

@@ -1,141 +1,120 @@
 # 系统架构（当前状态）
 
-> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），只作参考。新的分层与横切约定在 [ADR-0005](adr/0005-distributed-architecture.md) 中，重构步骤 1 完成后重写本文，见 [后端重构计划](../plans/active/backend-refactor.md)。
-
-> 本文描述**当前代码**的实际结构，以 2026-11-07 首次提交时的代码为准。架构变化时直接更新本文；做出重要技术选型时另写 [ADR](adr/README.md)。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 1（2026-11-18）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
-MarsChat 由一个 Go 后端进程和一个 Vue 3 单页应用组成，前后端分离：
+- 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。步骤 1 完成时只有 account、social 两个**空服务骨架**：能启动、连接各自的数据库和 Redis、注册到 Consul，暂未提供业务接口。
+- 开发阶段服务运行在宿主机，监听 `127.0.0.1`；MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。服务从步骤 5 起打包进容器。
+- 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
-- 后端是**单个进程**，提供 HTTP 业务接口、WebSocket 长连接和静态文件服务。本地模板监听 `127.0.0.1:8000`，`httpEnabled=true` 时使用 HTTP / WS；关闭该开关时使用 HTTPS / WSS。
-- 前端构建为静态文件，由独立的 Web 服务器托管（历史部署方式见 [deployment.md](../deployment.md)）。
-- 在线连接表保存在进程内存中，因此**当前只支持单实例部署**（详见 [tech-debt.md](../plans/tech-debt.md) TD-07）。
+## 2. 仓库结构
 
-架构总览图见 [ARCHITECTURE.md](../../ARCHITECTURE.md)。
-
-## 2. 后端分层
+单个 Go module（`github.com/Mars-08042/MarsChat`）的 monorepo：
 
 ```
-cmd/mars_chat_server/main.go   启动入口：选择消息模式、启动转发服务、RunTLS、处理退出信号
-api/v1/                        Controller：绑定 JSON 请求，调用 service，用 JsonBack 统一返回
-internal/https_server/         Gin 引擎、中间件、全部路由注册（init 中完成）
-internal/service/gorm/         业务服务：用户、联系人、群组、会话、消息、聊天室
-internal/service/chat/         WebSocket 连接管理与消息转发（channel / kafka 两种实现）
-internal/service/kafka/        kafka-go Writer / Reader 封装
-internal/service/redis/        go-redis 封装：读写、按前缀/后缀/模式删除、清空
-internal/service/sms/          阿里云短信验证码
-internal/service/aes/          AES 加解密工具（当前未被引用）
-internal/dao/                  GORM 连接与 AutoMigrate（init 中完成）
-internal/model/                6 个 GORM 模型，见 data-model.md
-internal/dto/request|respond/  请求与响应结构体（JSON 字段为 snake_case）
-internal/config/               TOML 配置加载（单例）
-pkg/constants  pkg/enum         常量与状态枚举
-pkg/ssl  pkg/zlog  pkg/util     HTTPS 重定向中间件、zap 日志封装、随机数工具
+app/<服务>/
+  cmd/<服务>/            main.go 启动入口；wire.go 声明依赖，wire_gen.go 为生成代码
+  configs/config.yaml    服务配置
+  internal/conf/         Bootstrap 配置结构（conf.proto 及生成代码）
+  internal/server/       gRPC、HTTP 服务器与路由注册
+  internal/data/         存储客户端与 repo 实现
+  internal/biz/          业务逻辑（步骤 2 起）
+  internal/service/      实现 proto 定义的接口（步骤 2 起）
+api/<服务>/v1/           对外接口契约 *.proto（步骤 2 起）
+pkg/conf/                跨服务共用的配置消息（conf.proto）
+pkg/bootstrap/           启动公共组件：配置、日志、注册中心、MySQL、Redis、健康检查
+pkg/balancer/            设置 Kratos gRPC 负载均衡的全局选择器（修复 v3.0.0 的初始化顺序问题）
+deploy/                  依赖组件的初始化脚本
+test/e2e/                依赖 compose 环境的端到端测试（构建标签 e2e）
 ```
 
-依赖方向：`api/v1 → service/* → dao/model/redis/kafka`，`service/chat` 直接访问 `dao` 和 `redis`，不经过 `service/gorm`。
+`internal` 保证服务之间不能互相 import 实现代码，跨服务只能通过 `api/` 的接口或事件通信。
 
-### 初始化顺序
+## 3. 服务内分层
 
-各基础组件都在包的 `init()` 中初始化，导入即生效，没有显式的依赖注入：
+按 Kratos v3 布局，依赖方向为 `server → service → biz → data`：
 
-1. `config.GetConfig()` 首次调用时读取 `MARSCHAT_CONFIG` 指定的文件，未设置则读取 `../../configs/config_local.toml`（默认从入口目录启动），失败则 `log.Fatal`。
-2. `zlog` 初始化 zap，同时输出到 stdout 和 `logConfig.logPath`。
-3. `dao` 使用 `mysqlConfig` 完整参数通过 TCP 连接 MySQL，并对 6 张表执行 `AutoMigrate`。
-4. `redis` 创建客户端（不做连通性检查）。
-5. `https_server` 创建 Gin 引擎并注册路由。
-6. `main()`：kafka 模式下初始化 Kafka；启动 `ChatServer` 或 `KafkaChatServer` 协程；根据 `httpEnabled` 使用 `Run` 或 `RunTLS` 监听（仅 HTTPS 模式注册 TLS 重定向）；收到 SIGINT/SIGTERM 后关闭 Kafka、关闭 ChatServer，并**删除当前 Redis 库的全部键**。
-
-本地运行前需要修改的硬编码项见 [deployment.md](../deployment.md#硬编码项清单)。
-
-## 3. 前端结构
-
-| 位置 | 职责 |
+| 层 | 职责 |
 |---|---|
-| `web/chat-server/src/router/index.js` | 8 个页面路由加根路径重定向；全局守卫只检查 `sessionStorage` 中是否有 `userInfo.uuid` |
-| `src/store/index.js` | Vuex：`backendUrl`、`wsUrl`（默认本机 8000，可通过构建环境变量覆盖）、`userInfo`、全局 `socket` |
-| `src/views/access/` | 密码登录、短信登录、注册；登录成功后建立 WebSocket |
-| `src/views/chat/session/SessionList.vue` | 会话列表 |
-| `src/views/chat/contact/ContactList.vue` | 联系人、群组、好友申请 |
-| `src/views/chat/contact/ContactChat.vue` | 聊天主页面（约 2800 行）：消息收发、文件、群管理、WebRTC 通话 |
-| `src/views/chat/user/OwnInfo.vue` | 个人信息 |
-| `src/views/manager/Manager.vue` + `components/*Modal.vue` | 后台管理 |
-| `src/App.vue` | 刷新页面后重新拉取用户信息并重建 WebSocket |
+| server | 创建 gRPC、HTTP 服务器，挂中间件，注册 service 和探针 |
+| service | 把 proto 请求转成 biz 调用，不写业务规则 |
+| biz | 业务规则与用例，定义 repo 接口 |
+| data | 实现 repo 接口，访问 MySQL、Redis、Kafka |
 
-前端用 axios 直接调用后端 `POST` 接口，没有封装统一的请求层。
+例外：HTTP 就绪探针需要检查存储连接，`server` 直接依赖 `data.Data` 的 `ReadinessChecks`，业务接口仍按上表分层。
 
-## 4. 关键技术组件
+各层通过 [wire](https://github.com/google/wire) 在编译期组装。每层提供 `ProviderSet`，`cmd/<服务>/wire.go` 声明组装关系，`make wire` 生成 `wire_gen.go`。
 
-| 组件 | 版本（go.mod / package.json） | 用途 |
-|---|---|---|
-| Go | 1.27.3 | 后端语言 |
-| Gin | v1.10.0 | HTTP 路由；`gin-contrib/cors` 跨域，`unrolled/secure` 做 HTTPS 重定向 |
-| GORM + MySQL 驱动 | v1.25.12 / v1.5.7 | ORM，启动时自动迁移 |
-| go-redis | v8.11.5 | 列表缓存、短信验证码 |
-| gorilla/websocket | v1.5.3 | WSS 长连接 |
-| segmentio/kafka-go | v0.4.47 | kafka 模式下的消息中转 |
-| zap | v1.27.0 | 结构化日志（JSON） |
-| 阿里云 dysmsapi SDK | v4.1.0 | 短信验证码 |
-| Vue / Vue Router / Vuex | ^3.2.13 / ^4.0.3 / ^4.0.0 | 前端框架 |
-| Element Plus | ^2.9.0 | UI 组件库 |
-| WebRTC（浏览器原生） | — | 一对一音视频，信令经 WebSocket 转发 |
+## 4. 启动流程
 
-前端包管理器为 pnpm 11.22.0（`packageManager` 固定版本，唯一锁文件为 `pnpm-lock.yaml`），构建工具为 Vue CLI 5。迁移决策见 [ADR-0004](adr/0004-frontend-pnpm.md)。
+以 account 为例（[main.go](../../app/account/cmd/account/main.go)）：
+
+1. 读取 `-conf` 指定的配置目录（默认 `app/account/configs`），解析到 `conf.Bootstrap`。
+2. 按 `log` 配置创建 `slog` 日志器，设为 Kratos 默认日志器。
+3. `wireApp` 依次创建：Consul 注册中心、gRPC 服务器、MySQL 连接池（`gorm.Open` 立即 ping）、Redis 客户端（ping 一次）、HTTP 服务器。任一依赖不可用时启动失败并退出，退出码为 1。
+4. `app.Run()` 启动服务器并注册到 Consul；收到 SIGINT/SIGTERM 后先从 Consul 注销，再停止服务器，最后按创建的逆序关闭 Redis、MySQL。
 
 ## 5. 横切约定
 
-以下约定来自基线代码的实际实现，新代码应保持一致；若要改变，请先写 ADR。
+### 5.1 配置
 
-### 5.1 接口与返回值
+- 配置结构用 protobuf 定义：共用片段在 [pkg/conf/conf.proto](../../pkg/conf/conf.proto)（`Server`、`Registry`、`MySQL`、`Redis`、`Log`），每个服务的 `internal/conf/conf.proto` 用它们组合出自己的 `Bootstrap`。新增服务专属配置时在服务自己的 proto 中定义。
+- 配置文件中的 `${XXX}` 引用环境变量 `MARSCHAT_XXX`，`${XXX:默认值}` 在变量缺失时取默认值。默认值对应本地开发环境，密码只能来自环境变量。引用的变量缺失且没有默认值时会替换成空字符串，不会报错，密码缺失会在连接依赖时失败。
+- 时长字段按 protobuf `Duration` 的 JSON 格式书写，单位只能是秒（`0.5s`、`3600s`），写成 `500ms`、`1h` 会导致启动失败。每个服务都有解析真实配置文件的单元测试。
+- 配置只在启动时加载一次，不支持热更新。
 
-- 除 `GET /wss` 外，所有业务接口都是 `POST` + JSON 请求体，没有 RESTful 资源路径。
-- HTTP 状态码恒为 200，业务结果放在响应体中：`{"code": 200|400|500, "message": "...", "data": ...}`。
-- Service 方法返回 `(message, [data,] ret)`，由 `api/v1/controller.go` 的 `JsonBack` 转换：
+### 5.2 日志
 
-| ret | 含义 | code | message 内容 |
-|---|---|---|---|
-| `0` | 成功 | 200 | 成功提示 |
-| `-2` | 业务错误（如用户被禁用、验证码错误） | 400 | 给用户看的提示 |
-| `-1` | 系统错误（数据库、Redis 等异常） | 500 | 固定为 `constants.SYSTEM_ERROR` |
+- 统一用标准库 `log/slog`，由 `bootstrap.NewLogger` 创建，输出到 stdout，格式 `text` 或 `json`，每条日志带 `service.name`、`service.version`。
+- GORM 日志接入同一个日志器（`component=gorm`），只记录慢查询（超过 `mysql.slow_threshold`）和错误，查不到记录不算错误；SQL 只打印占位符，不打印参数。
 
-- 系统错误的细节只写日志，不返回前端。业务与系统错误都用 `zlog.Error` 记录。决策背景见 [ADR-0001](adr/0001-service-return-convention.md)。
+### 5.3 服务注册与发现
 
-### 5.2 ID 规则
+- 注册中心是 Consul，服务名为 `marschat-<服务>`。实例 ID 为 `<服务名>-<主机名>-<进程号>`：Consul 要求同一 agent 上的实例 ID 唯一，本地多个服务共用一台主机，只用主机名会互相覆盖。
+- 实例注册时登记 gRPC 和 HTTP 两个端点，带 TTL 心跳检查（每 10 秒上报，20 秒未上报变为 critical，critical 持续 10 分钟后注销）。发现方只拿到检查通过的实例。
+- `registry.consul.health_check` 控制是否让 Consul 主动 TCP 探测服务端口。本地开发时为 `false`：服务监听宿主机 `127.0.0.1`，容器里的 Consul 探测不到。服务容器化（步骤 5）后开启。
+- 服务间调用用 Kratos gRPC 客户端，地址写成 `discovery:///marschat-<服务>`，负载均衡为加权轮询（wrr）。
+- Kratos v3.0.0 的 gRPC 负载均衡器在包初始化时就读取了全局选择器，而默认选择器设置得更晚，经服务发现调用会空指针 panic。`pkg/balancer` 在更早的初始化阶段设置选择器，`pkg/bootstrap` 匿名导入了它；不使用 bootstrap 的程序（如 e2e 测试）要自己匿名导入 `pkg/balancer`。原因与验证见 [lessons/kratos-grpc-selector-nil.md](../lessons/kratos-grpc-selector-nil.md)。
 
-业务 ID 为 `前缀 + yyyyMMdd + 11 位随机数`（`pkg/util/random`），前缀决定实体类型，代码中大量用首字母判断类型：
+### 5.4 健康检查
 
-| 前缀 | 实体 | 前缀 | 实体 |
-|---|---|---|---|
-| `U` | 用户 | `S` | 会话 |
-| `G` | 群聊 | `M` | 消息 |
-| `A` | 申请记录 | | |
+| 探针 | 位置 | 行为 |
+|---|---|---|
+| 存活 | HTTP `GET /healthz` | 进程能处理请求就返回 200，不检查依赖，依赖故障时重启进程没有意义 |
+| 就绪 | HTTP `GET /readyz` | 检查 MySQL、Redis，全部可用返回 200，否则返回 503 和失败的依赖名；错误详情只写日志 |
+| gRPC | `grpc.health.v1.Health` | Kratos 默认注册，服务启动后为 SERVING，停止时为 NOT_SERVING |
 
-### 5.3 静态资源路径
+### 5.5 代码生成
 
-- 头像和文件保存在 `staticSrcConfig` 指定的目录，经 `/static/avatars`、`/static/files` 公开访问。
-- 数据库中的头像存**相对路径** `/static/avatars/<文件名>`；前端展示时若不以 `http` 开头就拼上 `backendUrl`。默认头像是一个外部 CDN 地址。
-- 写入消息前，转发服务用 `normalizePath` 去掉发送者头像中的服务器地址前缀（背景见 [lessons/static-path-normalization.md](../lessons/static-path-normalization.md)）。
-- 例外：文件消息的 `url` 字段目前存的是带服务器地址的绝对 URL（TD-10）。
+| 内容 | 命令 | 说明 |
+|---|---|---|
+| 配置 proto | `make conf` | `buf generate --template buf.gen.conf.yaml`，插件 `protoc-gen-go` 用 `go run` 固定版本 |
+| 依赖注入 | `make wire` | `wire` v0.7.0 |
+| 全部 | `make gen` | CI 会重新生成并检查与提交内容一致 |
 
-### 5.4 删除策略
+`buf.yaml` 中 `pkg`、`app` 两个模块对应配置 proto，lint 使用 STANDARD 规则，例外是不要求版本后缀和“包名与目录一致”（配置 proto 不是对外契约，包名统一加 `marschat.` 前缀以免与依赖冲突）。接口 proto 的生成（gRPC、HTTP、OpenAPI）和参数校验在步骤 2 加入。
 
-用户、群组、会话、联系关系、申请记录全部使用 GORM 软删除（`deleted_at`）。管理端的用户与群组列表用 `Unscoped()` 查询以显示已删除记录。
+### 5.6 错误
 
-### 5.5 日志
+业务错误用 Kratos errors，错误原因在各服务 proto 的 `ErrorReason` 枚举中定义，用 `errors.New(code, reason, message)` 或 `errors.NotFound(reason, message)` 等辅助函数手写构造，不使用 errors 代码生成器。具体错误码在步骤 2 随第一个业务接口确定。
 
-- `zlog.Info/Warn/Error/Fatal` 会附带调用方函数名、文件和行号。
-- 代码中还混用了 `log.Println` 和 `fmt.Println`，新代码统一用 `zlog`。
+### 5.7 测试
 
-## 6. 模块与代码位置索引
+- 单元测试不依赖外部服务，`go test ./...` 即可运行。
+- 依赖 compose 环境和已启动服务的测试放在 `test/e2e`，带 `e2e` 构建标签，用 `make e2e` 运行。
 
-| 业务模块 | 文档 | 后端 | 前端 |
-|---|---|---|---|
-| 用户与认证 | [user-auth.md](../product/modules/user-auth.md) | `user_info_service.go`、`sms/` | `views/access/`、`OwnInfo.vue` |
-| 联系人与申请 | [contact.md](../product/modules/contact.md) | `user_contact_service.go` | `ContactList.vue`、`ContactListModal.vue` |
-| 群组 | [group.md](../product/modules/group.md) | `group_info_service.go` | `ContactChat.vue`、`ContactListModal.vue` |
-| 会话与消息 | [chat-message.md](../product/modules/chat-message.md) | `session_service.go`、`message_service.go`、`service/chat/` | `SessionList.vue`、`ContactChat.vue` |
-| 音视频通话 | [av-call.md](../product/modules/av-call.md) | `service/chat/`（只转发） | `ContactChat.vue` |
-| 后台管理 | [admin.md](../product/modules/admin.md) | `user_info_service.go`、`group_info_service.go` | `Manager.vue`、`components/*Modal.vue` |
+## 6. 关键技术组件
 
-数据模型、枚举和 Redis 键见 [data-model.md](data-model.md)；请求与消息的流转过程见 [data-flow.md](data-flow.md)。
+| 组件 | 版本 | 用途 |
+|---|---|---|
+| Go | 1.27.3 | 后端语言 |
+| Kratos | v3.0.0；contrib/registry/consul v3 伪版本 `v3.0.0-20261026152050-dd0fb7df1e32` | 微服务框架、Consul 注册发现 |
+| hashicorp/consul/api | v1.35.0 | Consul 客户端 |
+| GORM + MySQL 驱动 | v1.31.2 / v1.6.0 | 数据访问 |
+| go-redis | v9.23.0 | Redis 客户端 |
+| wire | v0.7.0 | 编译期依赖注入 |
+| buf | 1.71.0 | proto lint 与代码生成 |
+| protoc-gen-go | v1.36.11 | 生成 proto 的 Go 代码 |
+
+依赖组件的镜像版本见 [deployment.md](../deployment.md)。
