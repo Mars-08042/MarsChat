@@ -1,6 +1,45 @@
-# MarsChat 本地依赖组件。宿主机端口 = 容器默认端口 + 10000，只绑定 127.0.0.1。
-# 密码从 .env 读取（模板见 .env.example）。应用服务在开发阶段运行在宿主机上。
+# MarsChat 本地依赖组件与容器模式的应用服务。宿主机端口 = 容器默认端口 + 10000，只绑定 127.0.0.1。
+# 密码从 .env 读取（模板见 .env.example）。
+# 日常开发时应用服务运行在宿主机（make run-<服务>）；容器模式（profile apps，make cluster-up）用于多实例与故障实验。
+# 两种模式共用同一个 Consul 且服务名相同，不能同时运行。
 name: marschat
+
+# 固定子网：网关需要固定 IP，供 account 的 trusted_proxies 信任。动态分配只用后半段（ip_range），
+# 不会占用前半段的固定地址。本机其他项目的网络占用 172.17～172.26 网段。
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
+
+# 应用服务的公共设置。地址类配置用 MARSCHAT_ 环境变量覆盖配置文件中的 ${XXX:默认值}；
+# 密钥按服务单独传入，不用 env_file 把整个 .env 交给每个容器。
+x-app: &app
+  profiles: ["apps"]
+  restart: unless-stopped
+  mem_limit: 256m
+  stop_grace_period: 10s
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    consul:
+      condition: service_healthy
+
+x-app-env: &app-env
+  MARSCHAT_CONSUL_ADDR: consul:8500
+  # 容器里的 Consul 能探测到服务端口，开启 TCP 检查，实例被杀后几秒内从发现结果中消失
+  MARSCHAT_CONSUL_TCP_CHECK_INTERVAL: 3s
+  MARSCHAT_MYSQL_ADDR: mysql:3306
+  MARSCHAT_REDIS_ADDR: redis:6379
+  MARSCHAT_REDIS_PASSWORD: ${MARSCHAT_REDIS_PASSWORD:?请在 .env 中设置 MARSCHAT_REDIS_PASSWORD}
+  MARSCHAT_KAFKA_BROKERS: kafka:29092
+  MARSCHAT_JWT_PUBLIC_KEY: ${MARSCHAT_JWT_PUBLIC_KEY:?请执行 make keys 生成 JWT 密钥}
+  MARSCHAT_LOG_FORMAT: json
 
 services:
   mysql:
@@ -65,6 +104,8 @@ services:
       # topic 由初始化任务显式创建，避免拼写错误时被静默自动创建
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # 镜像默认堆为 1 GiB，本地单 broker、几个 topic 用不了这么多；Docker Desktop 虚拟机只有 3.8 GiB
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -147,6 +188,98 @@ services:
           /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
             --topic "$$topic" --partitions "$$partitions" --replication-factor 1
         done
+
+  # 以下为容器模式的应用服务（profile apps），镜像由 make images 构建，配置目录只读挂载。
+  # 不发布宿主机端口，客户端经网关访问。access、message、delivery 各两个实例。
+  account:
+    <<: *app
+    image: marschat/account:dev
+    volumes:
+      - ./app/account/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_ACCOUNT_HTTP_ADDR: 0.0.0.0:18010
+      MARSCHAT_ACCOUNT_GRPC_ADDR: 0.0.0.0:19010
+      MARSCHAT_ACCOUNT_DB_PASSWORD: ${MARSCHAT_ACCOUNT_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_ACCOUNT_DB_PASSWORD}
+      MARSCHAT_JWT_PRIVATE_KEY: ${MARSCHAT_JWT_PRIVATE_KEY:?请执行 make keys 生成 JWT 密钥}
+      # 只信任网关转发的 X-Forwarded-For，按 IP 限流才能拿到真实客户端 IP
+      MARSCHAT_TRUSTED_PROXY: 172.30.0.10
+
+  social:
+    <<: *app
+    image: marschat/social:dev
+    volumes:
+      - ./app/social/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_SOCIAL_HTTP_ADDR: 0.0.0.0:18020
+      MARSCHAT_SOCIAL_GRPC_ADDR: 0.0.0.0:19020
+      MARSCHAT_SOCIAL_DB_PASSWORD: ${MARSCHAT_SOCIAL_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_SOCIAL_DB_PASSWORD}
+
+  message:
+    <<: *app
+    image: marschat/message:dev
+    deploy:
+      replicas: 2
+    volumes:
+      - ./app/message/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_MESSAGE_HTTP_ADDR: 0.0.0.0:18030
+      MARSCHAT_MESSAGE_GRPC_ADDR: 0.0.0.0:19030
+      MARSCHAT_MESSAGE_DB_PASSWORD: ${MARSCHAT_MESSAGE_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MESSAGE_DB_PASSWORD}
+
+  delivery:
+    <<: *app
+    image: marschat/delivery:dev
+    deploy:
+      replicas: 2
+    volumes:
+      - ./app/delivery/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_DELIVERY_GRPC_ADDR: 0.0.0.0:19040
+
+  access:
+    <<: *app
+    image: marschat/access:dev
+    deploy:
+      replicas: 2
+    # 停机时要排空 WebSocket 连接，留得比其他服务长
+    stop_grace_period: 20s
+    volumes:
+      - ./app/access/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_ACCESS_HTTP_ADDR: 0.0.0.0:18000
+      MARSCHAT_ACCESS_GRPC_ADDR: 0.0.0.0:19100
+
+  # API 网关（profile apps）。Standalone 模式，配置见 deploy/apisix/；上游节点经 Consul 发现。
+  # 固定 IP 172.30.0.10：account 的 trusted_proxies 只信任它转发的 X-Forwarded-For。
+  apisix:
+    image: apache/apisix:3.20.0-debian
+    profiles: ["apps"]
+    restart: unless-stopped
+    mem_limit: 512m
+    depends_on:
+      consul:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:19080:9080"
+      - "127.0.0.1:19443:9443"
+    networks:
+      default:
+        ipv4_address: 172.30.0.10
+    environment:
+      # 入口脚本据此跳过 etcd 初始化
+      APISIX_STAND_ALONE: "true"
+    # 证书内容读入环境变量，供 apisix.yaml 中的 $env:// 引用，再交给镜像原来的入口脚本（前台运行 OpenResty）。
+    # 证书由 make certs 生成，make cluster-up 会先执行它。
+    entrypoint: ["sh", "-c", "export MARSCHAT_TLS_CERT=\"$$(cat /certs/tls.crt)\" MARSCHAT_TLS_KEY=\"$$(cat /certs/tls.key)\" && exec /docker-entrypoint.sh docker-start"]
+    volumes:
+      - ./deploy/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./deploy/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./deploy/apisix/certs:/certs:ro
 
 volumes:
   mysql-data:

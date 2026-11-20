@@ -29,6 +29,8 @@ const (
 	closeGrace = 2 * time.Second
 	// 在线路由与吊销名单的单次 Redis 操作超时
 	redisTimeout = 2 * time.Second
+	// 停机时每隔这么久关闭一批连接
+	drainTick = 100 * time.Millisecond
 )
 
 // options 是连接参数，来自配置的 websocket 段，修改后需要重启。
@@ -39,9 +41,10 @@ type options struct {
 	writeTimeout      time.Duration
 	sendQueue         int
 	maxFrameBytes     int64
+	drainWindow       time.Duration
 }
 
-// Hub 管理本实例上的全部连接，同时是 Kratos 的 transport.Server：停机时以 1001 关闭全部连接并删除路由。
+// Hub 管理本实例上的全部连接，同时是 Kratos 的 transport.Server：停机时以 1001 分批关闭全部连接并删除路由。
 type Hub struct {
 	opts   options
 	policy *PolicyHolder
@@ -55,7 +58,7 @@ type Hub struct {
 	byID     map[int64]*Conn    // 已认证的连接
 	stopping bool
 	wg       sync.WaitGroup // 正在服务的连接
-	stopped  chan struct{}
+	stopped  chan struct{}  // Stop 返回时关闭，即全部连接已关闭或已强制断开
 }
 
 // NewHub 创建连接管理器。
@@ -68,6 +71,7 @@ func NewHub(c *conf.WebSocket, policy *PolicyHolder, a Authenticator, routes Rou
 			writeTimeout:      c.GetWriteTimeout().AsDuration(),
 			sendQueue:         int(c.GetSendQueue()),
 			maxFrameBytes:     int64(c.GetMaxFrameBytes()),
+			drainWindow:       c.GetDrainWindow().AsDuration(),
 		},
 		policy:  policy,
 		auth:    a,
@@ -160,8 +164,17 @@ func (h *Hub) Start(context.Context) error {
 	return nil
 }
 
-// Stop 以 1001 关闭全部连接，等待它们删除路由后返回。超过 ctx 期限时强制断开剩余连接。
-// 先从 Consul 摘除、通知客户端分批重连在重构步骤 5 实现。
+// Drained 返回一个通道，Stop 结束（连接全部关闭或已强制断开）时关闭。
+// gRPC 服务器等它关闭后再停止，保证排空期间发往尚未关闭的连接的推送仍然有效。
+func (h *Hub) Drained() <-chan struct{} {
+	return h.stopped
+}
+
+// Stop 进入排空状态：拒绝新连接，把现有连接以 1001 分批关闭，分布在 drain_window 内，
+// 避免全部客户端同时重连到剩下的实例；连接关闭时照旧删除在线路由。全部连接关闭后返回。
+// 超过 ctx 期限时立即关闭剩余连接并强制断开。
+//
+// Kratos 先从 Consul 注销实例再调用 Stop，此时网关已经不再分配新连接到这里。
 func (h *Hub) Stop(ctx context.Context) error {
 	h.mu.Lock()
 	if h.stopping {
@@ -176,10 +189,9 @@ func (h *Hub) Stop(ctx context.Context) error {
 	h.mu.Unlock()
 	defer close(h.stopped)
 
-	h.logger.Info("closing websocket connections", slog.Int("count", len(conns)))
-	for _, c := range conns {
-		c.closeWith(nil, websocket.CloseGoingAway, "server shutting down")
-	}
+	h.logger.Info("draining websocket connections",
+		slog.Int("count", len(conns)), slog.Duration("window", h.opts.drainWindow))
+	closeInBatches(ctx, conns, h.opts.drainWindow)
 	done := make(chan struct{})
 	go func() {
 		h.wg.Wait()
@@ -194,5 +206,26 @@ func (h *Hub) Stop(ctx context.Context) error {
 		}
 		h.logger.Warn("websocket connections did not close in time, forced", slog.Int("count", len(conns)))
 		return ctx.Err()
+	}
+}
+
+// closeInBatches 每隔 drainTick 关闭一批连接，批大小按窗口内的批数均分，所以关闭速率不超过
+// 每秒 len(conns)/window；连接少时一批一个，提前结束。窗口为 0 时一次全部关闭，ctx 到期时立即关闭剩余的。
+func closeInBatches(ctx context.Context, conns []*Conn, window time.Duration) {
+	batches := max(int(window/drainTick), 1)
+	size := (len(conns) + batches - 1) / batches
+	ticker := time.NewTicker(drainTick)
+	defer ticker.Stop()
+	for i := 0; i < len(conns); i += size {
+		if i > 0 {
+			select {
+			case <-ticker.C:
+			case <-ctx.Done():
+				size = len(conns)
+			}
+		}
+		for _, c := range conns[i:min(i+size, len(conns))] {
+			c.closeWith(nil, websocket.CloseGoingAway, "server shutting down")
+		}
 	}
 }

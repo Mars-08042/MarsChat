@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"time"
 
 	"github.com/go-kratos/kratos/contrib/registry/consul/v3"
+	"github.com/go-kratos/kratos/v3"
 	kerrors "github.com/go-kratos/kratos/v3/errors"
+	"github.com/go-kratos/kratos/v3/middleware/circuitbreaker"
 	kgrpc "github.com/go-kratos/kratos/v3/transport/grpc"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
@@ -19,6 +22,7 @@ import (
 	"github.com/Mars-08042/MarsChat/pkg/auth"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 	pkgconf "github.com/Mars-08042/MarsChat/pkg/conf"
+	"github.com/Mars-08042/MarsChat/pkg/middleware/retry"
 	"github.com/Mars-08042/MarsChat/pkg/route"
 )
 
@@ -28,6 +32,7 @@ var ProviderSet = wire.NewSet(
 	NewData,
 	NewAuthenticator,
 	NewRouteRepo,
+	wire.Bind(new(biz.RouteRepo), new(*RouteRepo)),
 	NewMessageSender,
 )
 
@@ -52,21 +57,47 @@ func NewAuthenticator(c *pkgconf.Auth, rdb *redis.Client, logger *slog.Logger) (
 	return auth.NewVerifier(c, rdb, logger)
 }
 
-type routeRepo struct {
-	rdb  *redis.Client
-	addr string
+// RouteRepo 读写在线路由，路由中记录本实例供 delivery 直连的 gRPC 地址。
+type RouteRepo struct {
+	rdb    *redis.Client
+	addr   string
+	logger *slog.Logger
 }
 
-// NewRouteRepo 创建在线路由仓库，路由中记录本实例的 advertise_addr。
-func NewRouteRepo(rdb *redis.Client, bc *conf.Bootstrap) biz.RouteRepo {
-	return &routeRepo{rdb: rdb, addr: bc.GetAdvertiseAddr()}
+// NewRouteRepo 创建在线路由仓库。配置了 advertise_addr 时直接使用，否则由 ResolveAddr 在启动时确定。
+func NewRouteRepo(rdb *redis.Client, bc *conf.Bootstrap, logger *slog.Logger) *RouteRepo {
+	return &RouteRepo{rdb: rdb, addr: bc.GetAdvertiseAddr(), logger: logger}
 }
 
-func (r *routeRepo) Register(ctx context.Context, userID, connID, sessionID int64, ttl time.Duration) error {
+// ResolveAddr 在没有配置 advertise_addr 时，取 Kratos 注册到 Consul 的 gRPC 端点作为路由地址。
+// 作为 kratos.BeforeStart 钩子调用：Kratos 在钩子之前已算好端点，HTTP 服务器在钩子之后才开始接受连接，
+// 所以第一条连接登记路由时地址已经确定，之后只读不写，不需要加锁。
+// 从端点取而不是在构造时依赖 gRPC 服务器，是因为 gRPC 服务器依赖 Hub、Hub 依赖本仓库，wire 会成环。
+func (r *RouteRepo) ResolveAddr(ctx context.Context) error {
+	if r.addr == "" {
+		app, ok := kratos.FromContext(ctx)
+		if !ok {
+			return fmt.Errorf("resolve route address: no kratos app in context")
+		}
+		for _, e := range app.Endpoint() {
+			if u, err := url.Parse(e); err == nil && u.Scheme == "grpc" {
+				r.addr = u.Host
+				break
+			}
+		}
+		if r.addr == "" {
+			return fmt.Errorf("resolve route address: no grpc endpoint in %v", app.Endpoint())
+		}
+	}
+	r.logger.Info("route address resolved", slog.String("addr", r.addr))
+	return nil
+}
+
+func (r *RouteRepo) Register(ctx context.Context, userID, connID, sessionID int64, ttl time.Duration) error {
 	return route.Register(ctx, r.rdb, userID, route.Entry{ConnID: connID, SessionID: sessionID, Addr: r.addr}, ttl)
 }
 
-func (r *routeRepo) Unregister(ctx context.Context, userID, connID int64) error {
+func (r *RouteRepo) Unregister(ctx context.Context, userID, connID int64) error {
 	return route.Unregister(ctx, r.rdb, userID, connID)
 }
 
@@ -76,12 +107,18 @@ type messageSender struct {
 
 // NewMessageSender 创建 message 客户端，默认地址 discovery:///marschat-message。
 // 连接是惰性的，message 暂时不可用不影响启动；超时同时也是服务发现首次解析的等待上限。
+// SendMessage 按 client_msg_id 幂等（重复执行只存一条、返回同一个 seq），连接级失败时重试一次；
+// 按接口熔断，重试在外层。
 func NewMessageSender(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (biz.MessageSender, func(), error) {
 	c := bc.GetMessage()
 	conn, err := kgrpc.NewClient(context.Background(),
 		kgrpc.WithEndpoint(c.GetEndpoint()),
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
+		kgrpc.WithMiddleware(
+			retry.Client(messagev1.MessageInternalService_SendMessage_FullMethodName),
+			circuitbreaker.Client(),
+		),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create message client %s: %w", c.GetEndpoint(), err)
@@ -94,8 +131,9 @@ func NewMessageSender(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logge
 	return &messageSender{c: messagev1.NewMessageInternalServiceClient(conn)}, cleanup, nil
 }
 
-// Send 区分两类错误：message 返回的业务错误（带错误原因）原样返回，客户端看到具体原因；
-// 超时、连接失败等没有错误原因的错误统一为 503 UPSTREAM_UNAVAILABLE。
+// Send 区分两类错误：带错误原因的错误原样返回，客户端看到具体原因，包括 message 的业务错误，
+// 以及熔断打开时的 503 CIRCUITBREAKER（请求没有发出，可以稍后重发）；
+// 超时、连接失败等没有错误原因的错误统一为 503 UPSTREAM_UNAVAILABLE（结果未知）。
 func (s *messageSender) Send(ctx context.Context, p auth.Principal, connID int64, m *messagev1.OutgoingMessage) (*messagev1.SendResult, error) {
 	resp, err := s.c.SendMessage(ctx, &messagev1.SendMessageRequest{
 		SenderId:     p.UserID,

@@ -50,6 +50,36 @@ build: ## 构建全部服务到 bin/
 	@mkdir -p bin
 	go build -ldflags "-X main.Version=$(VERSION)" -o bin/ $(foreach s,$(SERVICES),./app/$(s)/cmd/$(s))
 
+# 容器模式（profile apps）：镜像用宿主机交叉编译的二进制，见 deploy/docker/Dockerfile。
+# 目标架构默认 amd64，与 Docker Desktop 虚拟机一致；ARM 机器上用 make images IMAGE_ARCH=arm64。
+IMAGE_TAG ?= dev
+IMAGE_ARCH ?= amd64
+APP_SERVICES := $(SERVICES) apisix
+
+.PHONY: images
+images: ## 交叉编译全部服务并构建镜像 marschat/<service>:dev
+	@mkdir -p build/linux
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags "-s -w -X main.Version=$(VERSION)" -o build/linux/ $(foreach s,$(SERVICES),./app/$(s)/cmd/$(s))
+	for s in $(SERVICES); do docker build -q -f deploy/docker/Dockerfile --build-arg SERVICE=$$s -t marschat/$$s:$(IMAGE_TAG) build/linux || exit 1; done
+
+.PHONY: certs
+certs: ## 生成网关的自签证书到 deploy/apisix/certs（已有时不覆盖）
+	go run ./tools/devcert -out deploy/apisix/certs
+
+.PHONY: cluster-up
+cluster-up: certs ## 容器模式启动全部服务与网关（先 make up、迁移、make images；不要同时在宿主机运行服务）
+	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
+	docker compose --profile apps up -d --wait
+
+.PHONY: cluster-test
+cluster-test: ## 集群测试与故障实验，需要先 make cluster-up；只经网关访问，-v 输出实验数据
+	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
+	set -a && . ./.env && set +a && go test -tags cluster -count=1 -v -timeout 20m ./test/cluster/...
+
+.PHONY: cluster-down
+cluster-down: ## 停止并删除容器模式的服务与网关容器，依赖组件保持运行
+	docker compose --profile apps rm -sf $(APP_SERVICES)
+
 .PHONY: up
 up: ## 启动依赖组件，等待健康检查通过后创建 Kafka topic
 	docker compose up -d --wait

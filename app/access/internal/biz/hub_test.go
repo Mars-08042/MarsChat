@@ -574,3 +574,112 @@ func TestStopClosesConnections(t *testing.T) {
 	// 停机后的新连接立即关闭
 	e.dial(t).expectClose(websocket.CloseGoingAway)
 }
+
+// closeEvent 是客户端观察到的连接结束：关闭码（异常断开为 0）和时间。
+type closeEvent struct {
+	code int
+	at   time.Time
+}
+
+// watchClose 在后台读到连接结束为止，把结果发到返回的通道。
+func watchClose(ws *websocket.Conn) <-chan closeEvent {
+	ch := make(chan closeEvent, 1)
+	go func() {
+		_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+		for {
+			if _, _, err := ws.ReadMessage(); err != nil {
+				ev := closeEvent{at: time.Now()}
+				var ce *websocket.CloseError
+				if errors.As(err, &ce) {
+					ev.code = ce.Code
+				}
+				ch <- ev
+				return
+			}
+		}
+	}()
+	return ch
+}
+
+// 停机时连接分批关闭，分布在 drain_window 内，而不是同时断开。
+func TestStopDrainsInBatches(t *testing.T) {
+	const n = 20
+	window := time.Second // 10 批，每批 2 个，最后一批在约 900 毫秒时关闭
+	e := newEnv(t, func(c *conf.WebSocket) { c.DrainWindow = durationpb.New(window) })
+	watches := make([]<-chan closeEvent, n)
+	for i := range watches {
+		watches[i] = watchClose(e.dial(t).ws)
+	}
+	eventually(t, func() bool {
+		e.hub.mu.Lock()
+		defer e.hub.mu.Unlock()
+		return len(e.hub.all) == n
+	})
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := e.hub.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stopped := time.Since(start)
+
+	var first, last time.Duration
+	for i, w := range watches {
+		ev := <-w
+		if ev.code != websocket.CloseGoingAway {
+			t.Fatalf("connection %d close code = %d, want 1001", i, ev.code)
+		}
+		d := ev.at.Sub(start)
+		if i == 0 || d < first {
+			first = d
+		}
+		last = max(last, d)
+	}
+	if first > 300*time.Millisecond {
+		t.Errorf("first close after %v, want the first batch immediately", first)
+	}
+	if last < 700*time.Millisecond {
+		t.Errorf("last close after %v, want spread over the %v window", last, window)
+	}
+	if stopped < last-50*time.Millisecond {
+		t.Errorf("Stop returned after %v, before the last connection closed at %v", stopped, last)
+	}
+	select {
+	case <-e.hub.Drained():
+	default:
+		t.Error("Drained not closed after Stop returned")
+	}
+}
+
+// 停机超时到期时不再分批等待，剩余连接立即断开，Stop 返回超时错误。
+func TestStopDeadlineCutsDrainShort(t *testing.T) {
+	const n = 10
+	e := newEnv(t, func(c *conf.WebSocket) { c.DrainWindow = durationpb.New(10 * time.Second) })
+	watches := make([]<-chan closeEvent, n)
+	for i := range watches {
+		watches[i] = watchClose(e.dial(t).ws)
+	}
+	eventually(t, func() bool {
+		e.hub.mu.Lock()
+		defer e.hub.mu.Unlock()
+		return len(e.hub.all) == n
+	})
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := e.hub.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop = %v, want DeadlineExceeded", err)
+	}
+	for i, w := range watches {
+		select {
+		case ev := <-w:
+			if d := ev.at.Sub(start); d > 2*time.Second {
+				t.Errorf("connection %d ended after %v, want right after the deadline", i, d)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("connection %d still open after Stop returned", i)
+		}
+	}
+}

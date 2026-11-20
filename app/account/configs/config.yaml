@@ -13,7 +13,7 @@ server:
 registry:
   consul:
     address: ${CONSUL_ADDR:127.0.0.1:18500}
-    health_check: false
+    tcp_check_interval: ${CONSUL_TCP_CHECK_INTERVAL:0s}
 
 mysql:
   dsn: account:${ACCOUNT_DB_PASSWORD}@tcp(${MYSQL_ADDR:127.0.0.1:13306})/marschat_account?charset=utf8mb4&parseTime=true&loc=UTC&timeout=5s
@@ -55,7 +55,10 @@ sms:
 
 security:
   bcrypt_cost: 12
-  trusted_proxies: []
+  # 可信代理（网关）的 IP 或 CIDR：只有直接连接方是它们时才读取 X-Forwarded-For。
+  # 宿主机运行时客户端直连，为空；容器模式下为网关的固定 IP（见 compose.yaml）
+  trusted_proxies:
+    - ${TRUSTED_PROXY:}
 
 cache:
   user_ttl: 1800s

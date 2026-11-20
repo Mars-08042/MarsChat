@@ -1,5 +1,6 @@
-# 构建产物
+# 构建产物（build/ 是 make images 交叉编译的二进制）
 /bin/
+/build/
 *.exe
 *.exe~
 *.dll
@@ -15,6 +16,7 @@ vendor/
 *.local.yaml
 
 # 本地开发证书（含私钥）
+deploy/apisix/certs/
 *.pem
 *.key
 

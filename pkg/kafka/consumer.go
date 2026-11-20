@@ -99,7 +99,7 @@ func NewConsumer(c *conf.Kafka, cc ConsumerConfig, logger *slog.Logger) (*Consum
 	if cc.FromLatest {
 		reset = kgo.NewOffset().AtEnd()
 	}
-	cl, err := kgo.NewClient(
+	opts := []kgo.Opt{
 		kgo.SeedBrokers(brokers...),
 		kgo.ClientID(cc.Group),
 		kgo.ConsumerGroup(cc.Group),
@@ -107,7 +107,11 @@ func NewConsumer(c *conf.Kafka, cc ConsumerConfig, logger *slog.Logger) (*Consum
 		kgo.ConsumeResetOffset(reset),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
-	)
+	}
+	if d := c.GetSessionTimeout(); d != nil {
+		opts = append(opts, kgo.SessionTimeout(d.AsDuration()))
+	}
+	cl, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create kafka consumer %s: %w", cc.Group, err)
 	}

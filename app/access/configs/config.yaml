@@ -10,13 +10,14 @@ server:
     addr: ${ACCESS_GRPC_ADDR:127.0.0.1:19100}
     timeout: 3s
 
-# 本实例 gRPC 地址，写入在线路由供 delivery 直连；容器或多机部署时设为本机可被访问的 IP
-advertise_addr: ${ACCESS_ADVERTISE_ADDR:127.0.0.1:19100}
+# 本实例 gRPC 地址，写入在线路由供 delivery 直连。留空时取注册到 Consul 的 gRPC 端点
+#（宿主机运行为 127.0.0.1:19100，容器内为容器 IP），只有经 NAT 等不同地址访问时才需要填写
+advertise_addr: ${ACCESS_ADVERTISE_ADDR:}
 
 registry:
   consul:
     address: ${CONSUL_ADDR:127.0.0.1:18500}
-    health_check: false
+    tcp_check_interval: ${CONSUL_TCP_CHECK_INTERVAL:0s}
 
 redis:
   addr: ${REDIS_ADDR:127.0.0.1:16379}
@@ -47,6 +48,8 @@ websocket:
   send_queue: 256
   write_timeout: 10s
   max_frame_bytes: 65536
+  # 停机时在该时间内分批关闭现有连接（关闭码 1001），客户端分散重连到其他实例
+  drain_window: 5s
 
 # 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
 policy:

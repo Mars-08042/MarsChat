@@ -35,7 +35,7 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 		cleanup()
 		return nil, nil, err
 	}
-	routeRepo := data.NewRouteRepo(client, confBootstrap)
+	routeRepo := data.NewRouteRepo(client, confBootstrap, logger)
 	messageSender, cleanup2, err := data.NewMessageSender(confBootstrap, consulRegistry, logger)
 	if err != nil {
 		cleanup()
@@ -46,7 +46,7 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 	grpcServer := server.NewGRPCServer(confServer, internalService, logger)
 	dataData := data.NewData(client)
 	httpServer := server.NewHTTPServer(confServer, dataData, hub, logger)
-	app := newApp(logger, consulRegistry, grpcServer, httpServer, hub)
+	app := newApp(logger, consulRegistry, grpcServer, httpServer, hub, routeRepo)
 	return app, func() {
 		cleanup2()
 		cleanup()

@@ -18,6 +18,8 @@ message Bootstrap {
   // 群消息推送前取成员列表
   Upstream social = 6 [(buf.validate.field).required = true];
   Push push = 7 [(buf.validate.field).required = true];
+  // 可热更新，见 Policy
+  Policy policy = 8 [(buf.validate.field).required = true];
 }
 
 // Upstream 是调用其他服务的配置，修改后需要重启。
@@ -28,6 +30,19 @@ message Upstream {
   google.protobuf.Duration timeout = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}
+
+// Policy 是可热更新的策略：修改配置文件后自动生效，校验不通过时保留旧值。
+message Policy {
+  // access 实例推送失败（不可达或超时）后的冷却期：期间发往该实例的推送直接跳过，不再每次等待超时；
+  // 冷却结束后重新拨号。0 表示不冷却，只摘除连接
+  google.protobuf.Duration push_cooldown = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {seconds: 0}
+      lte: {seconds: 60}
+    }
   ];
 }
 

@@ -21,11 +21,18 @@ func TestConfigFileParses(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	defer c.Close()
-	if bc.GetServer().GetGrpc().GetAddr() == "" || bc.GetAdvertiseAddr() == "" {
-		t.Error("config not fully loaded: server.grpc.addr or advertise_addr is empty")
+	if bc.GetServer().GetGrpc().GetAddr() == "" {
+		t.Error("config not fully loaded: server.grpc.addr is empty")
+	}
+	// 默认留空，由注册的 gRPC 端点决定，见 data.RouteRepo.ResolveAddr
+	if got := bc.GetAdvertiseAddr(); got != "" {
+		t.Errorf("advertise_addr = %q, want empty by default", got)
 	}
 	if got := bc.GetWebsocket().GetHeartbeatTimeout().AsDuration(); got != 90*time.Second {
 		t.Errorf("websocket.heartbeat_timeout = %v, want 90s", got)
+	}
+	if got := bc.GetWebsocket().GetDrainWindow().AsDuration(); got != 5*time.Second {
+		t.Errorf("websocket.drain_window = %v, want 5s", got)
 	}
 	if got := bc.GetPolicy().GetFramesPerSecond(); got != 30 {
 		t.Errorf("policy.frames_per_second = %d, want 30", got)
@@ -41,6 +48,7 @@ func TestHeartbeatTimeoutMustExceedInterval(t *testing.T) {
 		SendQueue:         256,
 		WriteTimeout:      durationpb.New(10 * time.Second),
 		MaxFrameBytes:     65536,
+		DrainWindow:       durationpb.New(5 * time.Second),
 	}
 	if err := protovalidate.Validate(ws); err == nil {
 		t.Fatal("want validation error when heartbeat_timeout == heartbeat_interval")

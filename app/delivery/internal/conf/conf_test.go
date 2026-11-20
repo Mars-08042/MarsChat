@@ -22,4 +22,7 @@ func TestConfigFileParses(t *testing.T) {
 	if got := bc.GetPush().GetTimeout().AsDuration(); got != 2*time.Second {
 		t.Errorf("push.timeout = %v, want 2s", got)
 	}
+	if got := bc.GetPolicy().GetPushCooldown().AsDuration(); got != 5*time.Second {
+		t.Errorf("policy.push_cooldown = %v, want 5s", got)
+	}
 }

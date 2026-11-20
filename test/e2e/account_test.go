@@ -5,11 +5,8 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"os"
 	"strconv"
@@ -19,12 +16,12 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
 	v1 "github.com/Mars-08042/MarsChat/api/account/v1"
+	"github.com/Mars-08042/MarsChat/test/testkit"
 )
 
 // 依赖本地配置：account 使用 log 短信发送方和默认固定验证码 000000（app/account/configs/config.yaml）。
@@ -32,58 +29,16 @@ import (
 const (
 	accountHTTP = "http://127.0.0.1:18010"
 	accountGRPC = "127.0.0.1:19010"
-	fixedCode   = "000000"
-	password    = "abc12345"
+	fixedCode   = testkit.FixedCode
+	password    = testkit.Password
 )
 
-type apiError struct {
-	Code     int               `json:"code"`
-	Reason   string            `json:"reason"`
-	Message  string            `json:"message"`
-	Metadata map[string]string `json:"metadata"`
-}
+type apiError = testkit.APIError
 
-// callAt 按 protobuf JSON 调用 base 地址的服务，与浏览器客户端一致。返回 HTTP 状态码和错误体（成功时为 nil）。
+// callAt 调用 base 地址上的接口，实现见 testkit.Call。
 func callAt(t *testing.T, base, method, path, token string, req, resp proto.Message) (int, *apiError) {
 	t.Helper()
-	var body io.Reader
-	if req != nil {
-		b, err := protojson.Marshal(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body = bytes.NewReader(b)
-	}
-	r, err := http.NewRequest(method, base+path, body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		r.Header.Set("Authorization", "Bearer "+token)
-	}
-	res, err := http.DefaultClient.Do(r)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, path, err)
-	}
-	defer res.Body.Close()
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.StatusCode != http.StatusOK {
-		var e apiError
-		if err := json.Unmarshal(data, &e); err != nil {
-			t.Fatalf("%s %s: status %d, body %s", method, path, res.StatusCode, data)
-		}
-		return res.StatusCode, &e
-	}
-	if resp != nil {
-		if err := protojson.Unmarshal(data, resp); err != nil {
-			t.Fatalf("%s %s: decode %s: %v", method, path, data, err)
-		}
-	}
-	return res.StatusCode, nil
+	return testkit.Call(t, base, method, path, token, req, resp)
 }
 
 // call 调用 account。
@@ -108,30 +63,22 @@ func wantError(t *testing.T, status int, e *apiError, wantStatus int, wantReason
 
 func randomPhone(t *testing.T) string {
 	t.Helper()
-	n, err := rand.Int(rand.Reader, big.NewInt(100_000_000))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fmt.Sprintf("199%08d", n.Int64())
+	return testkit.RandomPhone(t)
 }
 
 func device(id string, p v1.Platform) *v1.Device {
-	return &v1.Device{DeviceId: id, Platform: p, DeviceName: "e2e " + id}
+	return testkit.Device(id, p)
 }
 
 func newRedisClient(t *testing.T) *redis.Client {
 	t.Helper()
-	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:16379", Password: os.Getenv("MARSCHAT_REDIS_PASSWORD")})
-	t.Cleanup(func() { _ = rdb.Close() })
-	return rdb
+	return testkit.NewRedis(t)
 }
 
-// resetRateLimits 清除本机 IP 的限流计数，否则多次运行 e2e 会触发每小时 20 次的发码上限。
+// resetRateLimits 清除本机 IP（直连时为 127.0.0.1）的限流计数。
 func resetRateLimits(t *testing.T) {
 	t.Helper()
-	if err := newRedisClient(t).Del(context.Background(), "account:rl:sms_ip:127.0.0.1", "account:rl:login_ip:127.0.0.1").Err(); err != nil {
-		t.Fatalf("reset rate limits (is MARSCHAT_REDIS_PASSWORD set? run via make e2e): %v", err)
-	}
+	testkit.ResetRateLimits(t, newRedisClient(t), "127.0.0.1")
 }
 
 type session struct {

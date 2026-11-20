@@ -33,8 +33,10 @@ type Bootstrap struct {
 	Log      *conf.Log      `protobuf:"bytes,4,opt,name=log,proto3" json:"log,omitempty"`
 	Kafka    *conf.Kafka    `protobuf:"bytes,5,opt,name=kafka,proto3" json:"kafka,omitempty"`
 	// 群消息推送前取成员列表
-	Social        *Upstream `protobuf:"bytes,6,opt,name=social,proto3" json:"social,omitempty"`
-	Push          *Push     `protobuf:"bytes,7,opt,name=push,proto3" json:"push,omitempty"`
+	Social *Upstream `protobuf:"bytes,6,opt,name=social,proto3" json:"social,omitempty"`
+	Push   *Push     `protobuf:"bytes,7,opt,name=push,proto3" json:"push,omitempty"`
+	// 可热更新，见 Policy
+	Policy        *Policy `protobuf:"bytes,8,opt,name=policy,proto3" json:"policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -118,6 +120,13 @@ func (x *Bootstrap) GetPush() *Push {
 	return nil
 }
 
+func (x *Bootstrap) GetPolicy() *Policy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
 // Upstream 是调用其他服务的配置，修改后需要重启。
 type Upstream struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -173,6 +182,53 @@ func (x *Upstream) GetTimeout() *durationpb.Duration {
 	return nil
 }
 
+// Policy 是可热更新的策略：修改配置文件后自动生效，校验不通过时保留旧值。
+type Policy struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// access 实例推送失败（不可达或超时）后的冷却期：期间发往该实例的推送直接跳过，不再每次等待超时；
+	// 冷却结束后重新拨号。0 表示不冷却，只摘除连接
+	PushCooldown  *durationpb.Duration `protobuf:"bytes,1,opt,name=push_cooldown,json=pushCooldown,proto3" json:"push_cooldown,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Policy) Reset() {
+	*x = Policy{}
+	mi := &file_delivery_internal_conf_conf_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Policy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Policy) ProtoMessage() {}
+
+func (x *Policy) ProtoReflect() protoreflect.Message {
+	mi := &file_delivery_internal_conf_conf_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Policy.ProtoReflect.Descriptor instead.
+func (*Policy) Descriptor() ([]byte, []int) {
+	return file_delivery_internal_conf_conf_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Policy) GetPushCooldown() *durationpb.Duration {
+	if x != nil {
+		return x.PushCooldown
+	}
+	return nil
+}
+
 // Push 是调用 access 的配置。access 实例按在线路由中的地址直连，不经 Consul。
 type Push struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -184,7 +240,7 @@ type Push struct {
 
 func (x *Push) Reset() {
 	*x = Push{}
-	mi := &file_delivery_internal_conf_conf_proto_msgTypes[2]
+	mi := &file_delivery_internal_conf_conf_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -196,7 +252,7 @@ func (x *Push) String() string {
 func (*Push) ProtoMessage() {}
 
 func (x *Push) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_internal_conf_conf_proto_msgTypes[2]
+	mi := &file_delivery_internal_conf_conf_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -209,7 +265,7 @@ func (x *Push) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Push.ProtoReflect.Descriptor instead.
 func (*Push) Descriptor() ([]byte, []int) {
-	return file_delivery_internal_conf_conf_proto_rawDescGZIP(), []int{2}
+	return file_delivery_internal_conf_conf_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Push) GetTimeout() *durationpb.Duration {
@@ -223,7 +279,7 @@ var File_delivery_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_delivery_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"!delivery/internal/conf/conf.proto\x12\x16marschat.delivery.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xf1\x02\n" +
+	"!delivery/internal/conf/conf.proto\x12\x16marschat.delivery.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xb1\x03\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -231,10 +287,13 @@ const file_delivery_internal_conf_conf_proto_rawDesc = "" +
 	"\x03log\x18\x04 \x01(\v2\x12.marschat.conf.LogR\x03log\x122\n" +
 	"\x05kafka\x18\x05 \x01(\v2\x14.marschat.conf.KafkaB\x06\xbaH\x03\xc8\x01\x01R\x05kafka\x12@\n" +
 	"\x06social\x18\x06 \x01(\v2 .marschat.delivery.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\x06social\x128\n" +
-	"\x04push\x18\a \x01(\v2\x1c.marschat.delivery.conf.PushB\x06\xbaH\x03\xc8\x01\x01R\x04push\"q\n" +
+	"\x04push\x18\a \x01(\v2\x1c.marschat.delivery.conf.PushB\x06\xbaH\x03\xc8\x01\x01R\x04push\x12>\n" +
+	"\x06policy\x18\b \x01(\v2\x1e.marschat.delivery.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\"q\n" +
 	"\bUpstream\x12#\n" +
 	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
-	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"H\n" +
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"Y\n" +
+	"\x06Policy\x12O\n" +
+	"\rpush_cooldown\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\x0f\xbaH\f\xc8\x01\x01\xaa\x01\x06\"\x02\b<2\x00R\fpushCooldown\"H\n" +
 	"\x04Push\x12@\n" +
 	"\atimeout\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeoutB@Z>github.com/Mars-08042/MarsChat/app/delivery/internal/conf;confb\x06proto3"
 
@@ -250,33 +309,36 @@ func file_delivery_internal_conf_conf_proto_rawDescGZIP() []byte {
 	return file_delivery_internal_conf_conf_proto_rawDescData
 }
 
-var file_delivery_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_delivery_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_delivery_internal_conf_conf_proto_goTypes = []any{
 	(*Bootstrap)(nil),           // 0: marschat.delivery.conf.Bootstrap
 	(*Upstream)(nil),            // 1: marschat.delivery.conf.Upstream
-	(*Push)(nil),                // 2: marschat.delivery.conf.Push
-	(*conf.Server)(nil),         // 3: marschat.conf.Server
-	(*conf.Registry)(nil),       // 4: marschat.conf.Registry
-	(*conf.Redis)(nil),          // 5: marschat.conf.Redis
-	(*conf.Log)(nil),            // 6: marschat.conf.Log
-	(*conf.Kafka)(nil),          // 7: marschat.conf.Kafka
-	(*durationpb.Duration)(nil), // 8: google.protobuf.Duration
+	(*Policy)(nil),              // 2: marschat.delivery.conf.Policy
+	(*Push)(nil),                // 3: marschat.delivery.conf.Push
+	(*conf.Server)(nil),         // 4: marschat.conf.Server
+	(*conf.Registry)(nil),       // 5: marschat.conf.Registry
+	(*conf.Redis)(nil),          // 6: marschat.conf.Redis
+	(*conf.Log)(nil),            // 7: marschat.conf.Log
+	(*conf.Kafka)(nil),          // 8: marschat.conf.Kafka
+	(*durationpb.Duration)(nil), // 9: google.protobuf.Duration
 }
 var file_delivery_internal_conf_conf_proto_depIdxs = []int32{
-	3, // 0: marschat.delivery.conf.Bootstrap.server:type_name -> marschat.conf.Server
-	4, // 1: marschat.delivery.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
-	5, // 2: marschat.delivery.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
-	6, // 3: marschat.delivery.conf.Bootstrap.log:type_name -> marschat.conf.Log
-	7, // 4: marschat.delivery.conf.Bootstrap.kafka:type_name -> marschat.conf.Kafka
-	1, // 5: marschat.delivery.conf.Bootstrap.social:type_name -> marschat.delivery.conf.Upstream
-	2, // 6: marschat.delivery.conf.Bootstrap.push:type_name -> marschat.delivery.conf.Push
-	8, // 7: marschat.delivery.conf.Upstream.timeout:type_name -> google.protobuf.Duration
-	8, // 8: marschat.delivery.conf.Push.timeout:type_name -> google.protobuf.Duration
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	4,  // 0: marschat.delivery.conf.Bootstrap.server:type_name -> marschat.conf.Server
+	5,  // 1: marschat.delivery.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
+	6,  // 2: marschat.delivery.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
+	7,  // 3: marschat.delivery.conf.Bootstrap.log:type_name -> marschat.conf.Log
+	8,  // 4: marschat.delivery.conf.Bootstrap.kafka:type_name -> marschat.conf.Kafka
+	1,  // 5: marschat.delivery.conf.Bootstrap.social:type_name -> marschat.delivery.conf.Upstream
+	3,  // 6: marschat.delivery.conf.Bootstrap.push:type_name -> marschat.delivery.conf.Push
+	2,  // 7: marschat.delivery.conf.Bootstrap.policy:type_name -> marschat.delivery.conf.Policy
+	9,  // 8: marschat.delivery.conf.Upstream.timeout:type_name -> google.protobuf.Duration
+	9,  // 9: marschat.delivery.conf.Policy.push_cooldown:type_name -> google.protobuf.Duration
+	9,  // 10: marschat.delivery.conf.Push.timeout:type_name -> google.protobuf.Duration
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_delivery_internal_conf_conf_proto_init() }
@@ -290,7 +352,7 @@ func file_delivery_internal_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delivery_internal_conf_conf_proto_rawDesc), len(file_delivery_internal_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

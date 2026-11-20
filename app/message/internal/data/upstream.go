@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kratos/kratos/contrib/registry/consul/v3"
 	kerrors "github.com/go-kratos/kratos/v3/errors"
+	"github.com/go-kratos/kratos/v3/middleware/circuitbreaker"
 	kgrpc "github.com/go-kratos/kratos/v3/transport/grpc"
 	"google.golang.org/grpc"
 
@@ -14,15 +15,18 @@ import (
 	socialv1 "github.com/Mars-08042/MarsChat/api/social/v1"
 	"github.com/Mars-08042/MarsChat/app/message/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/message/internal/conf"
+	"github.com/Mars-08042/MarsChat/pkg/middleware/retry"
 )
 
 // dial 创建经 Consul 发现的 gRPC 连接。连接是惰性的，依赖暂时不可用不影响启动；
-// 超时同时也是服务发现首次解析的等待上限。重试与熔断在重构步骤 5 加入。
-func dial(name string, c *conf.Upstream, r *consul.Registry, logger *slog.Logger) (*grpc.ClientConn, func(), error) {
+// 超时同时也是服务发现首次解析的等待上限，并覆盖重试在内的整次调用。
+// retryOps 是允许在连接级失败时重试一次的幂等方法；所有方法都按接口熔断，重试在外层。
+func dial(name string, c *conf.Upstream, r *consul.Registry, logger *slog.Logger, retryOps ...string) (*grpc.ClientConn, func(), error) {
 	conn, err := kgrpc.NewClient(context.Background(),
 		kgrpc.WithEndpoint(c.GetEndpoint()),
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
+		kgrpc.WithMiddleware(retry.Client(retryOps...), circuitbreaker.Client()),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create %s client %s: %w", name, c.GetEndpoint(), err)
@@ -43,7 +47,10 @@ type AccountClient struct{ accountv1.AccountInternalServiceClient }
 
 // NewSocialClient 创建 social 客户端，默认地址 discovery:///marschat-social。
 func NewSocialClient(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (*SocialClient, func(), error) {
-	conn, cleanup, err := dial("social", bc.GetSocial(), r, logger)
+	conn, cleanup, err := dial("social", bc.GetSocial(), r, logger,
+		socialv1.SocialInternalService_CheckSendPermission_FullMethodName,
+		socialv1.SocialInternalService_BatchGetGroups_FullMethodName,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -52,7 +59,9 @@ func NewSocialClient(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger
 
 // NewAccountClient 创建 account 客户端，默认地址 discovery:///marschat-account。
 func NewAccountClient(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (*AccountClient, func(), error) {
-	conn, cleanup, err := dial("account", bc.GetAccount(), r, logger)
+	conn, cleanup, err := dial("account", bc.GetAccount(), r, logger,
+		accountv1.AccountInternalService_BatchGetUsers_FullMethodName,
+	)
 	if err != nil {
 		return nil, nil, err
 	}

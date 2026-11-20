@@ -37,7 +37,9 @@ func newApp(logger *slog.Logger, r *consul.Registry, gs *grpc.Server, hs *http.S
 		kratos.Version(Version),
 		kratos.Logger(logger),
 		kratos.Registrar(r),
-		kratos.Server(gs, hs, pub),
+		// HTTP 服务器放在第一个：Kratos 把第一个端点登记为 Consul 服务的 Address:Port，APISIX 按它转发 HTTP；
+		// gRPC 客户端按协议从 TaggedAddresses 取端点，不受顺序影响。
+		kratos.Server(hs, gs, pub),
 	)
 }
 

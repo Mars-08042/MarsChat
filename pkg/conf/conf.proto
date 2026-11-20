@@ -25,9 +25,18 @@ message Server {
 message Registry {
   message Consul {
     string address = 1;
-    // 是否让 Consul 主动 TCP 探测服务端口。本地开发时服务监听宿主机 127.0.0.1，
-    // 容器里的 Consul 探测不到，所以关闭，只保留 TTL 心跳；服务容器化后开启。
-    bool health_check = 2;
+    // 原来的 bool health_check。布尔值无法用 ${XXX:默认值} 占位符覆盖（替换结果是字符串，
+    // protojson 不接受），改为下面的时长字段。
+    reserved 2;
+    reserved "health_check";
+    // Consul 主动 TCP 探测服务端口的间隔，同时是 TTL 心跳的间隔（超时为 2 倍），只取整秒。
+    // 0 表示不做 TCP 探测、只保留 TTL 心跳（间隔为 Kratos 默认的 10 秒）：本地开发时服务监听宿主机
+    // 127.0.0.1，容器里的 Consul 探测不到。容器模式下设为 3 秒，实例被杀后几秒内从发现结果中消失。
+    google.protobuf.Duration tcp_check_interval = 3 [(buf.validate.field).cel = {
+      id: "registry.consul.tcp_check_interval"
+      message: "must be 0 or between 1s and 60s"
+      expression: "this == duration('0s') || (this >= duration('1s') && this <= duration('60s'))"
+    }];
   }
   Consul consul = 1;
 }
@@ -78,6 +87,12 @@ message RateLimit {
 message Kafka {
   // broker 地址，多个用逗号分隔
   string brokers = 1 [(buf.validate.field).string.min_len = 1];
+  // 消费组会话超时：实例被杀后，要等这么久它的分区才会转给其他实例。不填时为 franz-go 默认的 45 秒。
+  // 太短会让 GC 停顿、网络抖动触发不必要的再平衡；下限是 broker 的 group.min.session.timeout.ms（默认 6 秒）。
+  google.protobuf.Duration session_timeout = 2 [(buf.validate.field).duration = {
+    gte: {seconds: 6}
+    lte: {seconds: 300}
+  }];
 }
 
 // Outbox 是 Outbox 发布器配置，修改后需要重启。

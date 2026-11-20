@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	nethttp "net/http"
 	"time"
@@ -55,6 +56,33 @@ func NewGRPCServer(c *conf.Server, internal *service.InternalService, logger *sl
 	srv := grpc.NewServer(opts...)
 	v1.RegisterAccessInternalServiceServer(srv, internal)
 	return srv
+}
+
+// drainer 是 biz.Hub 中 DrainingGRPCServer 用到的部分。
+type drainer interface {
+	Drained() <-chan struct{}
+}
+
+// DrainingGRPCServer 包装 Kratos 的 gRPC 服务器，只改变停机顺序：先等 Hub 分批关闭完连接，再停止 gRPC。
+// Kratos 并发停止所有服务器，不包装的话 gRPC 会和 Hub 同时停止，排空期间还连着的客户端收不到推送。
+// 停机超时到期时不再等待，直接停止。
+type DrainingGRPCServer struct {
+	*grpc.Server
+	hub drainer
+}
+
+// NewDrainingGRPCServer 用 hub 包装 gRPC 服务器，注册和启动沿用被包装的服务器。
+func NewDrainingGRPCServer(gs *grpc.Server, hub *biz.Hub) *DrainingGRPCServer {
+	return &DrainingGRPCServer{Server: gs, hub: hub}
+}
+
+// Stop 等 Hub 排空或 ctx 到期后停止 gRPC 服务器。
+func (s *DrainingGRPCServer) Stop(ctx context.Context) error {
+	select {
+	case <-s.hub.Drained():
+	case <-ctx.Done():
+	}
+	return s.Server.Stop(ctx)
 }
 
 // NewWebSocketHandler 完成 WebSocket 握手后把连接交给 Hub。

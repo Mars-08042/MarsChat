@@ -1,0 +1,54 @@
+# APISIX 网关的启动配置（Standalone 模式），只在容器启动时读取，修改后需要重启容器。
+# 路由、上游、证书与限流在同目录的 apisix.yaml 中，保存后约 1 秒内自动生效。
+# 完整配置项见镜像内 apisix/cli/config.lua 的默认值。
+deployment:
+  # data_plane + yaml：配置来自本地文件，不依赖 etcd，也没有 Admin API
+  role: data_plane
+  role_data_plane:
+    config_provider: yaml
+
+apisix:
+  node_listen: 9080
+  enable_ipv6: false
+  ssl:
+    enable: true
+    listen:
+      - port: 9443
+    # 客户端用 IP 访问（例如 https://127.0.0.1:19443）时不发送 SNI，按 localhost 匹配证书
+    fallback_sni: localhost
+
+nginx_config:
+  error_log_level: warn
+  # 默认 auto 按 CPU 核数起 worker（本机 24 个），本地两个足够，也省内存
+  worker_processes: 2
+  # apisix.yaml 中证书用 $env:// 引用环境变量，Nginx 默认清空 worker 的环境变量，要显式放行。
+  # 变量由 compose 的启动命令从挂载的证书文件读入，见 compose.yaml。
+  envs:
+    - MARSCHAT_TLS_CERT
+    - MARSCHAT_TLS_KEY
+
+# 上游节点来自 Consul：按服务名取检查通过的实例，节点地址为服务的 Address:Port。
+# Kratos 把第一个端点登记为 Address:Port，各服务的 HTTP 服务器排在第一个，所以这里拿到的是 HTTP 端口。
+discovery:
+  consul:
+    servers:
+      - "http://consul:8500"
+    skip_services:
+      - consul
+    # 长轮询（阻塞查询）：Consul 有变化时立即返回，wait 秒内没有变化也返回一次。
+    # connect、read 单位为毫秒；read 必须大于 wait，否则每次长轮询都会读超时（默认值 2000 与 60 就是这样）
+    keepalive: true
+    timeout:
+      connect: 2000
+      read: 35000
+      wait: 30
+
+# 只启用用到的插件（列出后默认插件列表不再生效）
+plugins:
+  - limit-req
+  - limit-count
+  - limit-conn
+
+# 不使用 TCP/UDP 代理。默认的 stream 插件列表中 syslog 依赖 prometheus 的共享内存，
+# 只列出上面的 HTTP 插件时它会加载失败并报错
+stream_plugins: []

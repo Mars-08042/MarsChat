@@ -20,7 +20,7 @@ import (
 // Injectors from wire.go:
 
 // *conf.Bootstrap 只用于 social 客户端。
-func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis, kafka *conf.Kafka, push *conf2.Push, confBootstrap *conf2.Bootstrap, logger *slog.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis, kafka *conf.Kafka, push *conf2.Push, confBootstrap *conf2.Bootstrap, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
 	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
 	if err != nil {
 		return nil, nil, err
@@ -37,7 +37,7 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 		cleanup()
 		return nil, nil, err
 	}
-	pusher, cleanup3 := data.NewPusher(push, logger)
+	pusher, cleanup3 := data.NewPusher(push, policyHolder, logger)
 	deliveryUsecase := biz.NewDeliveryUsecase(routeRepo, deduper, groupMembers, pusher, logger)
 	consumer, cleanup4, err := server.NewEventConsumer(kafka, deliveryUsecase, logger)
 	if err != nil {

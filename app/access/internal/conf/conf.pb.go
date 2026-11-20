@@ -36,8 +36,9 @@ type Bootstrap struct {
 	Websocket *WebSocket `protobuf:"bytes,7,opt,name=websocket,proto3" json:"websocket,omitempty"`
 	// 可热更新，见 Policy
 	Policy *Policy `protobuf:"bytes,8,opt,name=policy,proto3" json:"policy,omitempty"`
-	// 写入在线路由的本实例 gRPC 地址，delivery 按它直连推送。
-	// 必须是其他服务能访问到的 host:port，不能是 0.0.0.0；通常与 server.grpc.addr 的端口相同
+	// 写入在线路由的本实例 gRPC 地址（host:port），delivery 按它直连推送。
+	// 留空时取 Kratos 注册到 Consul 的 gRPC 端点：监听 0.0.0.0 时是网卡 IP，多副本部署不用逐个配置。
+	// 只有其他服务要经 NAT 等不同地址访问本实例时才需要填写。
 	AdvertiseAddr string `protobuf:"bytes,9,opt,name=advertise_addr,json=advertiseAddr,proto3" json:"advertise_addr,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -206,6 +207,9 @@ type WebSocket struct {
 	WriteTimeout *durationpb.Duration `protobuf:"bytes,5,opt,name=write_timeout,json=writeTimeout,proto3" json:"write_timeout,omitempty"`
 	// 上行帧的最大字节数，超出时连接被关闭（1009）
 	MaxFrameBytes int32 `protobuf:"varint,6,opt,name=max_frame_bytes,json=maxFrameBytes,proto3" json:"max_frame_bytes,omitempty"`
+	// 停机时分批关闭现有连接的时间窗口，避免全部客户端同时重连到其他实例；0 表示一次全部关闭。
+	// 上限留出关闭握手和收尾的时间，必须小于进程的停机超时（15 秒）
+	DrainWindow   *durationpb.Duration `protobuf:"bytes,7,opt,name=drain_window,json=drainWindow,proto3" json:"drain_window,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -282,6 +286,13 @@ func (x *WebSocket) GetMaxFrameBytes() int32 {
 	return 0
 }
 
+func (x *WebSocket) GetDrainWindow() *durationpb.Duration {
+	if x != nil {
+		return x.DrainWindow
+	}
+	return nil
+}
+
 // Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
 type Policy struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -333,7 +344,7 @@ var File_access_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"\x1faccess/internal/conf/conf.proto\x12\x14marschat.access.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xe9\x03\n" +
+	"\x1faccess/internal/conf/conf.proto\x12\x14marschat.access.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xe0\x03\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -342,11 +353,11 @@ const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\x04auth\x18\x05 \x01(\v2\x13.marschat.conf.AuthB\x06\xbaH\x03\xc8\x01\x01R\x04auth\x12@\n" +
 	"\amessage\x18\x06 \x01(\v2\x1e.marschat.access.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\amessage\x12E\n" +
 	"\twebsocket\x18\a \x01(\v2\x1f.marschat.access.conf.WebSocketB\x06\xbaH\x03\xc8\x01\x01R\twebsocket\x12<\n" +
-	"\x06policy\x18\b \x01(\v2\x1c.marschat.access.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x12.\n" +
-	"\x0eadvertise_addr\x18\t \x01(\tB\a\xbaH\x04r\x02\x10\x01R\radvertiseAddr\"q\n" +
+	"\x06policy\x18\b \x01(\v2\x1c.marschat.access.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x12%\n" +
+	"\x0eadvertise_addr\x18\t \x01(\tR\radvertiseAddr\"q\n" +
 	"\bUpstream\x12#\n" +
 	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
-	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"\xc9\x04\n" +
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"\x98\x05\n" +
 	"\tWebSocket\x12I\n" +
 	"\fauth_timeout\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\vauthTimeout\x12W\n" +
 	"\x12heartbeat_interval\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\r\xbaH\n" +
@@ -355,7 +366,9 @@ const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
 	"send_queue\x18\x04 \x01(\x05B\v\xbaH\b\x1a\x06\x18\x80\x80\x04 \x00R\tsendQueue\x12K\n" +
 	"\rwrite_timeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\fwriteTimeout\x124\n" +
-	"\x0fmax_frame_bytes\x18\x06 \x01(\x05B\f\xbaH\t\x1a\a\x18\x80\x80@(\x80\bR\rmaxFrameBytes:\x93\x01\xbaH\x8f\x01\x1a\x8c\x01\n" +
+	"\x0fmax_frame_bytes\x18\x06 \x01(\x05B\f\xbaH\t\x1a\a\x18\x80\x80@(\x80\bR\rmaxFrameBytes\x12M\n" +
+	"\fdrain_window\x18\a \x01(\v2\x19.google.protobuf.DurationB\x0f\xbaH\f\xc8\x01\x01\xaa\x01\x06\"\x02\b\n" +
+	"2\x00R\vdrainWindow:\x93\x01\xbaH\x8f\x01\x1a\x8c\x01\n" +
 	"\x1dheartbeat_timeout_gt_interval\x129heartbeat_timeout must be greater than heartbeat_interval\x1a0this.heartbeat_timeout > this.heartbeat_interval\"@\n" +
 	"\x06Policy\x126\n" +
 	"\x11frames_per_second\x18\x01 \x01(\x05B\n" +
@@ -400,11 +413,12 @@ var file_access_internal_conf_conf_proto_depIdxs = []int32{
 	9,  // 10: marschat.access.conf.WebSocket.heartbeat_interval:type_name -> google.protobuf.Duration
 	9,  // 11: marschat.access.conf.WebSocket.heartbeat_timeout:type_name -> google.protobuf.Duration
 	9,  // 12: marschat.access.conf.WebSocket.write_timeout:type_name -> google.protobuf.Duration
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	9,  // 13: marschat.access.conf.WebSocket.drain_window:type_name -> google.protobuf.Duration
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_access_internal_conf_conf_proto_init() }

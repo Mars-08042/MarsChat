@@ -456,9 +456,12 @@ func (x *RateLimit) GetWindow() *durationpb.Duration {
 type Kafka struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// broker 地址，多个用逗号分隔
-	Brokers       string `protobuf:"bytes,1,opt,name=brokers,proto3" json:"brokers,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Brokers string `protobuf:"bytes,1,opt,name=brokers,proto3" json:"brokers,omitempty"`
+	// 消费组会话超时：实例被杀后，要等这么久它的分区才会转给其他实例。不填时为 franz-go 默认的 45 秒。
+	// 太短会让 GC 停顿、网络抖动触发不必要的再平衡；下限是 broker 的 group.min.session.timeout.ms（默认 6 秒）。
+	SessionTimeout *durationpb.Duration `protobuf:"bytes,2,opt,name=session_timeout,json=sessionTimeout,proto3" json:"session_timeout,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Kafka) Reset() {
@@ -496,6 +499,13 @@ func (x *Kafka) GetBrokers() string {
 		return x.Brokers
 	}
 	return ""
+}
+
+func (x *Kafka) GetSessionTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.SessionTimeout
+	}
+	return nil
 }
 
 // Outbox 是 Outbox 发布器配置，修改后需要重启。
@@ -669,11 +679,12 @@ func (x *Server_GRPC) GetTimeout() *durationpb.Duration {
 type Registry_Consul struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Address string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	// 是否让 Consul 主动 TCP 探测服务端口。本地开发时服务监听宿主机 127.0.0.1，
-	// 容器里的 Consul 探测不到，所以关闭，只保留 TTL 心跳；服务容器化后开启。
-	HealthCheck   bool `protobuf:"varint,2,opt,name=health_check,json=healthCheck,proto3" json:"health_check,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Consul 主动 TCP 探测服务端口的间隔，同时是 TTL 心跳的间隔（超时为 2 倍），只取整秒。
+	// 0 表示不做 TCP 探测、只保留 TTL 心跳（间隔为 Kratos 默认的 10 秒）：本地开发时服务监听宿主机
+	// 127.0.0.1，容器里的 Consul 探测不到。容器模式下设为 3 秒，实例被杀后几秒内从发现结果中消失。
+	TcpCheckInterval *durationpb.Duration `protobuf:"bytes,3,opt,name=tcp_check_interval,json=tcpCheckInterval,proto3" json:"tcp_check_interval,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Registry_Consul) Reset() {
@@ -713,11 +724,11 @@ func (x *Registry_Consul) GetAddress() string {
 	return ""
 }
 
-func (x *Registry_Consul) GetHealthCheck() bool {
+func (x *Registry_Consul) GetTcpCheckInterval() *durationpb.Duration {
 	if x != nil {
-		return x.HealthCheck
+		return x.TcpCheckInterval
 	}
-	return false
+	return nil
 }
 
 var File_conf_conf_proto protoreflect.FileDescriptor
@@ -733,12 +744,13 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x1aO\n" +
 	"\x04GRPC\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\x123\n" +
-	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\x89\x01\n" +
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\xe4\x02\n" +
 	"\bRegistry\x126\n" +
-	"\x06consul\x18\x01 \x01(\v2\x1e.marschat.conf.Registry.ConsulR\x06consul\x1aE\n" +
+	"\x06consul\x18\x01 \x01(\v2\x1e.marschat.conf.Registry.ConsulR\x06consul\x1a\x9f\x02\n" +
 	"\x06Consul\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\x12!\n" +
-	"\fhealth_check\x18\x02 \x01(\bR\vhealthCheck\"\xee\x01\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\xe6\x01\n" +
+	"\x12tcp_check_interval\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\x9c\x01\xbaH\x98\x01\xba\x01\x94\x01\n" +
+	"\"registry.consul.tcp_check_interval\x12\x1fmust be 0 or between 1s and 60s\x1aMthis == duration('0s') || (this >= duration('1s') && this <= duration('60s'))R\x10tcpCheckIntervalJ\x04\b\x02\x10\x03R\fhealth_check\"\xee\x01\n" +
 	"\x05MySQL\x12\x10\n" +
 	"\x03dsn\x18\x01 \x01(\tR\x03dsn\x12$\n" +
 	"\x0emax_open_conns\x18\x02 \x01(\x05R\fmaxOpenConns\x12$\n" +
@@ -762,9 +774,10 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\baudience\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\baudience\"j\n" +
 	"\tRateLimit\x12\x1d\n" +
 	"\x05limit\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x05limit\x12>\n" +
-	"\x06window\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\x06window\"*\n" +
+	"\x06window\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\x06window\"\x7f\n" +
 	"\x05Kafka\x12!\n" +
-	"\abrokers\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\abrokers\"\xc6\x01\n" +
+	"\abrokers\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\abrokers\x12S\n" +
+	"\x0fsession_timeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\x0f\xbaH\f\xaa\x01\t\"\x03\b\xac\x022\x02\b\x06R\x0esessionTimeout\"\xc6\x01\n" +
 	"\x06Outbox\x12K\n" +
 	"\rpoll_interval\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\fpollInterval\x12)\n" +
 	"\n" +
@@ -810,15 +823,17 @@ var file_conf_conf_proto_depIdxs = []int32{
 	12, // 6: marschat.conf.Redis.read_timeout:type_name -> google.protobuf.Duration
 	12, // 7: marschat.conf.Redis.write_timeout:type_name -> google.protobuf.Duration
 	12, // 8: marschat.conf.RateLimit.window:type_name -> google.protobuf.Duration
-	12, // 9: marschat.conf.Outbox.poll_interval:type_name -> google.protobuf.Duration
-	12, // 10: marschat.conf.Outbox.retention:type_name -> google.protobuf.Duration
-	12, // 11: marschat.conf.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	12, // 12: marschat.conf.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	12, // 9: marschat.conf.Kafka.session_timeout:type_name -> google.protobuf.Duration
+	12, // 10: marschat.conf.Outbox.poll_interval:type_name -> google.protobuf.Duration
+	12, // 11: marschat.conf.Outbox.retention:type_name -> google.protobuf.Duration
+	12, // 12: marschat.conf.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	12, // 13: marschat.conf.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	12, // 14: marschat.conf.Registry.Consul.tcp_check_interval:type_name -> google.protobuf.Duration
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }

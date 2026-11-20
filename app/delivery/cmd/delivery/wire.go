@@ -20,6 +20,6 @@ import (
 
 // *conf.Bootstrap 只用于 social 客户端。
 func wireApp(*pkgconf.Server, *pkgconf.Registry, *pkgconf.Redis, *pkgconf.Kafka, *conf.Push,
-	*conf.Bootstrap, *slog.Logger) (*kratos.App, func(), error) {
+	*conf.Bootstrap, *biz.PolicyHolder, *slog.Logger) (*kratos.App, func(), error) {
 	panic(wire.Build(server.ProviderSet, biz.ProviderSet, data.ProviderSet, bootstrap.NewConsulRegistry, newApp))
 }

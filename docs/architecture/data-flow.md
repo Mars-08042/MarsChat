@@ -1,6 +1,6 @@
 # 数据流
 
-> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 4（2026-11-19）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
+> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-19）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
 >
 > 文件上传（步骤 6）和音视频通话信令（步骤 7）尚未重写，旧基线的流程见提交 `6624cea` 中本文的第 5、6 节。
 
@@ -16,7 +16,7 @@
                                                  delivery ←── Kafka ←── Outbox 发布器（account、social、message）
 ```
 
-- 网关（APISIX）在步骤 5 接入，在那之前客户端直连各服务端口，端口见 [deployment.md](../deployment.md)。
+- 容器模式下客户端只经网关（APISIX）访问：HTTP 接口按路径转发到 account、social、message，`/ws` 转发到 access，上游节点经 Consul 发现；网关负责 TLS 和按 IP 的入口限流（超限返回 429，响应体为 `{"error_msg": ...}`，不是 Kratos 错误格式）。宿主机运行时客户端直连各服务端口。路由与端口见 [deployment.md](../deployment.md#网关)。
 - **发送只走 WebSocket，读取只走 HTTP**：只有一条写入路径，限流、排除发起连接、按连接顺序确认都只需实现一次。
 - 服务间同步调用用 gRPC，经 Consul 发现；delivery 调用 access 例外，按在线路由中的地址直连持有连接的实例。
 - 服务间异步通知用 Kafka，事件经事务 Outbox 发布，见第 6 节。
@@ -75,7 +75,7 @@
 | 4003 | 连接太慢，发送队列已满 | 重连并补拉 |
 | 4008 | 上行帧频率超限 | 检查客户端逻辑后重连 |
 | 1009 | 上行帧超过 64 KiB | 同上 |
-| 1001 | 服务停机 | 重连（会被分配到其他实例）并补拉 |
+| 1001 | 服务停机（原因 `server shutting down`），停机的实例在 5 秒内分批关闭连接 | 随机等待 0～2 秒后重连（会被分配到其他实例），再补拉，见第 7 节 |
 
 ## 4. 发送消息
 
@@ -93,7 +93,9 @@
 - `client_msg_id` 由客户端为每条消息生成（建议 UUID），超时未确认时用同一个值重发，服务端只存一条，重发返回首次的 seq。
 - 失败时返回带同一 `request_id` 的 `Error`：
   - message 的业务错误原样返回：`429 RATE_LIMITED`（metadata 带 `retry_after_seconds`）、`400 VALIDATOR`、social 的拒绝原因（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）、`503 DEPENDENCY_UNAVAILABLE`（social 不可用，无法校验权限）；
-  - 调用 message 失败或超时：`503 UPSTREAM_UNAVAILABLE`。消息可能已经写入，客户端用同一个 `client_msg_id` 重发即可。
+  - 调用 message 失败或超时：`503 UPSTREAM_UNAVAILABLE`。结果未知，消息可能已经写入，客户端用同一个 `client_msg_id` 重发即可；
+  - access 到 message 的熔断打开：`503 CIRCUITBREAKER`。请求没有发出，消息确定没有写入，客户端稍后用同一个 `client_msg_id` 重发。
+- access 调 message 时，连接级失败（实例在处理途中退出、连接被拒绝）会自动换实例重试一次，靠 `client_msg_id` 幂等不会存两条；message 调 social 同样重试一次。重试与熔断的规则见 [system.md](system.md#53-服务注册与发现)。
 - 会话内消息有序靠 seq：同一会话的 seq 在锁住会话行的事务内分配，连续、无空洞。
 
 ## 5. 推送、多端同步与补拉
@@ -118,7 +120,7 @@ access ─→ 把帧放进各连接的发送队列 ─→ 客户端收到 Messag
 | `UserBanned` | 该用户的全部连接 | 调用 `Kick`，原因 `BANNED` |
 
 - 推送尽力而为：查路由、调用 access 失败都只记日志，不重试，不阻塞后面的事件。可靠性由补拉保证。
-- access 实例崩溃后，它的路由最多残留 90 秒（字段 TTL），期间推送到这些连接的调用失败，只记日志。
+- access 实例崩溃后，它的路由最多残留 90 秒（字段 TTL）。delivery 第一次推送失败（`Unavailable` 或超时）后摘除到该实例的连接，地址冷却 5 秒（`policy.push_cooldown`），冷却期内发往它的推送直接跳过，不再每条事件都等一次超时；冷却结束后再试一次，仍然失败就再冷却。
 - delivery 的消费组新建时从最新位置开始：推送只对在线连接有意义，历史消息由客户端补拉。
 
 ### 5.2 客户端同步流程
@@ -156,7 +158,7 @@ access ─→ 把帧放进各连接的发送队列 ─→ 客户端收到 Messag
 | `marschat.message.events` | 12 | message | `MessageCreated`、`ReadPositionUpdated`（键为会话 ID） | delivery（`marschat-delivery`）：推送 |
 
 - **写入**：业务事务内插入 `outbox_events`，与业务数据同时提交或回滚，不在事务里调用 Kafka。
-- **发布**：每个服务同时只有一个实例发布（Redis 租约 `outbox:lease:{服务名}`），保证同一个键的事件按写入顺序进入 Kafka。事务提交后立即唤醒发布器，轮询（500 毫秒）只是兜底。Kafka 不可用时退避重试（1 秒起，最长 30 秒），事件留在表中只会延迟、不会丢；发布后、标记前崩溃会重复发布。
+- **发布**：每个服务同时只有一个实例发布（Redis 租约 `outbox:lease:{服务名}`），保证同一个键的事件按写入顺序进入 Kafka。事务提交后立即唤醒发布器：本实例就是持有者时直接唤醒，否则经 Redis 频道 `outbox:wake:{服务名}` 唤醒持有者；轮询（500 毫秒）只是兜底。Kafka 不可用时退避重试（1 秒起，最长 30 秒），事件留在表中只会延迟、不会丢；发布后、标记前崩溃会重复发布。
 - **记录格式**：键为 `event_key`，值为事件的 protobuf 编码，记录头 `event_type`（proto 全名）、`event_id`（`{服务名}:{outbox id}`）、`source`。
 - **消费**：关闭自动提交，按分区顺序处理后只提交已处理的位点。未注册的事件类型跳过；解码失败记 ERROR 后跳过；处理器返回错误时原地退避重试（100 毫秒起，最长 5 秒）。delivery 的处理器从不返回错误。重试队列与死信队列在步骤 5 实现，在那之前持续失败的事件会阻塞所在分区（TD-30）。
 - **幂等**：message 的成员投影靠 SQL 本身幂等；delivery 用 `delivery:done:{event_id}` 去重；踢连接、删除缓存本身幂等。
@@ -165,6 +167,14 @@ access ─→ 把帧放进各连接的发送队列 ─→ 客户端收到 Messag
 
 收到 SIGINT/SIGTERM 后，Kratos 先从 Consul 注销，再并发停止各个 server：
 
-- access：拒绝新连接，以 1001 关闭全部连接并删除它们的路由，最多等待到停机超时，超时后强制断开。先从 Consul 摘除、通知客户端分批重连在步骤 5 实现。
+- access：
+  1. 从 Consul 注销后，网关的 Consul 长轮询约 1 秒内更新上游，新的 WebSocket 握手不再分到这个实例；HTTP 服务器同时关闭监听，已经发往它的握手连接失败，由网关换实例重试。
+  2. Hub 拒绝新连接，把现有连接以 1001 分批关闭，均匀分布在 `websocket.drain_window`（5 秒）内，避免所有客户端同时重连到剩下的实例。每条连接等待对端回应关闭帧（最多 2 秒），关闭时删除路由。
+  3. gRPC 服务器等 Hub 排空后才停止，所以排空期间 delivery 发往尚未关闭的连接的推送仍然送达。
+  4. 停机超时 15 秒，到期后强制断开剩余连接。
+- 客户端约定：
+  - 收到 1001 或连接异常断开（1006）后，随机等待 0～2 秒再重连，避免同时重连；
+  - 重连认证成功后，按第 5.2 节对每个会话从本地 `max_seq` 补拉；
+  - 补拉与推送可能重叠，按 `(conversation_id, seq)` 去重。
 - Outbox 发布器：发完当前批次后释放租约，其他实例下一次抢占时接手。
 - Kafka 消费者：处理完当前记录、提交位点后离开消费组。

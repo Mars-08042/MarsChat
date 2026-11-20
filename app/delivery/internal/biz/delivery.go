@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 
@@ -119,7 +120,12 @@ func (uc *DeliveryUsecase) push(ctx context.Context, userIDs []int64, frame *acc
 	byAddr := uc.lookup(ctx, userIDs, func(e route.Entry) bool { return e.ConnID != exclude })
 	uc.each(byAddr, func(addr string, ids []int64) {
 		if _, err := uc.pusher.Push(ctx, addr, ids, frame); err != nil {
-			// 路由最多残留一个心跳超时（access 崩溃时），期间推送失败属于预期
+			// 路由最多残留一个心跳超时（access 崩溃时），期间推送失败属于预期。
+			// 冷却期内的跳过只记 DEBUG：第一次失败已经记过 WARN，实例宕机时每条事件都会走到这里
+			if errors.Is(err, ErrInstanceCoolingDown) {
+				uc.logger.Debug("push skipped", slog.String("addr", addr), slog.Int("conns", len(ids)))
+				return
+			}
 			uc.logger.Warn("push failed", slog.String("addr", addr), slog.Int("conns", len(ids)), slog.Any("error", err))
 		}
 	})

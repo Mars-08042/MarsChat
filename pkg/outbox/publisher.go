@@ -32,6 +32,10 @@ const (
 	cleanupBatch    = 1000
 	cleanupMaxLoops = 20
 	leaseKeyPrefix  = "outbox:lease:"
+	// wakeChannelPrefix 是跨实例唤醒的 Redis 频道前缀，见 Notify
+	wakeChannelPrefix = "outbox:wake:"
+	// remoteWakeTimeout 是发出一次跨实例唤醒的超时；唤醒丢了只是退回轮询，不重试
+	remoteWakeTimeout = time.Second
 )
 
 // 续期与释放都先确认持有者是自己，避免租约过期后被别的实例拿走时误续、误删。
@@ -74,6 +78,9 @@ type producer interface {
 // 每个服务同一时刻只有一个实例在发布：实例之间用 Redis 租约 outbox:lease:{服务名} 互斥。
 // 这样同一个键的事件按 id 顺序发出，也不需要在持有行锁的事务里调用 Kafka。
 // 发布后、标记前崩溃会重复发布，消费方需要幂等。
+//
+// 写事件的事务可能提交在没有租约的实例上，这时由 Notify 经 Redis 频道 outbox:wake:{服务名}
+// 唤醒持有租约的实例；频道不可用时退回按 PollInterval 轮询。
 type Publisher struct {
 	store    store
 	producer producer
@@ -83,6 +90,10 @@ type Publisher struct {
 	now      func() time.Time
 
 	wake chan struct{}
+	// remoteWake 合并待发出的跨实例唤醒，由 forwardWakes 协程发到 Redis 频道
+	remoteWake chan struct{}
+	// leader 是发布协程最近一次确认的租约状态，供 Notify 在业务协程中判断是否需要跨实例唤醒
+	leader atomic.Bool
 
 	// 以下字段只在发布协程中读写
 	leaseUntil time.Time
@@ -122,25 +133,57 @@ func NewPublisher(db *gorm.DB, rdb redis.UniversalClient, cl *kgo.Client, opts O
 func newPublisher(s store, p producer, rdb redis.UniversalClient, opts Options, logger *slog.Logger) *Publisher {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Publisher{
-		store:    s,
-		producer: p,
-		rdb:      rdb,
-		opts:     opts,
-		logger:   logger.With(slog.String("outbox.source", opts.Source)),
-		now:      time.Now,
-		wake:     make(chan struct{}, 1),
-		ctx:      ctx,
-		cancel:   cancel,
-		done:     make(chan struct{}),
+		store:      s,
+		producer:   p,
+		rdb:        rdb,
+		opts:       opts,
+		logger:     logger.With(slog.String("outbox.source", opts.Source)),
+		now:        time.Now,
+		wake:       make(chan struct{}, 1),
+		remoteWake: make(chan struct{}, 1),
+		ctx:        ctx,
+		cancel:     cancel,
+		done:       make(chan struct{}),
 	}
 }
 
 // Notify 唤醒发布器立即检查新事件。在写了事件的事务提交后调用，不阻塞；
 // 已有待处理的唤醒时直接返回，多次提交合并成一次检查。
+// 本实例没有持有租约时，事件要由另一个实例发布，同时经 Redis 频道唤醒它；
+// 否则只能等它下一轮轮询，多实例下推送延迟会多出最多一个轮询间隔。
 func (p *Publisher) Notify() {
 	select {
 	case p.wake <- struct{}{}:
 	default:
+	}
+	if p.leader.Load() {
+		return
+	}
+	select {
+	case p.remoteWake <- struct{}{}:
+	default:
+	}
+}
+
+func (p *Publisher) wakeChannel() string {
+	return wakeChannelPrefix + p.opts.Source
+}
+
+// forwardWakes 把合并后的跨实例唤醒发到 Redis 频道，直到发布器停止。
+func (p *Publisher) forwardWakes(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.remoteWake:
+		}
+		pctx, cancel := context.WithTimeout(ctx, remoteWakeTimeout)
+		err := p.rdb.Publish(pctx, p.wakeChannel(), p.opts.Owner).Err()
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			// 唤醒丢失只会退回轮询；Redis 故障期间每次提交都会走到这里，所以只记 DEBUG
+			p.logger.Debug("publish outbox wake-up failed", slog.Any("error", err))
+		}
 	}
 }
 
@@ -149,6 +192,7 @@ func (p *Publisher) Start(context.Context) error {
 	p.started.Store(true)
 	defer close(p.done)
 	p.logger.Info("outbox publisher started")
+	go p.forwardWakes(p.ctx)
 	p.run(p.ctx)
 	return nil
 }
@@ -175,6 +219,11 @@ func (p *Publisher) run(ctx context.Context) {
 	defer cleanup.Stop()
 	defer p.releaseLease()
 
+	// 订阅跨实例唤醒。go-redis 在连接断开后自动重新订阅，Redis 不可用期间只是收不到唤醒
+	sub := p.rdb.Subscribe(ctx, p.wakeChannel())
+	defer func() { _ = sub.Close() }()
+	remote := sub.Channel()
+
 	p.maintainLease(ctx)
 	p.drain(ctx)
 	for {
@@ -186,6 +235,7 @@ func (p *Publisher) run(ctx context.Context) {
 		case <-cleanup.C:
 			p.cleanup(ctx)
 		case <-p.wake:
+		case <-remote:
 		case <-poll.C:
 		}
 		p.drain(ctx)
@@ -203,6 +253,7 @@ func (p *Publisher) leaseKey() string {
 }
 
 func (p *Publisher) maintainLease(ctx context.Context) {
+	defer func() { p.leader.Store(p.holding()) }()
 	begin := p.now()
 	if p.holding() {
 		n, err := renewScript.Run(ctx, p.rdb, []string{p.leaseKey()}, p.opts.Owner, leaseTTL.Milliseconds()).Int64()
@@ -241,6 +292,7 @@ func (p *Publisher) releaseLease() {
 		p.logger.Warn("release outbox lease failed", slog.Any("error", err))
 	}
 	p.leaseUntil = time.Time{}
+	p.leader.Store(false)
 }
 
 // drain 连续发布，直到没有未发布的事件、失败或租约不足。

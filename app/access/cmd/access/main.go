@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/go-kratos/kratos/contrib/registry/consul/v3"
 	"github.com/go-kratos/kratos/v3"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/Mars-08042/MarsChat/app/access/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/access/internal/conf"
+	"github.com/Mars-08042/MarsChat/app/access/internal/data"
+	"github.com/Mars-08042/MarsChat/app/access/internal/server"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 )
 
@@ -25,18 +28,29 @@ var (
 	flagconf string
 )
 
+// stopTimeout 是停机时每个服务器的最长等待时间，覆盖 websocket.drain_window 加上关闭握手的宽限。
+// Compose 中 access 的 stop_grace_period 比它多留 5 秒。
+const stopTimeout = 15 * time.Second
+
 func init() {
 	flag.StringVar(&flagconf, "conf", "app/access/configs", "配置目录或文件路径")
 }
 
-func newApp(logger *slog.Logger, r *consul.Registry, gs *grpc.Server, hs *http.Server, hub *biz.Hub) *kratos.App {
+func newApp(logger *slog.Logger, r *consul.Registry, gs *grpc.Server, hs *http.Server, hub *biz.Hub,
+	routes *data.RouteRepo) *kratos.App {
 	return kratos.New(
 		kratos.ID(bootstrap.InstanceID(Name)),
 		kratos.Name(Name),
 		kratos.Version(Version),
 		kratos.Logger(logger),
 		kratos.Registrar(r),
-		kratos.Server(gs, hs, hub),
+		// HTTP 服务器放在第一个：Kratos 把第一个端点登记为 Consul 服务的 Address:Port，APISIX 按它转发 HTTP；
+		// gRPC 客户端按协议从 TaggedAddresses 取端点，不受顺序影响。
+		// 停机时 Kratos 先从 Consul 注销，再并发停止各服务器；gRPC 服务器等 Hub 排空连接后才停止。
+		kratos.Server(hs, server.NewDrainingGRPCServer(gs, hub), hub),
+		kratos.StopTimeout(stopTimeout),
+		// 路由地址取自注册的 gRPC 端点，必须在开始接受 WebSocket 连接之前确定
+		kratos.BeforeStart(routes.ResolveAddr),
 	)
 }
 

@@ -1,11 +1,11 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 4（2026-11-19）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-19）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
 - 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)。media 在步骤 6 实现。
-- 开发阶段服务运行在宿主机，监听 `127.0.0.1`；MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。服务从步骤 5 起打包进容器。
+- 服务有两种运行方式：日常开发运行在宿主机，监听 `127.0.0.1`；容器模式（compose profile `apps`）中 access、message、delivery 各两个实例，客户端经 APISIX 网关（Standalone 模式，上游经 Consul 发现）访问。MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。设计见 [gateway-multi-instance.md](../design/gateway-multi-instance.md)。
 - 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
 ## 2. 仓库结构
@@ -28,12 +28,13 @@ pkg/bootstrap/           启动公共组件：配置加载与热更新、日志�
 pkg/balancer/            设置 Kratos gRPC 负载均衡的全局选择器（修复 v3.0.0 的初始化顺序问题）
 pkg/jsoncodec/           HTTP 的 json codec 按 protobuf JSON 规则处理 proto 消息（Kratos v3 默认不这样做）
 pkg/middleware/accesslog/ 访问日志、panic 恢复与内部错误脱敏中间件
+pkg/middleware/retry/    gRPC 客户端重试中间件（幂等方法在连接级失败时重试一次）
 pkg/auth/                访问令牌签发（只有 account 使用）、校验中间件、WebSocket 用的 Verifier、吊销名单、当前用户
-pkg/idgen/               snowflake ID，节点号用 Redis 租约分配
+pkg/idgen/               snowflake ID，节点号用 Redis 租约分配，租约丢失后换用新节点号
 pkg/cache/               Cache-Aside 缓存组件，可选跨实例重建锁
 pkg/bloom/               RedisBloom ID 布隆过滤器（就绪标记、脏标记、分布式重建）
 pkg/ratelimit/           Redis 滑动窗口限流
-pkg/outbox/              事务 Outbox：写入端与发布器（Redis 租约保证每个服务只有一个实例发布）
+pkg/outbox/              事务 Outbox：写入端与发布器（Redis 租约保证每个服务只有一个实例发布，Redis 发布订阅跨实例唤醒）
 pkg/kafka/               Kafka 生产者、消费者（按事件类型分发、手动提交、原地重试）与记录头约定
 pkg/route/               在线路由的 Redis 结构（access 写入、delivery 读取）
 pkg/clientip/            按可信代理解析客户端 IP
@@ -74,8 +75,11 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 
 - account、social、message 的 Outbox 发布器和 Kafka 消费者（`pkg/outbox.Publisher`、`pkg/kafka.Consumer`）也实现为 Kratos 的 `transport.Server`，随 `app.Run()` 启停。Kratos 传给 `Start` 的 context 在停机时不会取消，所以它们各自持有 context，`Stop` 时取消。Kafka 不可用不影响启动：事件留在 Outbox 表中，消费者在后台重连。
 - message 额外创建 social、account 两个惰性 gRPC 客户端，以及消费 social 群事件的消费者。
-- access 不连 MySQL。连接管理器 `biz.Hub` 同样是 `transport.Server`：停机时以 1001 关闭全部 WebSocket 连接并删除路由（`http.Server.Shutdown` 不管已劫持的连接）。WebSocket 处理函数注册在 Kratos HTTP 服务器上，但连接的生命周期不使用请求 context，因为 Kratos 给它加了服务端超时（有测试覆盖）。
-- delivery 只有 gRPC 服务器（健康检查与注册）和消费者，没有可热更新的配置。
+- access 不连 MySQL。连接管理器 `biz.Hub` 同样是 `transport.Server`。WebSocket 处理函数注册在 Kratos HTTP 服务器上，但连接的生命周期不使用请求 context，因为 Kratos 给它加了服务端超时（有测试覆盖）。停机顺序：
+  1. Kratos 从 Consul 注销，网关约 1 秒内不再把新连接分到这个实例；
+  2. Kratos 并发停止各服务器：HTTP 服务器关闭监听（`http.Server.Shutdown` 不管已劫持的 WebSocket 连接）；Hub 拒绝新连接，把现有连接以 1001 分批关闭，分布在 `websocket.drain_window`（默认 5 秒）内，连接关闭时删除路由；gRPC 服务器由 `server.DrainingGRPCServer` 包装，等 Hub 排空后才停止，排空期间发往剩余连接的推送仍然有效；
+  3. 每个服务器的停机超时为 15 秒（`kratos.StopTimeout`），超时后强制断开剩余连接。Compose 中 access 的 `stop_grace_period` 为 20 秒。
+- delivery 只有 gRPC 服务器（健康检查与注册）和消费者；`policy` 段（推送冷却期）热更新。
 
 ## 5. 横切约定
 
@@ -97,8 +101,9 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 ### 5.3 服务注册与发现
 
 - 注册中心是 Consul，服务名为 `marschat-<服务>`。实例 ID 为 `<服务名>-<主机名>-<进程号>`：Consul 要求同一 agent 上的实例 ID 唯一，本地多个服务共用一台主机，只用主机名会互相覆盖。
-- 实例注册时登记 gRPC 和 HTTP 两个端点，带 TTL 心跳检查（每 10 秒上报，20 秒未上报变为 critical，critical 持续 10 分钟后注销）。发现方只拿到检查通过的实例。
-- `registry.consul.health_check` 控制是否让 Consul 主动 TCP 探测服务端口。本地开发时为 `false`：服务监听宿主机 `127.0.0.1`，容器里的 Consul 探测不到。服务容器化（步骤 5）后开启。
+- 实例注册时登记 HTTP 和 gRPC 两个端点，带 TTL 心跳检查（宿主机运行时每 10 秒上报，20 秒未上报变为 critical，critical 持续 10 分钟后注销）。发现方只拿到检查通过的实例。
+- `kratos.Server` 中 HTTP 服务器排在第一个（delivery 只有 gRPC）：Kratos 把第一个端点登记为 Consul 服务的 `Address:Port`，网关的 Consul 发现按它转发 HTTP；各端点同时按协议写进 `TaggedAddresses`，Kratos 的 gRPC 客户端从中取 `grpc` 端点，不受顺序影响。
+- `registry.consul.tcp_check_interval` 控制 Consul 主动 TCP 探测服务端口的间隔，同时是 TTL 心跳间隔。宿主机运行时为 `0s`（不探测）：服务监听 `127.0.0.1`，容器里的 Consul 探测不到。容器模式为 3 秒，实例被杀后几秒内从发现结果中消失。原来的布尔字段 `health_check` 无法用 `${XXX:默认值}` 占位符覆盖（替换结果是字符串，protojson 不接受字符串形式的布尔值），所以改成时长字段。
 - 服务间调用用 Kratos gRPC 客户端，地址写成 `discovery:///marschat-<服务>`，负载均衡为加权轮询（wrr）。目前的调用：
 
   | 调用方 → 被调用方 | 接口 | 超时 |
@@ -108,10 +113,14 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
   | message → account | `BatchGetUsers`（会话列表补全对方资料） | 1 秒 |
   | access → message | `SendMessage` | 3 秒 |
   | delivery → social | `ListAllGroupMembers` | 1 秒 |
-  | delivery → access | `Push`、`Kick`，**按在线路由中的地址直连**，不经 Consul，每个地址缓存一条连接（TD-31） | 2 秒 |
+  | delivery → access | `Push`、`Kick`，**按在线路由中的地址直连**，不经 Consul，每个地址缓存一条连接 | 2 秒 |
 
   共同点：
-  - 超时同时是服务发现首次解析的等待上限；客户端没有重试与熔断，步骤 5 加入。
+  - 超时同时是服务发现首次解析的等待上限，并覆盖包括重试在内的整次调用。
+  - 经 Consul 的调用都挂两个客户端中间件，重试在外、熔断在内：
+    - 重试（`pkg/middleware/retry`）：只对客户端列出的幂等方法（上表全部经 Consul 的接口；`SendMessage` 按 `client_msg_id` 幂等），只在 503 且不带错误原因（gRPC `Unavailable`，即连接级失败）时重试一次，间隔 20～50 毫秒，剩余截止时间不足 150 毫秒时不重试。业务错误、超时、下游返回的 `DEPENDENCY_UNAVAILABLE`、`CIRCUITBREAKER`、`no_available_node` 都不重试。Kratos 的 gRPC 负载均衡只在 READY 的连接中选择，实例退出后重试通常落到其他实例。
+    - 熔断（Kratos `middleware/circuitbreaker`）：Google SRE 自适应限流，按接口统计，把 500、503、504 计为失败；打开时直接返回 `503 CIRCUITBREAKER`，请求不发出。
+  - delivery 直连 access 的推送不重试、不熔断：熔断按接口统计，一个 access 实例宕机会让发往所有实例的推送一起被熔断。调用返回 `Unavailable` 或 `DeadlineExceeded` 时，关闭并移出该地址的连接，地址进入冷却期（`policy.push_cooldown`，默认 5 秒），冷却期内发往它的推送直接跳过（记 DEBUG），冷却结束后重新拨号。不监听 Consul 中 access 的变化，因为正在排空的实例已经注销，但还在给剩余连接推送。
   - 连接惰性建立（`grpc.NewClient`），被调用方暂时不可用不影响调用方启动；就绪探针也不检查它，被调用方故障时调用方降级运行，而不是被摘掉流量。
   - 失败时 data 层统一包装成 `biz.ErrUnavailable`，由 biz 决定是返回 `503 DEPENDENCY_UNAVAILABLE`（写操作需要的校验）还是降级（列表资料补全留空并记 WARN）。
 - Kratos v3.0.0 的 gRPC 负载均衡器在包初始化时就读取了全局选择器，而默认选择器设置得更晚，经服务发现调用会空指针 panic。`pkg/balancer` 在更早的初始化阶段设置选择器，`pkg/bootstrap` 匿名导入了它；不使用 bootstrap 的程序（如 e2e 测试）要自己匿名导入 `pkg/balancer`。原因与验证见 [lessons/kratos-grpc-selector-nil.md](../lessons/kratos-grpc-selector-nil.md)。
@@ -175,12 +184,14 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - 限流类错误（429）在 `metadata.retry_after_seconds` 中给出需要等待的秒数。
 - 框架产生的错误：令牌缺失、无效、过期或已吊销统一为 `401 UNAUTHORIZED`；参数不合法为 `400 VALIDATOR`；请求体无法解码为 `400 CODEC`；内部错误为 `500 INTERNAL`，不带细节。
 - 调用其他服务时，被调用方返回的业务错误（带错误原因）原样透传给客户端，例如发消息时 social 的 `NOT_FRIENDS`；超时、连接失败等没有错误原因的错误由调用方包装成自己的 503（message 的 `DEPENDENCY_UNAVAILABLE`、access 的 `UPSTREAM_UNAVAILABLE`），原始错误只进日志。
+- access 调 message 时，熔断打开的 `503 CIRCUITBREAKER` 带错误原因，同样原样透传：它表示消息确定没有发出，客户端可以稍后用同一个 `client_msg_id` 重发；`UPSTREAM_UNAVAILABLE` 表示结果未知，重发由 `client_msg_id` 去重。message 调 social、account 时熔断打开按依赖不可用处理（`DEPENDENCY_UNAVAILABLE` 或降级）。
 - WebSocket 上的 `Error` 帧与 HTTP 错误体字段相同。
 
 ### 5.9 异步消息
 
 - 跨服务的状态变化用事件通知：业务事务内写 `outbox_events`，`pkg/outbox.Publisher` 发布到 Kafka（topic `marschat.<服务>.events`，记录头带事件类型、事件 ID、来源），消费方用 `pkg/kafka.Consumer` 按事件类型注册处理器（`kafka.On[T]` 负责解码）。
 - 事件类型是 proto 全名，定义在各服务的 `api/<服务>/v1/events.proto`；topic 由 `make up` 中的 `kafka-init` 一次性创建，broker 关闭了自动建 topic。
+- 每个服务只有持有 Redis 租约（`outbox:lease:{source}`）的实例发布。事务提交后 `Notify` 立即唤醒发布器；本实例不持有租约时，再向 Redis 频道 `outbox:wake:{source}` 发一条消息，持有者订阅该频道，收到后立即发布。唤醒丢失只是退回按 `outbox.poll_interval`（默认配置 0.5 秒）轮询。
 - 处理器要幂等：Outbox 至少发布一次，消费者重启、再均衡后也可能重复投递。需要按顺序生效的处理器（群成员投影、缓存删除）返回错误时原地重试；尽力而为的处理器（推送）只记日志、从不返回错误。
 - 流转、topic 与消费组一览见 [data-flow.md](data-flow.md#6-事件与-outbox)。
 
@@ -189,6 +200,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - 单元测试不依赖外部服务，`go test ./...` 即可运行。biz 层用内存假 repo；Redis 相关逻辑（Lua 脚本、限流、缓存与重建锁、ID 租约、吊销名单、Outbox 租约、在线路由的字段级 TTL）用 miniredis。access 的连接管理用 `httptest` 加真实的 gorilla/websocket 客户端测试；Kafka 消费者和 Outbox 发布器用假的拉取与发送接口测试。
 - miniredis 不支持 RedisBloom，`pkg/bloom` 的测试在 `test/e2e/bloom_test.go`，连真实 Redis，用“把过滤器的键改成字符串”注入 `BF.INSERT` 失败。
 - 依赖 compose 环境和已启动服务的测试放在 `test/e2e`，带 `e2e` 构建标签，用 `make e2e` 运行；它会加载 `.env`，测试用其中的密码直接连 Redis、MySQL 做准备工作（清理本机 IP 的限流计数、设置管理员）。
+- 容器模式的集群测试与故障实验放在 `test/cluster`，带 `cluster` 构建标签，用 `make cluster-test` 运行，客户端只经网关访问。两组测试共用 `test/testkit` 中的 HTTP 调用、注册、WebSocket 收发和 Redis 读取函数，区别只在地址。
 
 ## 6. 关键技术组件
 

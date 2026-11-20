@@ -1,5 +1,6 @@
 // Package idgen 实现 snowflake ID：41 位毫秒时间戳、10 位节点号、12 位序列号。
 // 节点号通过 Redis 租约分配，保证多个实例同时发号时不会重复。
+// 租约丢失（例如 Redis 停机超过 TTL，重启后键已过期）时换一个空闲节点号继续发号，不需要重启服务。
 package idgen
 
 import (
@@ -26,6 +27,8 @@ const (
 
 	leaseTTL   = 30 * time.Second
 	renewEvery = 10 * time.Second
+	// 租约已失效时的重试间隔：Redis 恢复后尽快重新拿到节点号，减少写操作失败的时间
+	retryEvery = time.Second
 	// 时钟回拨不超过该值时等待追平，超过则报错
 	maxBackwardWait = 5 * time.Millisecond
 
@@ -59,10 +62,11 @@ return 0`)
 type Generator struct {
 	rdb    redis.UniversalClient
 	owner  string
-	node   int64
 	logger *slog.Logger
 	now    func() time.Time
 
+	// node 是当前持有的节点号，租约丢失后会换成新的；切换时持有 mu，NextID 不会读到新旧混合的状态
+	node atomic.Int64
 	// leaseUntil 是本地认定租约有效的截止时间（Unix 毫秒）。取续期请求发出前的时间加上 TTL，
 	// 一定早于 Redis 中键的实际过期时间，所以本地停止发号总是先于别的实例拿到该节点号。
 	leaseUntil atomic.Int64
@@ -89,14 +93,15 @@ func New(ctx context.Context, rdb redis.UniversalClient, owner string, logger *s
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := releaseScript.Run(ctx, g.rdb, []string{g.key()}, g.owner).Err(); err != nil {
-			g.logger.Warn("release idgen node failed", slog.Int64("node", g.node), slog.Any("error", err))
+			g.logger.Warn("release idgen node failed", slog.Int64("node", g.Node()), slog.Any("error", err))
 		}
 	}
-	logger.Info("idgen node acquired", slog.Int64("node", g.node))
+	logger.Info("idgen node acquired", slog.Int64("node", g.Node()))
 	return g, cleanup, nil
 }
 
 // acquire 从随机位置开始依次尝试节点号，减少多个实例同时启动时的冲突。
+// 拿到后在 mu 保护下同时切换节点号和截止时间。
 func (g *Generator) acquire(ctx context.Context) error {
 	start := rand.IntN(maxNode + 1)
 	for i := 0; i <= maxNode; i++ {
@@ -107,26 +112,38 @@ func (g *Generator) acquire(ctx context.Context) error {
 			return fmt.Errorf("acquire idgen node: %w", err)
 		}
 		if ok {
-			g.node = node
+			g.mu.Lock()
+			g.node.Store(node)
 			g.leaseUntil.Store(begin.Add(leaseTTL).UnixMilli())
+			g.mu.Unlock()
 			return nil
 		}
 	}
 	return ErrNoFreeNode
 }
 
+// renewLoop 定期续期；租约失效期间改为每秒重试，Redis 恢复后尽快恢复发号。
 func (g *Generator) renewLoop(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
-	ticker := time.NewTicker(renewEvery)
-	defer ticker.Stop()
+	timer := time.NewTimer(renewEvery)
+	defer timer.Stop()
 	for {
 		select {
 		case <-stop:
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			g.renew()
+			next := renewEvery
+			if !g.holding() {
+				next = retryEvery
+			}
+			timer.Reset(next)
 		}
 	}
+}
+
+func (g *Generator) holding() bool {
+	return g.now().UnixMilli() < g.leaseUntil.Load()
 }
 
 func (g *Generator) renew() {
@@ -136,23 +153,32 @@ func (g *Generator) renew() {
 	n, err := renewScript.Run(ctx, g.rdb, []string{g.key()}, g.owner, leaseTTL.Milliseconds()).Int64()
 	switch {
 	case err != nil:
-		// 网络抖动时下一轮再试，租约在本地截止时间前仍然有效
-		g.logger.Warn("renew idgen node lease failed", slog.Int64("node", g.node), slog.Any("error", err))
+		// 网络抖动时下一轮再试，租约在本地截止时间前仍然有效；过了截止时间发号返回 ErrLeaseLost
+		g.logger.Warn("renew idgen node lease failed", slog.Int64("node", g.Node()), slog.Any("error", err))
 	case n == 0:
-		// 键已过期并可能被其他实例占用，不能再续；本地截止时间到后发号会返回 ErrLeaseLost
-		g.logger.Error("idgen node lease taken by another owner", slog.Int64("node", g.node))
+		// 键已过期（Redis 停机超过 TTL）或被其他实例占用，不能再续这个节点号。
+		// 立即停止用它发号，再换一个空闲节点号：新节点号上的 ID 不会与旧节点号的 ID 冲突，不必等旧租约到期
+		old := g.Node()
+		g.mu.Lock()
+		g.leaseUntil.Store(0)
+		g.mu.Unlock()
+		if err := g.acquire(ctx); err != nil {
+			g.logger.Error("idgen node lease lost, reacquire failed", slog.Int64("node", old), slog.Any("error", err))
+			return
+		}
+		g.logger.Warn("idgen node lease lost, switched to a new node", slog.Int64("old_node", old), slog.Int64("node", g.Node()))
 	default:
 		g.leaseUntil.Store(begin.Add(leaseTTL).UnixMilli())
 	}
 }
 
 func (g *Generator) key() string {
-	return nodeKeyPrefix + strconv.FormatInt(g.node, 10)
+	return nodeKeyPrefix + strconv.FormatInt(g.Node(), 10)
 }
 
-// Node 返回当前持有的节点号。
+// Node 返回当前持有的节点号。租约丢失后会换成新的节点号。
 func (g *Generator) Node() int64 {
-	return g.node
+	return g.node.Load()
 }
 
 // NextID 生成下一个 ID。
@@ -188,7 +214,7 @@ func (g *Generator) NextID() (int64, error) {
 		g.seq = 0
 	}
 	g.lastMs = nowMs
-	return (nowMs-epochMs)<<(nodeBits+seqBits) | g.node<<seqBits | g.seq, nil
+	return (nowMs-epochMs)<<(nodeBits+seqBits) | g.node.Load()<<seqBits | g.seq, nil
 }
 
 // Decompose 拆出 ID 中的毫秒时间、节点号和序列号，用于排查问题和测试。

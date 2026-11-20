@@ -249,6 +249,86 @@ func TestNotifyWakesAndStopReleasesLease(t *testing.T) {
 	}
 }
 
+// 事务提交在没有租约的实例上时，经 Redis 频道唤醒持有租约的实例，不必等它下一轮轮询。
+func TestNotifyOnFollowerWakesLeader(t *testing.T) {
+	mr := miniredis.RunT(t)
+	newRDB := func() *redis.Client {
+		rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		t.Cleanup(func() { _ = rdb.Close() })
+		return rdb
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// 两个实例共用同一张 outbox 表（同一个库），各有自己的 Kafka 生产者
+	st := &fakeStore{}
+	leaderPr, followerPr := &fakeProducer{}, &fakeProducer{}
+	opts := Options{Source: "svc", PollInterval: time.Hour, BatchSize: 10, Retention: time.Hour}
+	opts.Owner = "leader"
+	leader := newPublisher(st, leaderPr, newRDB(), opts, logger)
+	opts.Owner = "follower"
+	follower := newPublisher(st, followerPr, newRDB(), opts, logger)
+
+	go func() { _ = leader.Start(context.Background()) }()
+	deadline := time.Now().Add(2 * time.Second)
+	for !mr.Exists(leader.leaseKey()) {
+		if time.Now().After(deadline) {
+			t.Fatal("leader did not acquire the lease")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	go func() { _ = follower.Start(context.Background()) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = follower.Stop(ctx)
+		_ = leader.Stop(ctx)
+	})
+	// 两个实例都订阅了唤醒频道后再提交，否则唤醒可能在订阅生效前发出
+	for mr.PubSubNumSub(leader.wakeChannel())[leader.wakeChannel()] < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("publishers did not subscribe to the wake-up channel")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got, _ := mr.Get(leader.leaseKey()); got != "leader" {
+		t.Fatalf("lease holder = %q, want leader", got)
+	}
+
+	// 轮询间隔是 1 小时，只有跨实例唤醒能让事件这么快发出
+	st.add(3)
+	follower.Notify()
+	for st.unpublished() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("events not published after a follower's Notify")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := len(leaderPr.published()); n != 3 {
+		t.Errorf("leader published %d events, want 3", n)
+	}
+	if n := len(followerPr.published()); n != 0 {
+		t.Errorf("follower published %d events without the lease", n)
+	}
+}
+
+// 持有租约的实例只在本进程内唤醒，不向 Redis 频道发消息。
+func TestNotifyOnLeaderStaysLocal(t *testing.T) {
+	f := newFixture(t, 10)
+	f.pub.maintainLease(context.Background())
+	if !f.pub.leader.Load() {
+		t.Fatal("leader flag not set after acquiring the lease")
+	}
+	f.pub.Notify()
+	select {
+	case <-f.pub.remoteWake:
+		t.Error("leader queued a cross-instance wake-up")
+	default:
+	}
+	f.pub.releaseLease()
+	if f.pub.leader.Load() {
+		t.Error("leader flag still set after releasing the lease")
+	}
+}
+
 func TestToRecords(t *testing.T) {
 	old := time.Now().Add(-24 * time.Hour)
 	recs := toRecords("svc", []Event{{ID: 7, Topic: "t", EventKey: "k", EventType: "a.B", Payload: []byte("p"), CreatedAt: old}})

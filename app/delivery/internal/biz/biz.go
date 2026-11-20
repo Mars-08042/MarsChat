@@ -4,13 +4,41 @@ package biz
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 
 	"github.com/google/wire"
 
 	accessv1 "github.com/Mars-08042/MarsChat/api/access/v1"
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
+	"github.com/Mars-08042/MarsChat/app/delivery/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/route"
 )
+
+// ErrInstanceCoolingDown 表示目标 access 实例刚推送失败、仍在冷却期，这次调用被跳过。
+var ErrInstanceCoolingDown = errors.New("access instance cooling down after a failed call")
+
+// PolicyHolder 持有当前生效的策略。配置热更新时整体替换，读取方每次使用时取一次快照。
+type PolicyHolder struct {
+	v atomic.Pointer[conf.Policy]
+}
+
+// NewPolicyHolder 用启动时的配置初始化。
+func NewPolicyHolder(p *conf.Policy) *PolicyHolder {
+	h := &PolicyHolder{}
+	h.v.Store(p)
+	return h
+}
+
+// Load 返回当前策略，调用方不能修改返回值。
+func (h *PolicyHolder) Load() *conf.Policy {
+	return h.v.Load()
+}
+
+// Store 替换策略，由配置热更新调用（新值已通过校验）。
+func (h *PolicyHolder) Store(p *conf.Policy) {
+	h.v.Store(p)
+}
 
 // ProviderSet 是 biz 层的依赖提供者。
 var ProviderSet = wire.NewSet(NewDeliveryUsecase)
@@ -34,6 +62,7 @@ type GroupMembers interface {
 }
 
 // Pusher 调用 access 实例的内部接口，addr 为路由中记录的 gRPC 地址。
+// 实例刚调用失败、仍在冷却期时返回 ErrInstanceCoolingDown。
 type Pusher interface {
 	Push(ctx context.Context, addr string, connIDs []int64, frame *accessv1.ServerFrame) (int, error)
 	Kick(ctx context.Context, addr string, connIDs []int64, reason accountv1.RevokeReason) (int, error)

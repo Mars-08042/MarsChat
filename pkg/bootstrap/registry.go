@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-kratos/kratos/contrib/registry/consul/v3"
 	"github.com/hashicorp/consul/api"
@@ -33,5 +34,9 @@ func NewConsulRegistry(c *conf.Registry) (*consul.Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create consul client %s: %w", cfg.Address, err)
 	}
-	return consul.New(cli, consul.WithHealthCheck(c.GetConsul().GetHealthCheck())), nil
+	opts := []consul.Option{consul.WithHealthCheck(false)}
+	if sec := int(c.GetConsul().GetTcpCheckInterval().AsDuration() / time.Second); sec > 0 {
+		opts = []consul.Option{consul.WithHealthCheck(true), consul.WithHealthCheckInterval(sec)}
+	}
+	return consul.New(cli, opts...), nil
 }

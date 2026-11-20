@@ -19,9 +19,10 @@ message Bootstrap {
   WebSocket websocket = 7 [(buf.validate.field).required = true];
   // 可热更新，见 Policy
   Policy policy = 8 [(buf.validate.field).required = true];
-  // 写入在线路由的本实例 gRPC 地址，delivery 按它直连推送。
-  // 必须是其他服务能访问到的 host:port，不能是 0.0.0.0；通常与 server.grpc.addr 的端口相同
-  string advertise_addr = 9 [(buf.validate.field).string.min_len = 1];
+  // 写入在线路由的本实例 gRPC 地址（host:port），delivery 按它直连推送。
+  // 留空时取 Kratos 注册到 Consul 的 gRPC 端点：监听 0.0.0.0 时是网卡 IP，多副本部署不用逐个配置。
+  // 只有其他服务要经 NAT 等不同地址访问本实例时才需要填写。
+  string advertise_addr = 9;
 }
 
 // Upstream 是调用其他服务的配置，修改后需要重启。
@@ -73,6 +74,15 @@ message WebSocket {
     gte: 1024
     lte: 1048576
   }];
+  // 停机时分批关闭现有连接的时间窗口，避免全部客户端同时重连到其他实例；0 表示一次全部关闭。
+  // 上限留出关闭握手和收尾的时间，必须小于进程的停机超时（15 秒）
+  google.protobuf.Duration drain_window = 7 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {seconds: 0}
+      lte: {seconds: 10}
+    }
+  ];
 }
 
 // Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。

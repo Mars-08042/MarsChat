@@ -6,21 +6,27 @@ import (
 	"log/slog"
 
 	"github.com/go-kratos/kratos/contrib/registry/consul/v3"
+	"github.com/go-kratos/kratos/v3/middleware/circuitbreaker"
 	kgrpc "github.com/go-kratos/kratos/v3/transport/grpc"
 
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
 	"github.com/Mars-08042/MarsChat/app/social/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/social/internal/conf"
+	"github.com/Mars-08042/MarsChat/pkg/middleware/retry"
 )
 
 // NewAccountClient 创建 account 内部接口的 gRPC 客户端，默认地址 discovery:///marschat-account 经 Consul 发现。
 // 连接是惰性的，account 暂时不可用不影响 social 启动。超时由 Kratos 客户端的超时设置控制，
-// 同时也是服务发现首次解析的等待上限；重试与熔断在重构步骤 5 加入。
+// 同时也是服务发现首次解析的等待上限。BatchGetUsers 只读，连接级失败时重试一次；按接口熔断，重试在外层。
 func NewAccountClient(c *conf.Account, r *consul.Registry, logger *slog.Logger) (accountv1.AccountInternalServiceClient, func(), error) {
 	conn, err := kgrpc.NewClient(context.Background(),
 		kgrpc.WithEndpoint(c.GetEndpoint()),
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
+		kgrpc.WithMiddleware(
+			retry.Client(accountv1.AccountInternalService_BatchGetUsers_FullMethodName),
+			circuitbreaker.Client(),
+		),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create account client %s: %w", c.GetEndpoint(), err)
