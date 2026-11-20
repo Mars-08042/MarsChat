@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-19）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
+> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-20）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
 
 ## 运行依赖
 
@@ -22,7 +22,7 @@
 | MySQL | `mysql:9.7.4` | `127.0.0.1:13306` | 首次初始化时为每个服务建库建账号，见 [data-model.md](architecture/data-model.md#1-数据库与账号) |
 | Redis | `redis:8.8.4` | `127.0.0.1:16379` | 开启 AOF 持久化和密码；加载镜像自带的 RedisBloom 模块（用户、群 ID 布隆过滤器）。**最低 8.0**：在线路由用 `HSETEX` 设置 Hash 字段级 TTL |
 | Kafka | `apache/kafka:4.4.0` | `127.0.0.1:19092` | 单节点 KRaft；容器网络内地址为 `kafka:29092`；关闭自动建 topic，topic 由 `kafka-init` 显式创建；堆内存限制为 512 MiB（镜像默认 1 GiB，Docker Desktop 虚拟机只有 3.8 GiB） |
-| topic 初始化 | `apache/kafka:4.4.0` | — | `kafka-init` 一次性任务，带 profile，由 `make up` 在依赖组件健康后执行：`kafka-topics.sh --create --if-not-exists` 创建 `marschat.account.events`（3 分区）、`marschat.social.events`（6）、`marschat.message.events`（12）和 e2e 专用的 `marschat.e2e.events`（3），副本数 1；重复执行不会报错 |
+| topic 初始化 | `apache/kafka:4.4.0` | — | `kafka-init` 一次性任务，带 profile，由 `make up` 在依赖组件健康后执行：`kafka-topics.sh --create --if-not-exists` 创建 `marschat.account.events`（3 分区）、`marschat.social.events`（6）、`marschat.message.events`（12）、重试队列 `marschat.social-cache.retry`（3）、死信队列 `marschat.dlq`（3，保留 14 天），以及 e2e 专用的 `marschat.e2e.events`、`marschat.e2e.retry`（各 3），副本数 1；重复执行不会报错，已有环境新增 topic 时执行一次 `docker compose run --rm kafka-init` |
 | Consul | `hashicorp/consul:2.1.0` | `127.0.0.1:18500` | 单节点 server，带 Web UI |
 | 迁移任务 | `migrate/migrate:v4.20.1` | — | `migrate-<服务>` 一次性任务，带 profile，`make up` 不启动，见“数据库迁移” |
 
@@ -281,7 +281,7 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `make lint` | `buf lint` |
 | `make vet` / `make test` | `go vet ./...` / `go test ./...` |
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |
-| `make e2e` | 端到端测试，需要依赖组件已启动、account、social、message 已迁移，五个服务都在运行；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理；`kafka_test.go` 使用专用 topic `marschat.e2e.events` 和随机消费组 |
+| `make e2e` | 端到端测试，需要依赖组件已启动、account、social、message 已迁移，五个服务都在运行；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理；`kafka_test.go` 使用专用 topic `marschat.e2e.events`、`marschat.e2e.retry` 和随机消费组，并在死信队列中查找本次写入的记录 |
 | `make images` | 宿主机交叉编译全部服务并构建镜像 `marschat/<服务>:dev`，见“容器模式” |
 | `make certs` | 生成网关的自签证书到 `deploy/apisix/certs/`（已有时不覆盖） |
 | `make cluster-up` / `make cluster-down` | 启动容器模式的全部服务和网关 / 删除这些容器（依赖组件保持运行） |
@@ -291,6 +291,20 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `make grant-admin PHONE=…` | 设置管理员 |
 
 CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时执行：`buf lint`、`buf breaking`（PR 与基准分支比较，推送与上一次推送比较）、重新生成代码并检查与提交一致、`go mod tidy -diff`、`go vet`、`go build`、`go test -race`。e2e 需要 compose 环境，暂不在 CI 中运行。
+
+## 死信队列
+
+消费者处理不了的记录写入 `marschat.dlq`，保留 14 天，目前没有重新投递工具。用 Kafka 自带的命令带头部查看（Git Bash 中需要 `MSYS_NO_PATHCONV=1`）：
+
+```bash
+MSYS_NO_PATHCONV=1 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka:29092 --topic marschat.dlq --from-beginning --timeout-ms 5000 \
+  --property print.headers=true --property print.key=true --property print.timestamp=true
+```
+
+- 头 `x-dlq-group` 是写入的消费组，`x-dlq-topic`、`x-dlq-partition`、`x-dlq-offset` 是原记录的位置，`x-dlq-error` 是失败原因（最长 4 KiB）；`event_type`、`event_id` 等原始头保留。
+- 值是事件的 protobuf 编码，控制台中显示为乱码，按 `event_type` 解码。
+- 写入时服务日志有一条 ERROR：`kafka event failed permanently, moving to dead letter topic`。
 
 ## 停止与重置
 

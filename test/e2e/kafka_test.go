@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -163,6 +164,117 @@ func TestKafkaConsumeCommitAndResume(t *testing.T) {
 			payloads = append(payloads, string(e.Payload))
 		}
 		t.Fatalf("after restart got %v, want [3 4]", payloads)
+	}
+}
+
+// e2eRetryTopic 是集成测试专用的重试队列，由 kafka-init 创建。
+const e2eRetryTopic = "marschat.e2e.retry"
+
+// TestKafkaRetryTopicAndDeadLetter 验证重试队列与死信队列经真实 Kafka 的往返：一直临时失败的事件
+// 在主 topic 上尝试 RetryAttempts 次后转入重试队列，延迟后由重试消费者处理成功；
+// Permanent 失败的事件写入死信队列，带上原始的事件 ID 和原位置。
+func TestKafkaRetryTopicAndDeadLetter(t *testing.T) {
+	run := randomHex(t)
+	cl, closeProducer, err := kafka.NewProducer(kafkaConf(), "e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeProducer()
+
+	group := "e2e-retry-" + run
+	var mu sync.Mutex
+	mainAttempts := 0
+	retried := &collector{}
+	startConsumer(t, kafka.ConsumerConfig{
+		Group: group, Topics: []string{e2eTopic},
+		RetryTopic: e2eRetryTopic, RetryAttempts: 2, RetryDelay: time.Second,
+	}, func(c *kafka.Consumer) {
+		c.Handle("e2e.Test", func(_ context.Context, e *kafka.Event) error {
+			// topic 里有之前运行留下的记录，只处理本次的
+			if e.Key != run {
+				return nil
+			}
+			switch string(e.Payload) {
+			case "transient":
+				if e.Topic == e2eTopic {
+					mu.Lock()
+					mainAttempts++
+					mu.Unlock()
+					return errors.New("simulated outage")
+				}
+				retried.add(e)
+				return nil
+			case "permanent":
+				return kafka.Permanent(errors.New("simulated bad content"))
+			}
+			return nil
+		})
+	})
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	recs := []*kgo.Record{
+		{Topic: e2eTopic, Key: []byte(run), Value: []byte("transient"), Headers: []kgo.RecordHeader{
+			{Key: kafka.HeaderEventType, Value: []byte("e2e.Test")}, {Key: kafka.HeaderEventID, Value: []byte(run + ":transient")},
+		}},
+		{Topic: e2eTopic, Key: []byte(run), Value: []byte("permanent"), Headers: []kgo.RecordHeader{
+			{Key: kafka.HeaderEventType, Value: []byte("e2e.Test")}, {Key: kafka.HeaderEventID, Value: []byte(run + ":permanent")},
+		}},
+	}
+	if err := cl.ProduceSync(ctx, recs...).FirstErr(); err != nil {
+		t.Fatalf("produce: %v", err)
+	}
+
+	got := retried.waitFor(t, 1, 60*time.Second)[0]
+	if got.Topic != e2eRetryTopic || got.ID != run+":transient" {
+		t.Fatalf("retried event = %+v, want it from %s with the original id", got, e2eRetryTopic)
+	}
+	mu.Lock()
+	attempts := mainAttempts
+	mu.Unlock()
+	if attempts != 2 {
+		t.Errorf("attempts on the main topic = %d, want 2 (RetryAttempts)", attempts)
+	}
+	if d := time.Since(start); d < time.Second {
+		t.Errorf("retried after %v, want at least the 1s retry delay", d)
+	}
+
+	// 从测试开始的时间点读死信队列，找到本次的记录
+	dlq, err := kgo.NewClient(kgo.SeedBrokers(kafka.Brokers(kafkaConf())...), kgo.ConsumeTopics(kafka.TopicDLQ),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AfterMilli(start.Add(-time.Second).UnixMilli())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dlq.Close()
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer pollCancel()
+	for {
+		fetches := dlq.PollFetches(pollCtx)
+		if pollCtx.Err() != nil {
+			t.Fatal("dead letter not found in marschat.dlq within 30s")
+		}
+		var found *kgo.Record
+		fetches.EachRecord(func(r *kgo.Record) {
+			if string(r.Key) == run {
+				found = r
+			}
+		})
+		if found == nil {
+			continue
+		}
+		want := map[string]string{
+			kafka.HeaderEventID: run + ":permanent", kafka.HeaderDLQGroup: group, kafka.HeaderDLQTopic: e2eTopic,
+		}
+		for k, v := range want {
+			if got := kafka.Header(found, k); got != v {
+				t.Errorf("dead letter header %s = %q, want %q", k, got, v)
+			}
+		}
+		if string(found.Value) != "permanent" || !strings.Contains(kafka.Header(found, kafka.HeaderDLQError), "simulated bad content") {
+			t.Errorf("dead letter value %q, error %q", found.Value, kafka.Header(found, kafka.HeaderDLQError))
+		}
+		return
 	}
 }
 

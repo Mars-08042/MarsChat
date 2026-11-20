@@ -19,7 +19,8 @@ import (
 const consumerGroup = "marschat-message"
 
 // NewSocialEventConsumer 消费 social 的群事件，维护群会话的成员（设计 3.4）。
-// 处理失败（例如数据库不可用）时原地重试：成员投影必须按顺序生效，不能跳过。
+// 处理失败（例如数据库不可用）时原地重试，不使用重试队列：成员投影必须按顺序生效，不能跳过。
+// 连续失败 10 次后记 ERROR；内容有问题的事件（Permanent）写入死信队列。
 func NewSocialEventConsumer(c *conf.Kafka, uc *biz.MembershipUsecase, logger *slog.Logger) (*kafka.Consumer, func(), error) {
 	k, cleanup, err := kafka.NewConsumer(c, kafka.ConsumerConfig{
 		Group:  consumerGroup,

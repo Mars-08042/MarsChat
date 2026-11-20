@@ -22,6 +22,18 @@ const (
 	HeaderEventID = "event_id"
 	// HeaderSource 是产生事件的服务名
 	HeaderSource = "source"
+
+	// 写入死信队列时追加的头：消费组、原记录的位置和失败原因
+	HeaderDLQGroup     = "x-dlq-group"
+	HeaderDLQTopic     = "x-dlq-topic"
+	HeaderDLQPartition = "x-dlq-partition"
+	HeaderDLQOffset    = "x-dlq-offset"
+	HeaderDLQError     = "x-dlq-error"
+
+	// HeaderRetryNotBefore 是重试记录最早可以处理的时间，Unix 毫秒
+	HeaderRetryNotBefore = "x-retry-not-before"
+	// HeaderRetryFrom 是转入重试队列前的原记录位置，格式为 topic/partition/offset
+	HeaderRetryFrom = "x-retry-from"
 )
 
 // 各服务的事件 topic。topic 由 compose 的 kafka-init 任务创建，broker 关闭了自动创建。
@@ -29,6 +41,11 @@ const (
 	TopicAccountEvents = "marschat.account.events"
 	TopicSocialEvents  = "marschat.social.events"
 	TopicMessageEvents = "marschat.message.events"
+
+	// TopicDLQ 是所有消费组共用的死信队列，保留 14 天
+	TopicDLQ = "marschat.dlq"
+	// TopicSocialCacheRetry 是消费组 marschat-social-cache 的重试队列
+	TopicSocialCacheRetry = "marschat.social-cache.retry"
 )
 
 // Brokers 解析逗号分隔的 broker 列表。

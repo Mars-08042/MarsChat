@@ -1,4 +1,4 @@
-// Package biz 实现投递：根据消息、已读、会话吊销和封禁事件确定接收连接，按 access 实例分组推送或踢连接。
+// Package biz 实现投递：根据消息、已读、会话吊销、封禁和 social 事件确定接收连接，按 access 实例分组推送或踢连接。
 // 推送尽力而为（ADR-0006）：任何失败都只记日志，不重试、不阻塞后续事件，客户端靠补拉兜底。
 package biz
 
@@ -56,9 +56,16 @@ type Deduper interface {
 	FirstSeen(ctx context.Context, eventID string) (bool, error)
 }
 
-// GroupMembers 查询群的全部成员 ID。
+// GroupMember 是推送需要的群成员信息。
+type GroupMember struct {
+	UserID int64
+	// Manager 表示群主或管理员，入群申请只通知他们
+	Manager bool
+}
+
+// GroupMembers 查询群的全部成员。
 type GroupMembers interface {
-	List(ctx context.Context, groupID int64) ([]int64, error)
+	List(ctx context.Context, groupID int64) ([]GroupMember, error)
 }
 
 // Pusher 调用 access 实例的内部接口，addr 为路由中记录的 gRPC 地址。

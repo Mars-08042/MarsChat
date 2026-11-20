@@ -4,12 +4,15 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 
@@ -136,18 +139,99 @@ func TestSocialCacheInvalidatedByEvent(t *testing.T) {
 		t.Fatalf("produce: %v", err)
 	}
 
+	// 旧值被删掉即可，不要求键不存在：delivery 也消费这条事件，经 ListAllGroupMembers 查成员来推送通知，
+	// social 会先读群资料缓存，删除之后可能被重新填充为数据库中的当前值（这里的群不存在，填充的是空值标记）
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		n, err := rdb.Exists(ctx, keys...).Result()
-		if err != nil {
-			t.Fatal(err)
+		stale := 0
+		var refilled []string
+		for _, k := range keys {
+			v, err := rdb.Get(ctx, k).Result()
+			if err != nil && !errors.Is(err, redis.Nil) {
+				t.Fatal(err)
+			}
+			if v == "stale" {
+				stale++
+			} else if v != "" {
+				refilled = append(refilled, k+"="+v)
+			}
 		}
-		if n == 0 {
+		if stale == 0 {
+			if len(refilled) > 0 {
+				t.Logf("cache refilled after invalidation: %v", refilled)
+			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%d of the cache keys still present", n)
+			t.Fatalf("%d of the cache keys still hold the stale value", stale)
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// social 事件经 delivery 作为通知推送（设计 3.7）：好友申请推给被申请人，通过后双方都收到；
+// 入群申请只推给群主和管理员，审核通过后群的全部成员（包括新成员）收到入群通知。
+func TestDeliverySocialNotifications(t *testing.T) {
+	resetRateLimits(t)
+	a, b, c := newUser(t), newUser(t), newUser(t)
+	wa, wb, wc := dialWS(t), dialWS(t), dialWS(t)
+	wa.Auth(a.token)
+	wb.Auth(b.token)
+	wc.Auth(c.token)
+
+	var sent socialv1.SendFriendRequestResponse
+	mustSocial(t, http.MethodPost, "/v1/friend-requests", a.token, &socialv1.SendFriendRequestRequest{UserId: b.id, Message: "hi"}, &sent)
+	n := wb.WaitFrame("friend request notification", func(f *accessv1.ServerFrame) bool {
+		return f.GetNotification().GetFriendRequestCreated() != nil
+	}).GetNotification()
+	if fr := n.GetFriendRequestCreated(); n.GetEventId() == "" || fr.GetRequestId() != sent.GetRequest().GetId() || fr.GetFromUserId() != a.id {
+		t.Fatalf("friend request notification = %v", n)
+	}
+
+	mustSocial(t, http.MethodPost, "/v1/friend-requests/"+id(sent.GetRequest().GetId())+"/accept", b.token, &socialv1.AcceptFriendRequestRequest{}, nil)
+	isFriendAdded := func(f *accessv1.ServerFrame) bool {
+		fa := f.GetNotification().GetFriendAdded()
+		return fa != nil && slices.Contains([]int64{fa.GetUserId(), fa.GetFriendId()}, a.id) &&
+			slices.Contains([]int64{fa.GetUserId(), fa.GetFriendId()}, b.id)
+	}
+	wa.WaitFrame("friend added notification to the requester", isFriendAdded)
+	wb.WaitFrame("friend added notification to the accepter", isFriendAdded)
+
+	var created socialv1.CreateGroupResponse
+	mustSocial(t, http.MethodPost, "/v1/groups", a.token, &socialv1.CreateGroupRequest{
+		Name: "通知测试群", JoinMode: socialv1.JoinMode_JOIN_MODE_APPROVAL, MemberIds: []int64{b.id},
+	}, &created)
+	group := created.GetGroup().GetId()
+	wb.WaitFrame("group created notification", func(f *accessv1.ServerFrame) bool {
+		return f.GetNotification().GetGroupCreated().GetGroup().GetId() == group
+	})
+
+	var joined socialv1.JoinGroupResponse
+	mustSocial(t, http.MethodPost, "/v1/groups/"+id(group)+"/join", c.token, &socialv1.JoinGroupRequest{Message: "let me in"}, &joined)
+	wa.WaitFrame("join request notification to the owner", func(f *accessv1.ServerFrame) bool {
+		jr := f.GetNotification().GetGroupJoinRequestCreated()
+		return jr != nil && jr.GetGroupId() == group && jr.GetUserId() == c.id
+	})
+
+	mustSocial(t, http.MethodPost, "/v1/group-join-requests/"+id(joined.GetRequest().GetId())+"/accept", a.token, &socialv1.AcceptGroupJoinRequestRequest{}, nil)
+	isJoined := func(f *accessv1.ServerFrame) bool {
+		j := f.GetNotification().GetGroupMembersJoined()
+		return j != nil && j.GetGroupId() == group && slices.Contains(j.GetUserIds(), c.id)
+	}
+	wa.WaitFrame("members joined notification to the owner", isJoined)
+	wc.WaitFrame("members joined notification to the new member", isJoined)
+	// b 是普通成员，不应收到入群申请。申请事件先于入群事件推送，读到入群通知为止，中间不能出现申请通知
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("no members joined notification to the ordinary member within 15s")
+		}
+		f := wb.Recv()
+		if f.GetNotification().GetGroupJoinRequestCreated() != nil {
+			t.Fatal("ordinary member notified of a join request")
+		}
+		if isJoined(f) {
+			break
+		}
 	}
 }

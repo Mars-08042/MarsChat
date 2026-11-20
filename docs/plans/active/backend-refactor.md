@@ -246,7 +246,7 @@
 - [x] 1. 容器模式：端点顺序、Consul 检查间隔、access 路由地址自动获取、消费组会话超时、镜像、Compose `apps` profile、固定子网、Kafka 堆内存（2026-11-19：8 个应用容器注册正常，宿主机模式 `make e2e` 通过；MarsChat 内存合计约 1.2 GiB；`health_check` 改为 `tcp_check_interval`，见设计第 9 节）
 - [x] 2. 网关：Standalone 与 Consul 组合实验，路由、WebSocket、限流、可信代理、TLS（2026-11-19：组合实验通过；`make cluster-test` 5 项通过，含跨 access 实例推送；发现跨实例 Outbox 唤醒缺失，第 3 段修复）
 - [x] 3. 调用韧性：重试、熔断、TD-32、TD-31、TD-34、Outbox 跨实例唤醒、access 优雅停机（2026-11-19：`go test -race ./...` 27 个包通过；`make cluster-test` 6 项通过，跨实例推送 8～14 ms；宿主机模式 `make e2e` 通过，日志无 ERROR。TD-31、TD-34 已解决；TD-32 核对后发现检查在步骤 4 已实现，残留风险改写后保留在“低”，见设计第 9 节）
-- [ ] 4. 消费韧性与通知：死信队列与重试队列（TD-30）、social 实时通知
+- [x] 4. 消费韧性与通知：死信队列与重试队列（TD-30）、social 实时通知（2026-11-20：`go test -race ./...` 27 个包通过；宿主机模式 e2e 32 项通过，新增重试队列与死信队列往返、好友与群通知；`make cluster-test` 6 项通过。TD-30 已解决；没有新增 `Ordered` 字段，见设计第 9 节）
 - [ ] 5. 故障实验与文档
 
 核对代码时新发现 TD-34（节点号租约丢失后不会重新获取），列入本步骤修复。Compose 全栈内存已初步评估：Docker Desktop 虚拟机 3.8 GiB，现有占用约 2.1 GiB（Kafka 1.06 GiB），加上多实例与 APISIX 估计约 2.0 GiB（Kafka 堆限制为 512 MiB 后），第一阶段实测。

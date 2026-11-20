@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -16,12 +17,16 @@ import (
 const cacheConsumerGroup = "marschat-social-cache"
 
 // NewCacheEventConsumer 消费 social 自己的群事件，再删一次群资料和成员列表缓存（设计 3.9，TD-25）。
-// 事务后的同步删除仍是快速路径；它失败时这里兜底，Redis 故障期间原地重试直到删除成功。
+// 事务后的同步删除仍是快速路径；它失败时这里兜底。删除缓存与顺序无关，所以用重试队列：
+// 原地尝试 3 次仍失败就转入 marschat.social-cache.retry，10 秒后由重试消费者再删，直到成功，主分区不被阻塞。
 func NewCacheEventConsumer(c *conf.Kafka, inv biz.GroupCacheInvalidator, logger *slog.Logger) (*kafka.Consumer, func(), error) {
 	k, cleanup, err := kafka.NewConsumer(c, kafka.ConsumerConfig{
-		Group:      cacheConsumerGroup,
-		Topics:     []string{kafka.TopicSocialEvents},
-		FromLatest: true,
+		Group:         cacheConsumerGroup,
+		Topics:        []string{kafka.TopicSocialEvents},
+		FromLatest:    true,
+		RetryTopic:    kafka.TopicSocialCacheRetry,
+		RetryAttempts: 3,
+		RetryDelay:    10 * time.Second,
 	}, logger)
 	if err != nil {
 		return nil, nil, err

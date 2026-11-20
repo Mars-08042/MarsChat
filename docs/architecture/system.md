@@ -1,6 +1,6 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-19）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-20）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
@@ -35,7 +35,7 @@ pkg/cache/               Cache-Aside 缓存组件，可选跨实例重建锁
 pkg/bloom/               RedisBloom ID 布隆过滤器（就绪标记、脏标记、分布式重建）
 pkg/ratelimit/           Redis 滑动窗口限流
 pkg/outbox/              事务 Outbox：写入端与发布器（Redis 租约保证每个服务只有一个实例发布，Redis 发布订阅跨实例唤醒）
-pkg/kafka/               Kafka 生产者、消费者（按事件类型分发、手动提交、原地重试）与记录头约定
+pkg/kafka/               Kafka 生产者、消费者（按事件类型分发、手动提交、原地重试、重试队列、死信队列）与记录头约定
 pkg/route/               在线路由的 Redis 结构（access 写入、delivery 读取）
 pkg/clientip/            按可信代理解析客户端 IP
 tools/jwtkey/            生成开发用 JWT 密钥（make keys）
@@ -192,7 +192,8 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - 跨服务的状态变化用事件通知：业务事务内写 `outbox_events`，`pkg/outbox.Publisher` 发布到 Kafka（topic `marschat.<服务>.events`，记录头带事件类型、事件 ID、来源），消费方用 `pkg/kafka.Consumer` 按事件类型注册处理器（`kafka.On[T]` 负责解码）。
 - 事件类型是 proto 全名，定义在各服务的 `api/<服务>/v1/events.proto`；topic 由 `make up` 中的 `kafka-init` 一次性创建，broker 关闭了自动建 topic。
 - 每个服务只有持有 Redis 租约（`outbox:lease:{source}`）的实例发布。事务提交后 `Notify` 立即唤醒发布器；本实例不持有租约时，再向 Redis 频道 `outbox:wake:{source}` 发一条消息，持有者订阅该频道，收到后立即发布。唤醒丢失只是退回按 `outbox.poll_interval`（默认配置 0.5 秒）轮询。
-- 处理器要幂等：Outbox 至少发布一次，消费者重启、再均衡后也可能重复投递。需要按顺序生效的处理器（群成员投影、缓存删除）返回错误时原地重试；尽力而为的处理器（推送）只记日志、从不返回错误。
+- 处理器要幂等：Outbox 至少发布一次，消费者重启、再均衡后也可能重复投递。需要按顺序生效的处理器（群成员投影）返回错误时原地无限重试；不要求顺序但要求最终成功的处理器（缓存删除）配置重试队列（`ConsumerConfig.RetryTopic`），原地尝试 3 次后转入重试 topic，10 秒后由重试消费者再处理；尽力而为的处理器（推送、通知）只记日志、从不返回错误。
+- 处理不了的记录（`kafka.Permanent`、解码失败、panic）写入共用的死信队列 `marschat.dlq` 后跳过，写入失败时不提交位点。重试与死信的参数在代码中设置，不是限额，不做热更新。
 - 流转、topic 与消费组一览见 [data-flow.md](data-flow.md#6-事件与-outbox)。
 
 ### 5.10 测试

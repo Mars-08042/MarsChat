@@ -4,6 +4,7 @@ package access.v1;
 
 import "account/v1/events.proto";
 import "message/v1/message.proto";
+import "social/v1/events.proto";
 
 option go_package = "github.com/Mars-08042/MarsChat/api/access/v1;v1";
 
@@ -16,14 +17,15 @@ option go_package = "github.com/Mars-08042/MarsChat/api/access/v1;v1";
 //   1. 连接后 10 秒内发送 Auth 帧（必须是第一帧），成功返回 AuthOk，失败返回 Error 后以 4001 关闭；
 //   2. 每隔 AuthOk.heartbeat_interval_seconds 秒发送 Ping，服务端回 Pong；90 秒内没有收到任何帧，服务端断开连接；
 //   3. 发消息用 SendMessage 帧，服务端按发送顺序返回 SendAck 或带同一 request_id 的 Error；
-//   4. 新消息与已读位置由服务端主动推送（request_id 为 0）。断线期间的消息不补推，重连后经 HTTP 接口补拉。
+//   4. 新消息、已读位置和 social 通知由服务端主动推送（request_id 为 0）。断线期间的推送不补发，
+//      重连后经 HTTP 接口补拉消息、刷新好友与群列表。
 //
 // 服务端关闭码：
 //   - 4001：未认证（第一帧不是 Auth、令牌无效或超时未认证）；
 //   - 4002：被踢（退出登录、在别处被踢下线、封禁、令牌被吊销），关闭前发送 Kicked 帧；
 //   - 4003：连接太慢，发送队列已满。重连后补拉；
 //   - 4008：上行帧频率超限；
-//   - 1001：服务停机，客户端应重连（会被分配到其他实例）。
+//   - 1001：服务停机，客户端随机等待 0～2 秒后重连（会被分配到其他实例），再补拉。
 
 // ClientFrame 是客户端发给服务端的帧。
 message ClientFrame {
@@ -62,6 +64,8 @@ message ServerFrame {
     message.v1.ReadPosition read = 7;
     // 连接被踢，随后以 4002 关闭
     Kicked kicked = 8;
+    // 好友与群的变化通知，尽力推送
+    Notification notification = 9;
   }
 }
 
@@ -91,4 +95,34 @@ message Error {
 // Kicked 说明连接被踢的原因。心跳时发现令牌已被吊销，原因为 REVOKE_REASON_UNSPECIFIED。
 message Kicked {
   account.v1.RevokeReason reason = 1;
+}
+
+// Notification 是 social 事件的实时通知，内容就是 social 的事件。推送尽力而为：
+// 断线期间的通知不补发，客户端重连后应通过列表接口刷新好友、申请和群。
+// 操作者自己的连接也会收到。同一事件可能因重连等原因收到多次，按 event_id 去重，或直接刷新对应的数据。
+message Notification {
+  // 事件 ID，全局唯一
+  string event_id = 1;
+  oneof body {
+    // 收到好友申请，推给被申请人
+    social.v1.FriendRequestCreated friend_request_created = 2;
+    // 成为好友，推给双方
+    social.v1.FriendAdded friend_added = 3;
+    // 好友关系解除，推给双方
+    social.v1.FriendDeleted friend_deleted = 4;
+    // 新建了群，推给全部初始成员
+    social.v1.GroupCreated group_created = 5;
+    // 有人入群，推给群的当前全部成员（包括新成员）
+    social.v1.GroupMembersJoined group_members_joined = 6;
+    // 有人退群或被移出，推给群的当前全部成员和离开的人
+    social.v1.GroupMemberLeft group_member_left = 7;
+    // 成员角色或禁言变化，推给群的当前全部成员
+    social.v1.GroupMemberUpdated group_member_updated = 8;
+    // 群资料变化（包括转让群主），推给群的当前全部成员
+    social.v1.GroupUpdated group_updated = 9;
+    // 群被解散，推给解散前的全部成员
+    social.v1.GroupDismissed group_dismissed = 10;
+    // 收到入群申请，推给群主和管理员
+    social.v1.GroupJoinRequestCreated group_join_request_created = 11;
+  }
 }

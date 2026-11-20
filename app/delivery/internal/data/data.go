@@ -89,16 +89,20 @@ func NewGroupMembers(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger
 	return &groupMembers{c: socialv1.NewSocialInternalServiceClient(conn)}, cleanup, nil
 }
 
-func (g *groupMembers) List(ctx context.Context, groupID int64) ([]int64, error) {
+func (g *groupMembers) List(ctx context.Context, groupID int64) ([]biz.GroupMember, error) {
 	resp, err := g.c.ListAllGroupMembers(ctx, &socialv1.ListAllGroupMembersRequest{GroupId: groupID})
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]int64, len(resp.GetMembers()))
+	out := make([]biz.GroupMember, len(resp.GetMembers()))
 	for i, m := range resp.GetMembers() {
-		ids[i] = m.GetUserId()
+		role := m.GetRole()
+		out[i] = biz.GroupMember{
+			UserID:  m.GetUserId(),
+			Manager: role == socialv1.GroupRole_GROUP_ROLE_OWNER || role == socialv1.GroupRole_GROUP_ROLE_ADMIN,
+		}
 	}
-	return ids, nil
+	return out, nil
 }
 
 // pusher 按地址直连 access 实例，不经 Consul 负载均衡：推送必须到达持有连接的那个实例（ADR-0005）。

@@ -544,6 +544,12 @@ message Notification {
 | 3 | TD-34 的处理方式 | 续期发现租约丢失时立即改用新的空闲节点号，不等旧租约的本地截止时间 | 新节点号上的 ID 不会与旧节点号冲突，不需要等待；获取失败时每秒重试 |
 | 3 | 重试的剩余时间要求 | 剩余截止时间不少于 150 毫秒（100 毫秒加最大退避 50 毫秒）才重试 | 退避本身也占用截止时间 |
 | 3 | 分批关闭的节奏 | 每 100 毫秒关闭一批，批大小为连接数除以窗口内的批数（向上取整）；连接少时一批一个、提前结束 | 关闭速率不超过“连接数 / 窗口”，连接少时不必拖满整个窗口 |
+| 4 | 有序与无序的区分 | 没有新增 `ConsumerConfig.Ordered`：没有配置 `RetryTopic` 的消费者就是原地无限重试（有序），配置了才转入重试队列 | 两个字段表达的是同一件事，只留一个，不会出现“标为有序却配了重试队列”的组合 |
+| 4 | 重试 topic 的名字 | 由服务在代码中显式给出（`kafka.TopicSocialCacheRetry`），不按组名拼接 | 名字与 `kafka-init` 中创建的 topic 一一对应，便于查找 |
+| 4 | 转发时的记录头 | 重试记录额外带 `x-retry-from`（原记录的 topic/partition/offset）；转发或写入死信队列时去掉上一次追加的 `x-retry-*`、`x-dlq-*` | 重试后再进死信队列时，仍能找到最初的位置 |
+| 4 | 升级为 ERROR 的日志 | 对所有原地重试生效（不只有序消费者）：同一条记录连续失败 10 次后记 ERROR，之后每分钟最多一条 | 无序消费者写不进重试队列时同样会长时间原地重试 |
+| 4 | 通知的接收用户 | 入群、退群、成员变化在“群的当前成员”之外，再并上事件中的当事人（新成员、离开的人、被修改的成员），并去重 | 成员列表缓存还没刷新时，当事人也能收到；重复的用户会让同一连接收到两次推送 |
+| 4 | e2e 专用重试 topic | `kafka-init` 增加 `marschat.e2e.retry` | `kafka_test.go` 经真实 Kafka 验证重试队列往返，不使用业务的重试 topic |
 
 第 1 段验证（2026-11-19）：
 
@@ -574,3 +580,11 @@ message Notification {
 - `buf lint`、`go vet ./...`、`go build ./...`、`go test -race ./...` 通过。
 - 重建镜像后 `make cluster-test` 6 项通过，新增 `TestCrossNodePushLatency`：10 条跨 access 实例的消息从发送到对端收到推送为 8～14 ms（修复前约一半要 95～500 ms）；这 10 条加上前一项的 2 条按 6/6 分到两个 message 实例，其中只有一个持有租约，另一个上的 6 条都经过跨实例唤醒。各容器日志无 ERROR。
 - 滚动重启、实例被杀等场景放到第 5 段的故障实验。
+
+第 4 段验证（2026-11-20）：
+
+- `pkg/kafka` 单元测试 17 项：`Permanent`、panic、解码失败写入死信队列并带齐头部；死信写入失败时重试到成功、停机时不提交；原地 3 次后转入重试队列（最早处理时间与原位置正确）、写不进重试队列时留在原地；重试消费者等到时间才处理、等待有上限、可被停机打断，临时错误原地重试、`Permanent` 进死信队列；连续失败 10 次后只记一条 ERROR。
+- delivery 单元测试：10 种 social 事件的接收用户、重复事件只推一次、查不到成员时跳过、解散事件不查成员。
+- 宿主机模式 e2e 32 项通过，新增 `TestKafkaRetryTopicAndDeadLetter`（经真实 Kafka：主 topic 尝试 2 次后转入 `marschat.e2e.retry`，1 秒后处理成功；死信记录带原事件 ID、消费组和原 topic）与 `TestDeliverySocialNotifications`（好友申请、成为好友、建群、入群申请只推给群主、审核入群推给全部成员和新成员）。
+- `TestSocialCacheInvalidatedByEvent` 首次运行失败：delivery 也消费它注入的 `GroupUpdated`，经 `ListAllGroupMembers` 查成员时 social 先读群资料缓存，删除后被重新填充为空值标记。缓存行为正确，断言从“键不存在”改为“不再是旧值”，并记录被重新填充的键。
+- `buf lint`、`go vet ./...`、`go build ./...`、`go test -race ./...`（27 个包）通过；重建镜像后 `make cluster-test` 6 项通过，`marschat-delivery` 分到 `marschat.social.events` 的 6 个分区，`marschat-social-cache-retry` 正常启动，各容器日志无 ERROR。重试队列在真实故障下的表现放到第 5 段的 Redis 故障实验。

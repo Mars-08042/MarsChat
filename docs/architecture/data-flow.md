@@ -1,6 +1,6 @@
 # 数据流
 
-> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-19）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
+> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-20）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
 >
 > 文件上传（步骤 6）和音视频通话信令（步骤 7）尚未重写，旧基线的流程见提交 `6624cea` 中本文的第 5、6 节。
 
@@ -118,6 +118,7 @@ access ─→ 把帧放进各连接的发送队列 ─→ 客户端收到 Messag
 | `ReadPositionUpdated` | 本人的全部连接（多端同步未读数）；单聊再加上对方（已读回执）。不排除发起端，客户端收到不大于本地的值时忽略 | `Read` |
 | `SessionRevoked` | 该登录会话的全部连接 | 调用 `Kick`，原因取事件中的原因 |
 | `UserBanned` | 该用户的全部连接 | 调用 `Kick`，原因 `BANNED` |
+| social 的好友与群事件 | 见 5.4 节 | `Notification` |
 
 - 推送尽力而为：查路由、调用 access 失败都只记日志，不重试，不阻塞后面的事件。可靠性由补拉保证。
 - access 实例崩溃后，它的路由最多残留 90 秒（字段 TTL）。delivery 第一次推送失败（`Unavailable` 或超时）后摘除到该实例的连接，地址冷却 5 秒（`policy.push_cooldown`），冷却期内发往它的推送直接跳过，不再每条事件都等一次超时；冷却结束后再试一次，仍然失败就再冷却。
@@ -147,20 +148,52 @@ access ─→ 把帧放进各连接的发送队列 ─→ 客户端收到 Messag
 | `GroupMemberLeft` | 删除成员，之后看不到会话 |
 | `GroupDismissed` | 不处理：会话保留，成员仍能看历史；social 拒绝之后的发言 |
 
-成员投影按分区顺序生效，处理失败时原地重试，不跳过。发言权限以 social 的实时校验为准，不依赖这份投影。
+成员投影按分区顺序生效，处理失败时原地重试，不跳过，也不使用重试队列；内容有问题的事件（`Permanent`）写入死信队列。发言权限以 social 的实时校验为准，不依赖这份投影。
+
+### 5.4 好友与群通知
+
+delivery 同一个消费组 `marschat-delivery` 也订阅 `marschat.social.events`（步骤 5 新增，从订阅时的最新位置开始），把事件原样包进 `Notification` 帧推给相关用户的全部在线连接：
+
+```
+social 发布器 ─→ marschat.social.events ─→ delivery
+  → SET NX delivery:done:{event_id}（与消息推送共用去重）
+  → 确定接收用户（下表），群事件经 social ListAllGroupMembers 取当前成员
+  → 查在线路由，按 access 实例分组调用 Push ─→ 客户端收到 ServerFrame.notification
+```
+
+| 事件（`Notification.body`） | 接收用户 |
+|---|---|
+| `friend_request_created` | 被申请人 `to_user_id` |
+| `friend_added`、`friend_deleted` | 双方 |
+| `group_created` | 事件中的 `member_ids`（含群主） |
+| `group_members_joined` | 群的当前全部成员，并上事件中的新成员 |
+| `group_member_left` | 群的当前全部成员，加上离开的人 |
+| `group_member_updated` | 群的当前全部成员，并上被修改的成员 |
+| `group_updated` | 群的当前全部成员 |
+| `group_dismissed` | 事件中解散前的 `member_ids`（不再查询成员） |
+| `group_join_request_created` | 群主和管理员 |
+
+- 推送尽力而为，与消息推送相同：查不到群成员、查路由或调用 access 失败都只记日志，这条通知不再推送。断线期间的通知不补发，客户端重连后通过列表接口刷新好友、申请和群。
+- 事件不带发起连接，操作者自己的连接也会收到。并上事件中的当事人，是为了在成员列表缓存还没刷新时，新成员、被修改的成员也能收到。
+- `Notification.event_id` 全局唯一，客户端可以用它去重；也可以直接按通知类型刷新对应的数据。
 
 ## 6. 事件与 Outbox
 
 | topic | 分区 | 生产方 | 事件 | 消费方（消费组） |
 |---|---|---|---|---|
 | `marschat.account.events` | 3 | account | `SessionRevoked`、`UserBanned`（键为用户 ID） | delivery（`marschat-delivery`）：踢连接 |
-| `marschat.social.events` | 6 | social | 好友、群、申请事件，见 [events.proto](../../api/social/v1/events.proto) | message（`marschat-message`）：群成员投影；social（`marschat-social-cache`）：兜底删除群缓存 |
+| `marschat.social.events` | 6 | social | 好友、群、申请事件，见 [events.proto](../../api/social/v1/events.proto) | message（`marschat-message`）：群成员投影；social（`marschat-social-cache`）：兜底删除群缓存；delivery（`marschat-delivery`）：通知 |
 | `marschat.message.events` | 12 | message | `MessageCreated`、`ReadPositionUpdated`（键为会话 ID） | delivery（`marschat-delivery`）：推送 |
+| `marschat.social-cache.retry` | 3 | social（`marschat-social-cache` 转入） | 删除缓存失败的群事件，原样转入并带最早处理时间 | social（`marschat-social-cache-retry`）：10 秒后再删 |
+| `marschat.dlq` | 3 | 所有消费者 | 处理不了的记录（`Permanent`、解码失败、panic），保留 14 天 | 无，只供排查，查看方法见 [deployment.md](../deployment.md#死信队列) |
 
 - **写入**：业务事务内插入 `outbox_events`，与业务数据同时提交或回滚，不在事务里调用 Kafka。
 - **发布**：每个服务同时只有一个实例发布（Redis 租约 `outbox:lease:{服务名}`），保证同一个键的事件按写入顺序进入 Kafka。事务提交后立即唤醒发布器：本实例就是持有者时直接唤醒，否则经 Redis 频道 `outbox:wake:{服务名}` 唤醒持有者；轮询（500 毫秒）只是兜底。Kafka 不可用时退避重试（1 秒起，最长 30 秒），事件留在表中只会延迟、不会丢；发布后、标记前崩溃会重复发布。
 - **记录格式**：键为 `event_key`，值为事件的 protobuf 编码，记录头 `event_type`（proto 全名）、`event_id`（`{服务名}:{outbox id}`）、`source`。
-- **消费**：关闭自动提交，按分区顺序处理后只提交已处理的位点。未注册的事件类型跳过；解码失败记 ERROR 后跳过；处理器返回错误时原地退避重试（100 毫秒起，最长 5 秒）。delivery 的处理器从不返回错误。重试队列与死信队列在步骤 5 实现，在那之前持续失败的事件会阻塞所在分区（TD-30）。
+- **消费**：关闭自动提交，按分区顺序处理后只提交已处理的位点。未注册的事件类型跳过。失败分两类：
+  - **处理不了**（处理器返回 `Permanent`、解码失败、panic）：记 ERROR，把原始的键、值和头写入 `marschat.dlq`，追加头 `x-dlq-group`、`x-dlq-topic`、`x-dlq-partition`、`x-dlq-offset`、`x-dlq-error`，然后提交位点。写入失败时不提交，退避重试写入，记录不会凭空消失。
+  - **临时失败**（其他错误）：退避重试（100 毫秒起，最长 5 秒）。不要求顺序的消费者（目前只有 `marschat-social-cache`）原地尝试 3 次仍失败，就把记录转入自己的重试 topic（头 `x-retry-not-before` 为 10 秒后、`x-retry-from` 为原位置）并提交原位点，主分区不被阻塞；重试消费者（消费组加 `-retry` 后缀，同样的处理器）等到时间后处理，临时失败原地无限重试，只阻塞重试 topic。要求顺序的消费者（`marschat-message`）原地无限重试，连续失败 10 次后改记 ERROR（每条记录每分钟最多一次）。
+  - delivery 的处理器从不返回错误，只有解码失败会进死信队列。
 - **幂等**：message 的成员投影靠 SQL 本身幂等；delivery 用 `delivery:done:{event_id}` 去重；踢连接、删除缓存本身幂等。
 
 ## 7. 停机

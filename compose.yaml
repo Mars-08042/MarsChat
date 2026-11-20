@@ -182,12 +182,16 @@ services:
     command:
       - |
         set -e
-        for spec in marschat.account.events:3 marschat.social.events:6 marschat.message.events:12 marschat.e2e.events:3; do
+        for spec in marschat.account.events:3 marschat.social.events:6 marschat.message.events:12 \
+            marschat.social-cache.retry:3 marschat.e2e.events:3 marschat.e2e.retry:3; do
           topic=$${spec%%:*}
           partitions=$${spec##*:}
           /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
             --topic "$$topic" --partitions "$$partitions" --replication-factor 1
         done
+        # 死信队列，所有消费组共用，保留 14 天
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
+          --topic marschat.dlq --partitions 3 --replication-factor 1 --config retention.ms=1209600000
 
   # 以下为容器模式的应用服务（profile apps），镜像由 make images 构建，配置目录只读挂载。
   # 不发布宿主机端口，客户端经网关访问。access、message、delivery 各两个实例。

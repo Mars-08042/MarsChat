@@ -9,6 +9,7 @@ package v1
 import (
 	v11 "github.com/Mars-08042/MarsChat/api/account/v1"
 	v1 "github.com/Mars-08042/MarsChat/api/message/v1"
+	v12 "github.com/Mars-08042/MarsChat/api/social/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -229,6 +230,7 @@ type ServerFrame struct {
 	//	*ServerFrame_Message
 	//	*ServerFrame_Read
 	//	*ServerFrame_Kicked
+	//	*ServerFrame_Notification
 	Body          isServerFrame_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -341,6 +343,15 @@ func (x *ServerFrame) GetKicked() *Kicked {
 	return nil
 }
 
+func (x *ServerFrame) GetNotification() *Notification {
+	if x != nil {
+		if x, ok := x.Body.(*ServerFrame_Notification); ok {
+			return x.Notification
+		}
+	}
+	return nil
+}
+
 type isServerFrame_Body interface {
 	isServerFrame_Body()
 }
@@ -377,6 +388,11 @@ type ServerFrame_Kicked struct {
 	Kicked *Kicked `protobuf:"bytes,8,opt,name=kicked,proto3,oneof"`
 }
 
+type ServerFrame_Notification struct {
+	// 好友与群的变化通知，尽力推送
+	Notification *Notification `protobuf:"bytes,9,opt,name=notification,proto3,oneof"`
+}
+
 func (*ServerFrame_AuthOk) isServerFrame_Body() {}
 
 func (*ServerFrame_Pong) isServerFrame_Body() {}
@@ -390,6 +406,8 @@ func (*ServerFrame_Message) isServerFrame_Body() {}
 func (*ServerFrame_Read) isServerFrame_Body() {}
 
 func (*ServerFrame_Kicked) isServerFrame_Body() {}
+
+func (*ServerFrame_Notification) isServerFrame_Body() {}
 
 // AuthOk 表示认证成功，连接开始接收推送。
 type AuthOk struct {
@@ -615,11 +633,243 @@ func (x *Kicked) GetReason() v11.RevokeReason {
 	return v11.RevokeReason(0)
 }
 
+// Notification 是 social 事件的实时通知，内容就是 social 的事件。推送尽力而为：
+// 断线期间的通知不补发，客户端重连后应通过列表接口刷新好友、申请和群。
+// 操作者自己的连接也会收到。同一事件可能因重连等原因收到多次，按 event_id 去重，或直接刷新对应的数据。
+type Notification struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 事件 ID，全局唯一
+	EventId string `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*Notification_FriendRequestCreated
+	//	*Notification_FriendAdded
+	//	*Notification_FriendDeleted
+	//	*Notification_GroupCreated
+	//	*Notification_GroupMembersJoined
+	//	*Notification_GroupMemberLeft
+	//	*Notification_GroupMemberUpdated
+	//	*Notification_GroupUpdated
+	//	*Notification_GroupDismissed
+	//	*Notification_GroupJoinRequestCreated
+	Body          isNotification_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Notification) Reset() {
+	*x = Notification{}
+	mi := &file_access_v1_frame_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Notification) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Notification) ProtoMessage() {}
+
+func (x *Notification) ProtoReflect() protoreflect.Message {
+	mi := &file_access_v1_frame_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Notification.ProtoReflect.Descriptor instead.
+func (*Notification) Descriptor() ([]byte, []int) {
+	return file_access_v1_frame_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Notification) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *Notification) GetBody() isNotification_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *Notification) GetFriendRequestCreated() *v12.FriendRequestCreated {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_FriendRequestCreated); ok {
+			return x.FriendRequestCreated
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetFriendAdded() *v12.FriendAdded {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_FriendAdded); ok {
+			return x.FriendAdded
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetFriendDeleted() *v12.FriendDeleted {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_FriendDeleted); ok {
+			return x.FriendDeleted
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetGroupCreated() *v12.GroupCreated {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_GroupCreated); ok {
+			return x.GroupCreated
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetGroupMembersJoined() *v12.GroupMembersJoined {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_GroupMembersJoined); ok {
+			return x.GroupMembersJoined
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetGroupMemberLeft() *v12.GroupMemberLeft {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_GroupMemberLeft); ok {
+			return x.GroupMemberLeft
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetGroupMemberUpdated() *v12.GroupMemberUpdated {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_GroupMemberUpdated); ok {
+			return x.GroupMemberUpdated
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetGroupUpdated() *v12.GroupUpdated {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_GroupUpdated); ok {
+			return x.GroupUpdated
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetGroupDismissed() *v12.GroupDismissed {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_GroupDismissed); ok {
+			return x.GroupDismissed
+		}
+	}
+	return nil
+}
+
+func (x *Notification) GetGroupJoinRequestCreated() *v12.GroupJoinRequestCreated {
+	if x != nil {
+		if x, ok := x.Body.(*Notification_GroupJoinRequestCreated); ok {
+			return x.GroupJoinRequestCreated
+		}
+	}
+	return nil
+}
+
+type isNotification_Body interface {
+	isNotification_Body()
+}
+
+type Notification_FriendRequestCreated struct {
+	// 收到好友申请，推给被申请人
+	FriendRequestCreated *v12.FriendRequestCreated `protobuf:"bytes,2,opt,name=friend_request_created,json=friendRequestCreated,proto3,oneof"`
+}
+
+type Notification_FriendAdded struct {
+	// 成为好友，推给双方
+	FriendAdded *v12.FriendAdded `protobuf:"bytes,3,opt,name=friend_added,json=friendAdded,proto3,oneof"`
+}
+
+type Notification_FriendDeleted struct {
+	// 好友关系解除，推给双方
+	FriendDeleted *v12.FriendDeleted `protobuf:"bytes,4,opt,name=friend_deleted,json=friendDeleted,proto3,oneof"`
+}
+
+type Notification_GroupCreated struct {
+	// 新建了群，推给全部初始成员
+	GroupCreated *v12.GroupCreated `protobuf:"bytes,5,opt,name=group_created,json=groupCreated,proto3,oneof"`
+}
+
+type Notification_GroupMembersJoined struct {
+	// 有人入群，推给群的当前全部成员（包括新成员）
+	GroupMembersJoined *v12.GroupMembersJoined `protobuf:"bytes,6,opt,name=group_members_joined,json=groupMembersJoined,proto3,oneof"`
+}
+
+type Notification_GroupMemberLeft struct {
+	// 有人退群或被移出，推给群的当前全部成员和离开的人
+	GroupMemberLeft *v12.GroupMemberLeft `protobuf:"bytes,7,opt,name=group_member_left,json=groupMemberLeft,proto3,oneof"`
+}
+
+type Notification_GroupMemberUpdated struct {
+	// 成员角色或禁言变化，推给群的当前全部成员
+	GroupMemberUpdated *v12.GroupMemberUpdated `protobuf:"bytes,8,opt,name=group_member_updated,json=groupMemberUpdated,proto3,oneof"`
+}
+
+type Notification_GroupUpdated struct {
+	// 群资料变化（包括转让群主），推给群的当前全部成员
+	GroupUpdated *v12.GroupUpdated `protobuf:"bytes,9,opt,name=group_updated,json=groupUpdated,proto3,oneof"`
+}
+
+type Notification_GroupDismissed struct {
+	// 群被解散，推给解散前的全部成员
+	GroupDismissed *v12.GroupDismissed `protobuf:"bytes,10,opt,name=group_dismissed,json=groupDismissed,proto3,oneof"`
+}
+
+type Notification_GroupJoinRequestCreated struct {
+	// 收到入群申请，推给群主和管理员
+	GroupJoinRequestCreated *v12.GroupJoinRequestCreated `protobuf:"bytes,11,opt,name=group_join_request_created,json=groupJoinRequestCreated,proto3,oneof"`
+}
+
+func (*Notification_FriendRequestCreated) isNotification_Body() {}
+
+func (*Notification_FriendAdded) isNotification_Body() {}
+
+func (*Notification_FriendDeleted) isNotification_Body() {}
+
+func (*Notification_GroupCreated) isNotification_Body() {}
+
+func (*Notification_GroupMembersJoined) isNotification_Body() {}
+
+func (*Notification_GroupMemberLeft) isNotification_Body() {}
+
+func (*Notification_GroupMemberUpdated) isNotification_Body() {}
+
+func (*Notification_GroupUpdated) isNotification_Body() {}
+
+func (*Notification_GroupDismissed) isNotification_Body() {}
+
+func (*Notification_GroupJoinRequestCreated) isNotification_Body() {}
+
 var File_access_v1_frame_proto protoreflect.FileDescriptor
 
 const file_access_v1_frame_proto_rawDesc = "" +
 	"\n" +
-	"\x15access/v1/frame.proto\x12\taccess.v1\x1a\x17account/v1/events.proto\x1a\x18message/v1/message.proto\"\xc4\x01\n" +
+	"\x15access/v1/frame.proto\x12\taccess.v1\x1a\x17account/v1/events.proto\x1a\x18message/v1/message.proto\x1a\x16social/v1/events.proto\"\xc4\x01\n" +
 	"\vClientFrame\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12%\n" +
@@ -629,7 +879,7 @@ const file_access_v1_frame_proto_rawDesc = "" +
 	"\x04body\")\n" +
 	"\x04Auth\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\"\x06\n" +
-	"\x04Ping\"\xf6\x02\n" +
+	"\x04Ping\"\xb5\x03\n" +
 	"\vServerFrame\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12,\n" +
@@ -639,7 +889,8 @@ const file_access_v1_frame_proto_rawDesc = "" +
 	"\x05error\x18\x05 \x01(\v2\x10.access.v1.ErrorH\x00R\x05error\x12/\n" +
 	"\amessage\x18\x06 \x01(\v2\x13.message.v1.MessageH\x00R\amessage\x12.\n" +
 	"\x04read\x18\a \x01(\v2\x18.message.v1.ReadPositionH\x00R\x04read\x12+\n" +
-	"\x06kicked\x18\b \x01(\v2\x11.access.v1.KickedH\x00R\x06kickedB\x06\n" +
+	"\x06kicked\x18\b \x01(\v2\x11.access.v1.KickedH\x00R\x06kicked\x12=\n" +
+	"\fnotification\x18\t \x01(\v2\x17.access.v1.NotificationH\x00R\fnotificationB\x06\n" +
 	"\x04body\"\xa3\x01\n" +
 	"\x06AuthOk\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1d\n" +
@@ -657,7 +908,21 @@ const file_access_v1_frame_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\":\n" +
 	"\x06Kicked\x120\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x18.account.v1.RevokeReasonR\x06reasonB1Z/github.com/Mars-08042/MarsChat/api/access/v1;v1b\x06proto3"
+	"\x06reason\x18\x01 \x01(\x0e2\x18.account.v1.RevokeReasonR\x06reason\"\xa3\x06\n" +
+	"\fNotification\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12W\n" +
+	"\x16friend_request_created\x18\x02 \x01(\v2\x1f.social.v1.FriendRequestCreatedH\x00R\x14friendRequestCreated\x12;\n" +
+	"\ffriend_added\x18\x03 \x01(\v2\x16.social.v1.FriendAddedH\x00R\vfriendAdded\x12A\n" +
+	"\x0efriend_deleted\x18\x04 \x01(\v2\x18.social.v1.FriendDeletedH\x00R\rfriendDeleted\x12>\n" +
+	"\rgroup_created\x18\x05 \x01(\v2\x17.social.v1.GroupCreatedH\x00R\fgroupCreated\x12Q\n" +
+	"\x14group_members_joined\x18\x06 \x01(\v2\x1d.social.v1.GroupMembersJoinedH\x00R\x12groupMembersJoined\x12H\n" +
+	"\x11group_member_left\x18\a \x01(\v2\x1a.social.v1.GroupMemberLeftH\x00R\x0fgroupMemberLeft\x12Q\n" +
+	"\x14group_member_updated\x18\b \x01(\v2\x1d.social.v1.GroupMemberUpdatedH\x00R\x12groupMemberUpdated\x12>\n" +
+	"\rgroup_updated\x18\t \x01(\v2\x17.social.v1.GroupUpdatedH\x00R\fgroupUpdated\x12D\n" +
+	"\x0fgroup_dismissed\x18\n" +
+	" \x01(\v2\x19.social.v1.GroupDismissedH\x00R\x0egroupDismissed\x12a\n" +
+	"\x1agroup_join_request_created\x18\v \x01(\v2\".social.v1.GroupJoinRequestCreatedH\x00R\x17groupJoinRequestCreatedB\x06\n" +
+	"\x04bodyB1Z/github.com/Mars-08042/MarsChat/api/access/v1;v1b\x06proto3"
 
 var (
 	file_access_v1_frame_proto_rawDescOnce sync.Once
@@ -671,41 +936,63 @@ func file_access_v1_frame_proto_rawDescGZIP() []byte {
 	return file_access_v1_frame_proto_rawDescData
 }
 
-var file_access_v1_frame_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_access_v1_frame_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_access_v1_frame_proto_goTypes = []any{
-	(*ClientFrame)(nil),        // 0: access.v1.ClientFrame
-	(*Auth)(nil),               // 1: access.v1.Auth
-	(*Ping)(nil),               // 2: access.v1.Ping
-	(*ServerFrame)(nil),        // 3: access.v1.ServerFrame
-	(*AuthOk)(nil),             // 4: access.v1.AuthOk
-	(*Pong)(nil),               // 5: access.v1.Pong
-	(*Error)(nil),              // 6: access.v1.Error
-	(*Kicked)(nil),             // 7: access.v1.Kicked
-	nil,                        // 8: access.v1.Error.MetadataEntry
-	(*v1.OutgoingMessage)(nil), // 9: message.v1.OutgoingMessage
-	(*v1.SendResult)(nil),      // 10: message.v1.SendResult
-	(*v1.Message)(nil),         // 11: message.v1.Message
-	(*v1.ReadPosition)(nil),    // 12: message.v1.ReadPosition
-	(v11.RevokeReason)(0),      // 13: account.v1.RevokeReason
+	(*ClientFrame)(nil),                 // 0: access.v1.ClientFrame
+	(*Auth)(nil),                        // 1: access.v1.Auth
+	(*Ping)(nil),                        // 2: access.v1.Ping
+	(*ServerFrame)(nil),                 // 3: access.v1.ServerFrame
+	(*AuthOk)(nil),                      // 4: access.v1.AuthOk
+	(*Pong)(nil),                        // 5: access.v1.Pong
+	(*Error)(nil),                       // 6: access.v1.Error
+	(*Kicked)(nil),                      // 7: access.v1.Kicked
+	(*Notification)(nil),                // 8: access.v1.Notification
+	nil,                                 // 9: access.v1.Error.MetadataEntry
+	(*v1.OutgoingMessage)(nil),          // 10: message.v1.OutgoingMessage
+	(*v1.SendResult)(nil),               // 11: message.v1.SendResult
+	(*v1.Message)(nil),                  // 12: message.v1.Message
+	(*v1.ReadPosition)(nil),             // 13: message.v1.ReadPosition
+	(v11.RevokeReason)(0),               // 14: account.v1.RevokeReason
+	(*v12.FriendRequestCreated)(nil),    // 15: social.v1.FriendRequestCreated
+	(*v12.FriendAdded)(nil),             // 16: social.v1.FriendAdded
+	(*v12.FriendDeleted)(nil),           // 17: social.v1.FriendDeleted
+	(*v12.GroupCreated)(nil),            // 18: social.v1.GroupCreated
+	(*v12.GroupMembersJoined)(nil),      // 19: social.v1.GroupMembersJoined
+	(*v12.GroupMemberLeft)(nil),         // 20: social.v1.GroupMemberLeft
+	(*v12.GroupMemberUpdated)(nil),      // 21: social.v1.GroupMemberUpdated
+	(*v12.GroupUpdated)(nil),            // 22: social.v1.GroupUpdated
+	(*v12.GroupDismissed)(nil),          // 23: social.v1.GroupDismissed
+	(*v12.GroupJoinRequestCreated)(nil), // 24: social.v1.GroupJoinRequestCreated
 }
 var file_access_v1_frame_proto_depIdxs = []int32{
 	1,  // 0: access.v1.ClientFrame.auth:type_name -> access.v1.Auth
 	2,  // 1: access.v1.ClientFrame.ping:type_name -> access.v1.Ping
-	9,  // 2: access.v1.ClientFrame.send_message:type_name -> message.v1.OutgoingMessage
+	10, // 2: access.v1.ClientFrame.send_message:type_name -> message.v1.OutgoingMessage
 	4,  // 3: access.v1.ServerFrame.auth_ok:type_name -> access.v1.AuthOk
 	5,  // 4: access.v1.ServerFrame.pong:type_name -> access.v1.Pong
-	10, // 5: access.v1.ServerFrame.send_ack:type_name -> message.v1.SendResult
+	11, // 5: access.v1.ServerFrame.send_ack:type_name -> message.v1.SendResult
 	6,  // 6: access.v1.ServerFrame.error:type_name -> access.v1.Error
-	11, // 7: access.v1.ServerFrame.message:type_name -> message.v1.Message
-	12, // 8: access.v1.ServerFrame.read:type_name -> message.v1.ReadPosition
+	12, // 7: access.v1.ServerFrame.message:type_name -> message.v1.Message
+	13, // 8: access.v1.ServerFrame.read:type_name -> message.v1.ReadPosition
 	7,  // 9: access.v1.ServerFrame.kicked:type_name -> access.v1.Kicked
-	8,  // 10: access.v1.Error.metadata:type_name -> access.v1.Error.MetadataEntry
-	13, // 11: access.v1.Kicked.reason:type_name -> account.v1.RevokeReason
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	8,  // 10: access.v1.ServerFrame.notification:type_name -> access.v1.Notification
+	9,  // 11: access.v1.Error.metadata:type_name -> access.v1.Error.MetadataEntry
+	14, // 12: access.v1.Kicked.reason:type_name -> account.v1.RevokeReason
+	15, // 13: access.v1.Notification.friend_request_created:type_name -> social.v1.FriendRequestCreated
+	16, // 14: access.v1.Notification.friend_added:type_name -> social.v1.FriendAdded
+	17, // 15: access.v1.Notification.friend_deleted:type_name -> social.v1.FriendDeleted
+	18, // 16: access.v1.Notification.group_created:type_name -> social.v1.GroupCreated
+	19, // 17: access.v1.Notification.group_members_joined:type_name -> social.v1.GroupMembersJoined
+	20, // 18: access.v1.Notification.group_member_left:type_name -> social.v1.GroupMemberLeft
+	21, // 19: access.v1.Notification.group_member_updated:type_name -> social.v1.GroupMemberUpdated
+	22, // 20: access.v1.Notification.group_updated:type_name -> social.v1.GroupUpdated
+	23, // 21: access.v1.Notification.group_dismissed:type_name -> social.v1.GroupDismissed
+	24, // 22: access.v1.Notification.group_join_request_created:type_name -> social.v1.GroupJoinRequestCreated
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_access_v1_frame_proto_init() }
@@ -726,6 +1013,19 @@ func file_access_v1_frame_proto_init() {
 		(*ServerFrame_Message)(nil),
 		(*ServerFrame_Read)(nil),
 		(*ServerFrame_Kicked)(nil),
+		(*ServerFrame_Notification)(nil),
+	}
+	file_access_v1_frame_proto_msgTypes[8].OneofWrappers = []any{
+		(*Notification_FriendRequestCreated)(nil),
+		(*Notification_FriendAdded)(nil),
+		(*Notification_FriendDeleted)(nil),
+		(*Notification_GroupCreated)(nil),
+		(*Notification_GroupMembersJoined)(nil),
+		(*Notification_GroupMemberLeft)(nil),
+		(*Notification_GroupMemberUpdated)(nil),
+		(*Notification_GroupUpdated)(nil),
+		(*Notification_GroupDismissed)(nil),
+		(*Notification_GroupJoinRequestCreated)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -733,7 +1033,7 @@ func file_access_v1_frame_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_access_v1_frame_proto_rawDesc), len(file_access_v1_frame_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

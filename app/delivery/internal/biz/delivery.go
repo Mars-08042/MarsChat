@@ -41,13 +41,13 @@ func (uc *DeliveryUsecase) OnMessageCreated(ctx context.Context, eventID string,
 	case messagev1.ConversationType_CONVERSATION_TYPE_SINGLE:
 		recipients = ev.GetMemberIds()
 	case messagev1.ConversationType_CONVERSATION_TYPE_GROUP:
-		ids, err := uc.members.List(ctx, m.GetConversationId())
+		members, err := uc.members.List(ctx, m.GetConversationId())
 		if err != nil {
 			uc.logger.Warn("list group members failed, push skipped",
 				slog.Int64("group_id", m.GetConversationId()), slog.Int64("seq", m.GetSeq()), slog.Any("error", err))
 			return
 		}
-		recipients = ids
+		recipients = memberIDs(members, nil)
 	default:
 		uc.logger.Error("unknown conversation type, push skipped", slog.String("event_id", eventID), slog.Any("type", m.GetConversationType()))
 		return
@@ -68,6 +68,89 @@ func (uc *DeliveryUsecase) OnReadPositionUpdated(ctx context.Context, eventID st
 	}
 	frame := &accessv1.ServerFrame{Body: &accessv1.ServerFrame_Read{Read: ev.GetPosition()}}
 	uc.push(ctx, recipients, frame, 0)
+}
+
+// OnSocialEvent 把 social 事件作为通知推给相关用户（设计 3.7），n.EventId 为事件 ID。
+// 推送对象由事件类型决定，见 notificationRecipients；操作者自己的连接也会收到。
+func (uc *DeliveryUsecase) OnSocialEvent(ctx context.Context, n *accessv1.Notification) {
+	if !uc.firstSeen(ctx, n.GetEventId()) {
+		return
+	}
+	recipients, err := uc.notificationRecipients(ctx, n)
+	if err != nil {
+		uc.logger.Warn("list group members failed, notification skipped",
+			slog.String("event_id", n.GetEventId()), slog.Any("error", err))
+		return
+	}
+	if len(recipients) == 0 {
+		return
+	}
+	uc.push(ctx, recipients, &accessv1.ServerFrame{Body: &accessv1.ServerFrame_Notification{Notification: n}}, 0)
+}
+
+// notificationRecipients 返回通知的接收用户，已去重。
+// 群事件按群的当前成员推送，再并上事件里的相关用户：新成员、离开的人。这样即使成员列表缓存还没刷新，
+// 当事人也能收到；已解散的群查不到成员，用事件里解散前的成员列表。
+func (uc *DeliveryUsecase) notificationRecipients(ctx context.Context, n *accessv1.Notification) ([]int64, error) {
+	current := func(groupID int64, extra ...int64) ([]int64, error) {
+		members, err := uc.members.List(ctx, groupID)
+		if err != nil {
+			return nil, err
+		}
+		return memberIDs(members, nil, extra...), nil
+	}
+	switch b := n.GetBody().(type) {
+	case *accessv1.Notification_FriendRequestCreated:
+		return uniqueIDs(b.FriendRequestCreated.GetToUserId()), nil
+	case *accessv1.Notification_FriendAdded:
+		return uniqueIDs(b.FriendAdded.GetUserId(), b.FriendAdded.GetFriendId()), nil
+	case *accessv1.Notification_FriendDeleted:
+		return uniqueIDs(b.FriendDeleted.GetUserId(), b.FriendDeleted.GetFriendId()), nil
+	case *accessv1.Notification_GroupCreated:
+		return uniqueIDs(b.GroupCreated.GetMemberIds()...), nil
+	case *accessv1.Notification_GroupMembersJoined:
+		return current(b.GroupMembersJoined.GetGroupId(), b.GroupMembersJoined.GetUserIds()...)
+	case *accessv1.Notification_GroupMemberLeft:
+		return current(b.GroupMemberLeft.GetGroupId(), b.GroupMemberLeft.GetUserId())
+	case *accessv1.Notification_GroupMemberUpdated:
+		return current(b.GroupMemberUpdated.GetGroupId(), b.GroupMemberUpdated.GetUserId())
+	case *accessv1.Notification_GroupUpdated:
+		return current(b.GroupUpdated.GetGroup().GetId())
+	case *accessv1.Notification_GroupDismissed:
+		return uniqueIDs(b.GroupDismissed.GetMemberIds()...), nil
+	case *accessv1.Notification_GroupJoinRequestCreated:
+		members, err := uc.members.List(ctx, b.GroupJoinRequestCreated.GetGroupId())
+		if err != nil {
+			return nil, err
+		}
+		return memberIDs(members, func(m GroupMember) bool { return m.Manager }), nil
+	}
+	return nil, nil
+}
+
+// memberIDs 取出满足 keep 的成员 ID（keep 为 nil 时取全部），并上 extra，去重并去掉非正数。
+func memberIDs(members []GroupMember, keep func(GroupMember) bool, extra ...int64) []int64 {
+	ids := make([]int64, 0, len(members)+len(extra))
+	for _, m := range members {
+		if keep == nil || keep(m) {
+			ids = append(ids, m.UserID)
+		}
+	}
+	return uniqueIDs(append(ids, extra...)...)
+}
+
+// uniqueIDs 去重并去掉非正数，保持首次出现的顺序。重复的用户会让同一连接收到两次推送。
+func uniqueIDs(ids ...int64) []int64 {
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok || id <= 0 {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // OnSessionRevoked 踢掉该登录会话的全部连接。踢连接本身幂等，不需要去重。
