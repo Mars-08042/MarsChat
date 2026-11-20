@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-20）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
+> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 5（2026-11-20）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
 
 ## 运行依赖
 
@@ -158,6 +158,7 @@ make cluster-down       # 只删除应用服务和网关的容器，依赖组件
 - **资源**：每个应用容器限制 256 MiB 内存。2026-11-19 实测：应用容器各 15～56 MiB，Kafka 512 MiB、MySQL 452 MiB，MarsChat 合计约 1.2 GiB。
 - **日志**：JSON 格式，`docker compose logs -f access` 查看；同一服务的多个实例日志会合并输出，容器名区分实例。
 - **配置热更新**：配置目录挂载自宿主机，修改 `policy` 段后容器内同样自动生效（2026-11-19 验证，0.5 秒内出现 `config reloaded`）。
+- **故障实验**：`make cluster-test` 包含 7 项故障实验，全部运行约 4 分钟。实验会对 MarsChat 自己的容器执行 `docker kill`、`restart`、`pause`、`stop`（access、delivery、message、Kafka、Redis），结束时（包括失败）恢复并等待其在 Consul 中恢复 passing 或健康检查通过。实验期间不要同时使用这套环境。只跑集群测试时加 `-short`：`set -a && . ./.env && set +a && go test -tags cluster -short -v ./test/cluster/...`。实验结果见[重构计划](plans/active/backend-refactor.md#故障实验结果)。
 
 ### 网关
 
@@ -285,7 +286,7 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `make images` | 宿主机交叉编译全部服务并构建镜像 `marschat/<服务>:dev`，见“容器模式” |
 | `make certs` | 生成网关的自签证书到 `deploy/apisix/certs/`（已有时不覆盖） |
 | `make cluster-up` / `make cluster-down` | 启动容器模式的全部服务和网关 / 删除这些容器（依赖组件保持运行） |
-| `make cluster-test` | 集群测试与故障实验，需要容器模式已启动；客户端只经网关访问，清理网关来源 IP 的限流计数 |
+| `make cluster-test` | 集群测试与故障实验，需要容器模式已启动；客户端只经网关访问，清理网关来源 IP 的限流计数。故障实验会停止、暂停、重启 MarsChat 的容器，见“容器模式” |
 | `make keys` | 生成 JWT 密钥对写入 `.env` |
 | `make migrate-<服务>` | 数据库迁移，`ARGS` 传子命令 |
 | `make grant-admin PHONE=…` | 设置管理员 |

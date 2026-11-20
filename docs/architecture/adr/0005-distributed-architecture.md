@@ -44,7 +44,7 @@
 ## 代价与风险
 
 - 组件多，本机内存占用未实测，必要时按重构步骤分组启动。（2026-11-19 实测：Docker Desktop 虚拟机 3.8 GiB；步骤 5 全部容器约 1.3 GiB，Kafka 堆限制为 512 MiB。）
-- 跨服务调用增加了延迟和故障点，需要超时、重试和熔断。
+- 跨服务调用增加了延迟和故障点，需要超时、重试和熔断。（2026-11-20 重构步骤 5 已实现，并在容器模式下做了故障实验：杀掉 access、delivery、持有 Outbox 租约的 message，滚动重启 access，暂停 Kafka，停掉 Redis，消息都没有丢失和重复。实验中发现 Redis 停机时 go-redis 的拨号重试会拖垮请求，已修复。见[重构计划的故障实验结果](../../plans/active/backend-refactor.md#故障实验结果)。）
 - 跨服务数据只能做到最终一致。
 - Kratos v3 发布时间较短，Consul 注册、JWT 等 contrib 组件需要在步骤 1 验证可用性。
 - APISIX Standalone 与 Consul 发现能否组合使用，官方文档未见示例，需要实测。（2026-11-19 重构步骤 5 实测可用：APISIX 3.20.0 的 `data_plane` + YAML 配置加 `discovery.consul`，两个实例分流，杀掉一个后约 5 秒内摘除，见 [gateway-multi-instance.md](../../design/gateway-multi-instance.md) 第 9 节。）

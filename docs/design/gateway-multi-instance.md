@@ -550,6 +550,10 @@ message Notification {
 | 4 | 升级为 ERROR 的日志 | 对所有原地重试生效（不只有序消费者）：同一条记录连续失败 10 次后记 ERROR，之后每分钟最多一条 | 无序消费者写不进重试队列时同样会长时间原地重试 |
 | 4 | 通知的接收用户 | 入群、退群、成员变化在“群的当前成员”之外，再并上事件中的当事人（新成员、离开的人、被修改的成员），并去重 | 成员列表缓存还没刷新时，当事人也能收到；重复的用户会让同一连接收到两次推送 |
 | 4 | e2e 专用重试 topic | `kafka-init` 增加 `marschat.e2e.retry` | `kafka_test.go` 经真实 Kafka 验证重试队列往返，不使用业务的重试 topic |
+| 5 | Redis 客户端的拨号保护 | `pkg/bootstrap.NewRedis` 加拨号钩子：拨号失败后标记不可达，期间的拨号直接返回上次的错误，后台立即探测、之后每秒一次，成功后恢复；`DialerRetries` 设为 1 | 故障实验发现停掉 Redis 约 3 秒后发送开始失败。容器停止后服务名从 Docker DNS 中消失，每次解析约 1 秒才失败，go-redis 默认单次拨号重试 5 次、命令重试 3 次，一条命令就用完了调用方的截止时间，限流的“失败放行”来不及生效。见 [lessons/redis-dial-stall-docker-dns.md](../lessons/redis-dial-stall-docker-dns.md) |
+| 5 | 60 秒 Redis 实验的预期 | 分别验证两类写操作：已有会话的发送全程成功；给新好友发第一条消息（要为新会话发号）在租约到期后失败，Redis 恢复后成功 | 3.9 节写的“发号失败，写操作返回错误”不准确：message 只有新建单聊会话时才发号 |
+| 5 | 测试客户端 | `test/cluster/session_test.go` 实现客户端约定（断线后随机等待 0～2 秒重连、从本地连续 seq 补拉、按 seq 去重），按连接记录推送、补拉、断线和关闭码；故障注入只操作 `marschat-` 前缀的容器，结束时（包括失败）恢复 | 实验要验证的是“按约定实现的客户端不丢不重”，不能只看服务端日志 |
+| 5 | 发号失败的错误码 | 保持 `500 INTERNAL`，记为 TD-35 | 映射为 503 涉及 account、social、message 三个服务的错误处理，留到步骤 8 接入告警时处理 |
 
 第 1 段验证（2026-11-19）：
 
@@ -588,3 +592,13 @@ message Notification {
 - 宿主机模式 e2e 32 项通过，新增 `TestKafkaRetryTopicAndDeadLetter`（经真实 Kafka：主 topic 尝试 2 次后转入 `marschat.e2e.retry`，1 秒后处理成功；死信记录带原事件 ID、消费组和原 topic）与 `TestDeliverySocialNotifications`（好友申请、成为好友、建群、入群申请只推给群主、审核入群推给全部成员和新成员）。
 - `TestSocialCacheInvalidatedByEvent` 首次运行失败：delivery 也消费它注入的 `GroupUpdated`，经 `ListAllGroupMembers` 查成员时 social 先读群资料缓存，删除后被重新填充为空值标记。缓存行为正确，断言从“键不存在”改为“不再是旧值”，并记录被重新填充的键。
 - `buf lint`、`go vet ./...`、`go build ./...`、`go test -race ./...`（27 个包）通过；重建镜像后 `make cluster-test` 6 项通过，`marschat-delivery` 分到 `marschat.social.events` 的 6 个分区，`marschat-social-cache-retry` 正常启动，各容器日志无 ERROR。重试队列在真实故障下的表现放到第 5 段的 Redis 故障实验。
+
+第 5 段验证（2026-11-20）：
+
+- `pkg/bootstrap/redis_test.go`：
+  - 模拟每次拨号要等 100 毫秒才失败的 Redis：第一次拨号真的拨号，之后的拨号在 50 毫秒内失败，恢复后拨号恢复；
+  - 调用方取消不触发标记；
+  - miniredis 关闭再重启后，客户端在探测间隔内恢复；
+  - 去掉快速失败分支后用例失败。
+- 故障实验 7 项与集群测试 6 项通过（`make cluster-test`），各项数据记在[重构计划的故障实验结果](../plans/active/backend-refactor.md#故障实验结果)。首次运行时两项 Redis 实验失败，见上表第 5 段第一行；修复后通过。
+- 每次 Redis 故障，各服务只在开始和恢复时各记一条日志（`redis unreachable, failing dials fast until a probe succeeds`、`redis reachable again`）。60 秒实验中，message 的 ERROR 只有发号失败的访问日志（TD-35）。go-redis 内部的纯文本拨号失败日志仍然逐次输出（TD-36）。

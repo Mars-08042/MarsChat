@@ -1,6 +1,6 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-20）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 5（2026-11-20）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
@@ -172,6 +172,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 
 ### 5.7 缓存与布隆过滤器
 
+- Redis 客户端由 `pkg/bootstrap.NewRedis` 创建，带拨号保护：拨号失败后把 Redis 标记为不可达，期间的拨号直接返回上次的错误，后台每秒探测一次，探测成功后恢复；单次拨号不重试（`DialerRetries: 1`）。下面各处“Redis 故障时放行、回源、只记 WARN”的降级，都依赖命令在调用方的截止时间内失败。没有这层保护时，容器停止后解析服务名约 1 秒才失败，加上 go-redis 默认的拨号重试与命令重试，一条命令要耗几秒，见 [lessons/redis-dial-stall-docker-dns.md](../lessons/redis-dial-stall-docker-dns.md)。
 - 读缓存统一用 `pkg/cache`（Cache-Aside）：空值标记防穿透、singleflight 合并本实例的并发回源、TTL ±10% 抖动、Redis 故障时直接回源。写操作先提交数据库，再删除缓存；删除失败记 WARN。social 的群资料与成员列表还会在消费自己的群事件时再删一次（消费组 `marschat-social-cache`，Redis 故障时重试到成功）；account 的资料缓存没有对应事件，靠 TTL 兜底（TD-25）。
 - 热点键开启 `Options.RebuildLock`（目前只有群成员列表）：未命中时抢 `{key}:lock`（`SET NX PX 3000`），抢到的实例回源、回填后校验持有者再释放；没抢到的每 50 毫秒重读一次，最多 200 毫秒，仍未命中就直接回源。宁可多一次查询，也不让请求失败。
 - 按 ID 查询、容易被随机 ID 穿透的数据（用户、群）在缓存未命中时先查 `pkg/bloom`。只有就绪标记和过滤器都在时才信任“不存在”；新 ID 在提交后加入，失败重试仍不成功则写脏标记并重建；多实例用 Redis 锁保证只有一个在重建。批量接口的 ID 来自内部数据，不查过滤器。
@@ -202,6 +203,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - miniredis 不支持 RedisBloom，`pkg/bloom` 的测试在 `test/e2e/bloom_test.go`，连真实 Redis，用“把过滤器的键改成字符串”注入 `BF.INSERT` 失败。
 - 依赖 compose 环境和已启动服务的测试放在 `test/e2e`，带 `e2e` 构建标签，用 `make e2e` 运行；它会加载 `.env`，测试用其中的密码直接连 Redis、MySQL 做准备工作（清理本机 IP 的限流计数、设置管理员）。
 - 容器模式的集群测试与故障实验放在 `test/cluster`，带 `cluster` 构建标签，用 `make cluster-test` 运行，客户端只经网关访问。两组测试共用 `test/testkit` 中的 HTTP 调用、注册、WebSocket 收发和 Redis 读取函数，区别只在地址。
+- 故障实验（`test/cluster/fault_test.go`）在持续收发时用 `docker kill`、`restart`、`pause`、`stop` 注入故障，只操作 `marschat-` 前缀的容器，结束时（包括失败）恢复容器并等待其在 Consul 中恢复 passing 或健康检查通过。测试客户端（`session_test.go`）按客户端约定处理断线：随机等待 0～2 秒后经网关重连，从本地连续的最大 seq 补拉，按 seq 去重。每个实验最后检查历史消息恰好是 1..N、`client_msg_id` 不重复，接收方经推送和补拉拿到的 seq 连续。实验结果记在[重构计划](../plans/active/backend-refactor.md#故障实验结果)；`go test -short` 跳过这些实验。
 
 ## 6. 关键技术组件
 

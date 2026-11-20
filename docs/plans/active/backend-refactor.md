@@ -69,13 +69,13 @@
 | 事务 Outbox（本地消息表） | 写库与发消息一致，跨服务最终一致 | 4、5 |
 | 重试队列与死信队列 | 消费失败可重试、可排查，不阻塞分区 | 5 |
 | 消费幂等 | 至少一次投递下不重复处理 | 4、5 |
-| Outbox 多实例发布（`FOR UPDATE SKIP LOCKED`） | 多个 message 实例并发发布时不重复、不加分布式锁 | 5 |
+| Outbox 多实例发布（Redis 租约，每个服务只有一个发布者；步骤 4 起替代原计划的 `FOR UPDATE SKIP LOCKED`） | 多实例下事件按顺序发布；持有者故障时其他实例在租约 TTL 内接手，重复由消费幂等吸收 | 4、5 |
 | Redis 在线路由 + 定向推送 | WebSocket 多实例下跨节点投递 | 4、5 |
 | 缓存三类问题防护（见上节） | 穿透、击穿、雪崩 | 2、3 |
 | 限流（网关入口 + Redis 按用户滑动窗口） | 防刷消息、防短信轰炸 | 2、4、5 |
 | 短信防刷（发送间隔、每日上限、按 IP 限流、验证次数上限、一次性使用） | 短信成本与暴力破解 | 2 |
 | JWT + 刷新令牌轮换 + Redis 吊销名单 | 无状态鉴权，同时支持退出、封禁即时失效 | 2 |
-| snowflake 节点号用 Redis 租约分配 | 多实例生成 ID 不冲突 | 2 |
+| snowflake 节点号用 Redis 租约分配，租约丢失后换用新节点号 | 多实例生成 ID 不冲突；Redis 长时间故障恢复后自动恢复发号 | 2、5 |
 | protovalidate 参数校验 | 在接口契约中声明校验规则 | 2 |
 | 超时、重试（仅幂等调用）、熔断 | 依赖故障时不雪崩 | 5 |
 | 优雅停机（access 通知客户端重连、先从 Consul 摘除） | 滚动发布不丢消息 | 5 |
@@ -158,11 +158,11 @@
 
 ### 5. 网关与多实例
 
-- [ ] APISIX Standalone：HTTP 按路径直达各服务（通过 Consul 发现），WebSocket 转发到 access，TLS 与入口限流。先验证 Standalone 与 Consul 发现能组合使用（官方文档未见组合示例）。
-- [ ] 服务镜像与 Compose 多实例（access、message、delivery 各起 N 个）；验证 Outbox 租约在多实例下的接管（步骤 4 已用 Redis 租约替代 `FOR UPDATE SKIP LOCKED`，见 message-pipeline 设计第 8 节第 5 点，TD-32）。
-- [ ] delivery 与消费者完善（直连、缓存连接、群成员扩散、尽力推送已在步骤 4 实现）：消费失败进重试队列，多次失败进死信队列（TD-30）；access 实例下线时摘除缓存的连接（TD-31）；social 事件的实时通知（好友申请、入群申请等）。
-- [ ] 服务间调用加超时、仅对幂等调用重试、熔断；access 优雅停机（通知客户端重连、先从 Consul 摘除）。
-- [ ] 故障实验：跨节点收发；杀掉 access 或 delivery 实例；滚动重启 access；暂停 Kafka；停掉 Redis 验证降级。验证不丢、不重、重连能补齐，结果记录在本计划。
+- [x] APISIX Standalone：HTTP 按路径直达各服务（通过 Consul 发现），WebSocket 转发到 access，TLS 与入口限流。先验证 Standalone 与 Consul 发现能组合使用（官方文档未见组合示例）。（2026-11-19，组合实验通过）
+- [x] 服务镜像与 Compose 多实例（access、message、delivery 各起 N 个）；验证 Outbox 租约在多实例下的接管（步骤 4 已用 Redis 租约替代 `FOR UPDATE SKIP LOCKED`，见 message-pipeline 设计第 8 节第 5 点，TD-32）。（2026-11-20，各起 2 个；租约接手见[故障实验结果](#故障实验结果)）
+- [x] delivery 与消费者完善（直连、缓存连接、群成员扩散、尽力推送已在步骤 4 实现）：消费失败进重试队列，多次失败进死信队列（TD-30）；access 实例下线时摘除缓存的连接（TD-31）；social 事件的实时通知（好友申请、入群申请等）。
+- [x] 服务间调用加超时、仅对幂等调用重试、熔断；access 优雅停机（通知客户端重连、先从 Consul 摘除）。
+- [x] 故障实验：跨节点收发；杀掉 access 或 delivery 实例；滚动重启 access；暂停 Kafka；停掉 Redis 验证降级。验证不丢、不重、重连能补齐，结果记录在本计划。（2026-11-20，见[故障实验结果](#故障实验结果)）
 
 ### 6. media 服务
 
@@ -247,9 +247,37 @@
 - [x] 2. 网关：Standalone 与 Consul 组合实验，路由、WebSocket、限流、可信代理、TLS（2026-11-19：组合实验通过；`make cluster-test` 5 项通过，含跨 access 实例推送；发现跨实例 Outbox 唤醒缺失，第 3 段修复）
 - [x] 3. 调用韧性：重试、熔断、TD-32、TD-31、TD-34、Outbox 跨实例唤醒、access 优雅停机（2026-11-19：`go test -race ./...` 27 个包通过；`make cluster-test` 6 项通过，跨实例推送 8～14 ms；宿主机模式 `make e2e` 通过，日志无 ERROR。TD-31、TD-34 已解决；TD-32 核对后发现检查在步骤 4 已实现，残留风险改写后保留在“低”，见设计第 9 节）
 - [x] 4. 消费韧性与通知：死信队列与重试队列（TD-30）、social 实时通知（2026-11-20：`go test -race ./...` 27 个包通过；宿主机模式 e2e 32 项通过，新增重试队列与死信队列往返、好友与群通知；`make cluster-test` 6 项通过。TD-30 已解决；没有新增 `Ordered` 字段，见设计第 9 节）
-- [ ] 5. 故障实验与文档
+- [x] 5. 故障实验与文档（2026-11-20：`make cluster-test` 13 项通过，含 7 项故障实验，结果见[故障实验结果](#故障实验结果)；Redis 故障实验发现停机后拨号把每条命令拖到几秒，`pkg/bootstrap` 加拨号保护后通过，见 [lessons/redis-dial-stall-docker-dns.md](../../lessons/redis-dial-stall-docker-dns.md)；新增 TD-35、TD-36）
+
+步骤 5 已完成（2026-11-20），提交 `1f8e77e`（第 1～3 段）、`52eb184`（第 4 段）及第 5 段的提交。实施中的调整记在设计第 9 节。验证：`buf lint`、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go test -race ./...`、宿主机模式 `make e2e`、容器模式 `make cluster-test` 通过。
+
+下一步：步骤 6（media 服务）。开始前先写设计文档，重点是 MinIO 的部署与端口、上传大小和类型限制、下载权限校验、缩略图处理（可复用第 4 段的重试队列与死信队列）。
 
 核对代码时新发现 TD-34（节点号租约丢失后不会重新获取），列入本步骤修复。Compose 全栈内存已初步评估：Docker Desktop 虚拟机 3.8 GiB，现有占用约 2.1 GiB（Kafka 1.06 GiB），加上多实例与 APISIX 估计约 2.0 GiB（Kafka 堆限制为 512 MiB 后），第一阶段实测。
+
+## 故障实验结果
+
+2026-11-20，容器模式（Docker Desktop），access、message、delivery 各 2 个实例，account、social、APISIX 各 1 个，代码见 `test/cluster/fault_test.go`，方法见[设计 3.9 节](../../design/gateway-multi-instance.md#39-故障实验)。
+
+测试客户端按客户端约定处理断线：随机等待 0～2 秒后经网关重连，从本地连续的最大 seq 补拉，按 seq 去重。每个实验结束时都检查三件事：历史消息恰好是 1..N；`client_msg_id` 不重复；接收方经推送和补拉拿到的 seq 连续。下表 7 项实验全部满足，没有丢失和重复。数据取自修复后的完整运行（`make cluster-test`，13 项通过）；有多次运行数据的项目给出范围。计时从发出 `docker` 命令起算，包含命令本身的耗时（本机约 0.1～0.6 秒）。
+
+| 实验 | 结果 |
+|---|---|
+| 跨节点收发 | 两个客户端连到不同 access 实例，跨实例推送约 1.6 ms；连续 10 次发送到推送 7.9～14.6 ms（第 3 段加入 Outbox 跨实例唤醒之前为 95～500 ms） |
+| 杀掉 access | 被杀实例上的客户端以 1006 断开，2.3～3.7 秒后重连到另一实例（含 0～2 秒随机等待），补拉 6～9 条；发送没有失败 |
+| 滚动重启 access | 每次重启（从 `docker restart -t 20` 到 Consul 中恢复 2 个 passing）1.5～2.8 秒；客户端都收到 1001，没有出现 1006；每次断线离线 0.6～1.8 秒；断线瞬间的发送由客户端用同一个 `client_msg_id` 重发后全部确认 |
+| 杀掉 delivery | 推送最长中断 11.9～16.1 秒：会话超时 10 秒后协调者发起再均衡，存活实例经心跳得知后重新加入消费组，接管分区；中断期间的消息在分区转移后全部经推送到达 |
+| 杀掉持有 Outbox 租约的 message | 另一个实例 8.0～11.1 秒后接手：租约 TTL 10 秒，从最后一次续期（每 3 秒一次）起算，非持有者每 0.5 秒尝试获取一次，再加上 kill 命令本身的耗时。推送最长延迟与接手耗时一致；没有重复推送 |
+| 暂停 Kafka 30 秒 | 暂停期间 30 次发送全部确认（事件留在 Outbox）；恢复后 1.5～4.3 秒追平，按顺序推送 |
+| 停掉 Redis 20 秒 | 停机期间 18～19 次发送全部确认（限流、吊销检查放行）；25 条中 22 条经推送到达（Redis 恢复后积压的事件发布），3 条只经补拉（停机期间 delivery 查不到在线路由） |
+| 停掉 Redis 60 秒 | 已有会话的 62 次发送全部成功，它们不需要发号。需要发号的写操作（给新好友发第一条消息，要新建会话）最后一次成功在停机后 27.9 秒，第一次失败在 30.3 秒（节点号租约 TTL 30 秒），失败返回 `500 INTERNAL`（TD-35）；两个 message 实例分别拒绝 8 次和 7 次。Redis 恢复后 3.8 秒恢复发号，两个 message 实例、account、social 各换用一次新节点号（TD-34 的修复）；恢复后注册和好友申请正常 |
+
+问题与处理：
+
+- 跨实例推送延迟呈两极分布（第 2 段发现）：事务提交后的立即唤醒只在本进程有效。第 3 段加入经 Redis 发布订阅的跨实例唤醒。
+- Redis 停机约 3 秒后发送开始失败（本段发现）：拨号把每条命令拖到几秒，见“遇到的问题”。修复前的数据：停机 20 秒的实验中，发送在 10 秒内没有得到确认（`503 UPSTREAM_UNAVAILABLE`）。
+- 60 秒实验的预期写得不准：设计写的是“发号失败，写操作返回错误”，但 message 只有新建单聊会话时才发号，已有会话里发消息不受影响。实验改为分别验证这两类写操作。
+- 新增 TD-35（发号失败返回 500 并记 ERROR）、TD-36（go-redis 内部日志是纯文本，故障期间每次拨号失败一行）。
 
 ## 遇到的问题
 
@@ -261,4 +289,5 @@
 - 2026-11-18：Kratos 自带的 `logging` 中间件会把请求体（含密码、验证码、刷新令牌）写进日志，`recovery` 记录 panic 时也打印请求体；非 Kratos 错误的原文会返回给客户端。改用自己实现的 `pkg/middleware/accesslog`，见同一篇 lesson。
 - 2026-11-19：补 TD-27 的布隆过滤器集成测试时发现，`BF.EXISTS` 在 go-redis v9 默认的 RESP3 下返回布尔值，原代码按整数读取，读取失败后放行，account 的用户 ID 过滤器从步骤 2 起没有拦截过任何 ID。已改用 `Cmd.Bool()` 并在解析失败时记 WARN，见 [lessons/redis-resp3-reply-types.md](../../lessons/redis-resp3-reply-types.md)。
 
-- Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、MinIO、监控组件加多实例服务）在 Docker Desktop 上的内存占用未实测，步骤 5 前评估，必要时按步骤分组启动。
+- 2026-11-20：Redis 故障实验中，停掉 Redis 约 3 秒后发消息开始失败，而设计预期 20 秒内照常成功。容器停止后服务名从 Docker DNS 中消失，每次解析约 1 秒才失败；go-redis v9.23 默认单次拨号重试 5 次、命令重试 3 次，一条命令就用完了调用方的截止时间，限流的“失败放行”来不及生效。`pkg/bootstrap.NewRedis` 加拨号保护并关闭单次拨号内的重试，见 [lessons/redis-dial-stall-docker-dns.md](../../lessons/redis-dial-stall-docker-dns.md)。
+- Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、MinIO、监控组件加多实例服务）在 Docker Desktop 上的内存占用：步骤 5 的全部容器实测约 1.2～1.3 GiB（见 [ADR-0005](../../architecture/adr/0005-distributed-architecture.md#代价与风险)），MinIO 与监控组件在步骤 6、8 引入时再测。

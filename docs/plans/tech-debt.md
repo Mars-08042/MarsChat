@@ -63,6 +63,20 @@
 - 现状：两个事务都只读快照、不加锁：A 申请 B 的同时 B 拉黑 A，申请事务看不到拉黑，拉黑事务看不到新申请，结果 B 的收件箱里留下一条来自已拉黑用户的申请。同意它会建立好友关系，但拉黑仍然阻止单聊。
 - 处理：收到的申请列表过滤掉已拉黑用户的申请，或在同意时检查拉黑。影响很小，暂不处理。
 
+### TD-35 节点号租约失效期间，需要发号的写操作返回 500 并记 ERROR
+
+- 发现：2026-11-20，重构步骤 5 的 Redis 故障实验
+- 位置：`pkg/idgen` 的 `ErrLeaseLost`；调用 `NextID` 的 `app/account/internal/biz/auth.go`（注册、登录）、`app/social/internal/biz/friend.go`、`group.go`、`app/message/internal/biz/message.go`（新建单聊会话）
+- 现状：Redis 停机超过节点号租约（30 秒）后，需要发号的写操作按设计失败，但错误没有被识别，统一按未知错误返回 `500 INTERNAL`，访问日志记 ERROR（60 秒实验中 message 记了 13 条 `idgen: node lease lost`）。这是一种可预期、可恢复的依赖故障，客户端应稍后重试，而不是当作服务端缺陷；步骤 8 接入告警后，这些 ERROR 会和真正的缺陷混在一起。
+- 处理：各服务在 biz 层把 `idgen.ErrLeaseLost` 映射为 `503 DEPENDENCY_UNAVAILABLE`，访问日志按 503 记 WARN。涉及三个服务的错误处理，影响接口错误码，留到步骤 8 接入告警时一起处理。
+
+### TD-36 go-redis 内部日志是纯文本，Redis 不可达期间每次拨号失败都打一行
+
+- 发现：2026-11-20，重构步骤 5 的 Redis 故障实验
+- 位置：`pkg/bootstrap/redis.go`；go-redis `internal.Logger`（默认用标准库 `log` 写 stderr）
+- 现状：go-redis 连接池拨号失败时打印 `redis: connection pool: failed to dial after 1 attempts: ...`，不是 JSON，不经过 `slog`。拨号保护（`dialGuard`）已经在故障开始和恢复时各记一条结构化日志，这些逐次失败的记录只是噪音：60 秒实验中每个进程约 240 行。
+- 处理：用 `redis.SetLogger` 把 go-redis 的内部日志转到 `slog`，连接池拨号失败降为 DEBUG。`SetLogger` 是进程级全局设置，要在各服务启动时调用一次，留到步骤 8 统一整理日志时处理。
+
 ## 已解决
 
 ### TD-30 Kafka 消费没有重试队列和死信队列

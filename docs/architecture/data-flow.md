@@ -1,6 +1,6 @@
 # 数据流
 
-> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 5（进行中，2026-11-20）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
+> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 5（2026-11-20）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
 >
 > 文件上传（步骤 6）和音视频通话信令（步骤 7）尚未重写，旧基线的流程见提交 `6624cea` 中本文的第 5、6 节。
 
@@ -94,7 +94,8 @@
 - 失败时返回带同一 `request_id` 的 `Error`：
   - message 的业务错误原样返回：`429 RATE_LIMITED`（metadata 带 `retry_after_seconds`）、`400 VALIDATOR`、social 的拒绝原因（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）、`503 DEPENDENCY_UNAVAILABLE`（social 不可用，无法校验权限）；
   - 调用 message 失败或超时：`503 UPSTREAM_UNAVAILABLE`。结果未知，消息可能已经写入，客户端用同一个 `client_msg_id` 重发即可；
-  - access 到 message 的熔断打开：`503 CIRCUITBREAKER`。请求没有发出，消息确定没有写入，客户端稍后用同一个 `client_msg_id` 重发。
+  - access 到 message 的熔断打开：`503 CIRCUITBREAKER`。请求没有发出，消息确定没有写入，客户端稍后用同一个 `client_msg_id` 重发；
+  - 单聊的第一条消息要为新会话生成 ID。Redis 停机超过节点号租约（30 秒）后发号失败，返回 `500 INTERNAL`（TD-35），消息没有写入；已有会话的发送不受影响。
 - access 调 message 时，连接级失败（实例在处理途中退出、连接被拒绝）会自动换实例重试一次，靠 `client_msg_id` 幂等不会存两条；message 调 social 同样重试一次。重试与熔断的规则见 [system.md](system.md#53-服务注册与发现)。
 - 会话内消息有序靠 seq：同一会话的 seq 在锁住会话行的事务内分配，连续、无空洞。
 
@@ -209,5 +210,6 @@ social 发布器 ─→ marschat.social.events ─→ delivery
   - 收到 1001 或连接异常断开（1006）后，随机等待 0～2 秒再重连，避免同时重连；
   - 重连认证成功后，按第 5.2 节对每个会话从本地 `max_seq` 补拉；
   - 补拉与推送可能重叠，按 `(conversation_id, seq)` 去重。
+  - 按这套约定实现的测试客户端在杀掉 access、滚动重启 access 的故障实验中没有丢失和重复，见[重构计划的故障实验结果](../plans/active/backend-refactor.md#故障实验结果)。
 - Outbox 发布器：发完当前批次后释放租约，其他实例下一次抢占时接手。
 - Kafka 消费者：处理完当前记录、提交位点后离开消费组。
