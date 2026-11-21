@@ -1,9 +1,9 @@
-// 视觉原型阶段的聊天状态：用定时器模拟上传进度、SendAck、已读回执、收到消息和连接状态变化。
-// 第 4 阶段由 realtime/ 的同步引擎与发送队列取代，第 7 阶段的上传换成 XMLHttpRequest。
+// 视觉原型阶段的聊天状态：用定时器模拟上传进度、SendAck、已读回执和连接状态变化。
+// 演示数据已删除，初始没有会话；第 3 阶段登录后写入当前用户，第 4 阶段由 realtime/ 的同步引擎与发送队列取代，
+// 第 7 阶段的上传换成 XMLHttpRequest。
 
 import { create } from "zustand"
 import type { ConnectionStatus } from "@/components/common/ConnectionPill"
-import { FAIL_REASONS, INCOMING_TEXTS, INITIAL_CONVERSATIONS, INITIAL_MESSAGES, ME, USERS } from "./fake-data"
 import { planChatUpload, type UploadPlan } from "./files"
 import type { ChatMessage, ChatUser, Conversation, MessageContent } from "./types"
 
@@ -12,8 +12,8 @@ const PEER_READ_DELAY_MS = 1600
 // 模拟的上传速度，100 MB 大约 12 秒
 const UPLOAD_BYTES_PER_SECOND = 8 * 1024 * 1024
 const UPLOAD_TICK_MS = 100
-// 模拟上传失败时在这个进度中断，对应服务端的 UPLOAD_INCOMPLETE
-const UPLOAD_FAIL_AT = 0.6
+// 未登录时的当前用户：空 ID 不会和任何消息的发送者相同
+const NOBODY: ChatUser = { id: "", nickname: "" }
 
 // 待上传的本地文件。真实文件由组件转换：图片带 object URL 和解码出的宽高
 export interface LocalFile {
@@ -34,22 +34,17 @@ interface ChatStore {
   unreadMarker: Record<string, string | undefined>
   activeId?: string
   connection: ConnectionStatus
-  // 下一次发送（或上传）失败，演示失败与重试
-  failNextSend: boolean
 
   open: (conversationId: string | undefined) => void
   send: (conversationId: string, text: string) => void
   upload: (conversationId: string, file: LocalFile) => UploadPlan
   cancelUpload: (conversationId: string, messageId: string) => void
   retry: (conversationId: string, messageId: string) => void
-  receive: (target: "active" | "other") => void
-  setFailNextSend: (value: boolean) => void
   setConnection: (status: ConnectionStatus) => void
   playReconnect: () => void
 }
 
 const lastSeq = (messages: ChatMessage[]) => messages.reduce((max, m) => Math.max(max, m.seq ?? 0), 0)
-const pick = <T>(items: readonly T[]): T => items[Math.floor(Math.random() * items.length)]
 const randomId = () => String(Math.floor(Math.random() * 9e15) + 1e15)
 
 // 演示脚本的定时器；切换连接状态时全部取消
@@ -106,11 +101,6 @@ export const useChatStore = create<ChatStore>()((set, get) => {
   const deliver = (conversationId: string, messageId: string) => {
     setTimeout(() => {
       const conversation = get().conversations[conversationId]
-      if (get().failNextSend) {
-        set({ failNextSend: false })
-        updateMessage(conversationId, messageId, { status: "failed", failReason: FAIL_REASONS[conversation.kind] })
-        return
-      }
       const seq = lastSeq(get().messages[conversationId]) + 1
       updateMessage(conversationId, messageId, { status: "sent", seq, failReason: undefined })
       updateConversation(conversationId, { readSeq: seq })
@@ -125,8 +115,6 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     const message = findMessage(conversationId, messageId)
     if (!message) return
     const total = Math.max(1, fileSize(message.content))
-    const failAt = get().failNextSend ? UPLOAD_FAIL_AT : Infinity
-    if (failAt !== Infinity) set({ failNextSend: false })
     let progress = 0
     updateMessage(conversationId, messageId, { status: "uploading", upload: { progress }, failReason: undefined })
 
@@ -135,11 +123,6 @@ export const useChatStore = create<ChatStore>()((set, get) => {
       messageId,
       setInterval(() => {
         progress = Math.min(1, progress + (UPLOAD_BYTES_PER_SECOND * UPLOAD_TICK_MS) / 1000 / total)
-        if (progress >= failAt) {
-          stopUpload(messageId)
-          updateMessage(conversationId, messageId, { status: "failed", failReason: "网络中断，文件没有传完", upload: { progress } })
-          return
-        }
         if (progress < 1) {
           updateMessage(conversationId, messageId, { upload: { progress } })
           return
@@ -158,14 +141,13 @@ export const useChatStore = create<ChatStore>()((set, get) => {
   }
 
   return {
-    me: ME,
-    users: USERS,
-    conversations: INITIAL_CONVERSATIONS,
-    messages: INITIAL_MESSAGES,
+    me: NOBODY,
+    users: {},
+    conversations: {},
+    messages: {},
     unreadMarker: {},
     activeId: undefined,
     connection: { kind: "synced" },
-    failNextSend: false,
 
     open: (conversationId) => {
       // StrictMode 下 effect 会执行两次，同一个会话重复打开时不能清掉分隔线
@@ -177,7 +159,7 @@ export const useChatStore = create<ChatStore>()((set, get) => {
       const messages = get().messages[conversationId] ?? []
       const firstUnread =
         conversation.unread > 0
-          ? messages.find((m) => m.senderId !== ME.id && (m.seq ?? 0) > conversation.readSeq)?.id
+          ? messages.find((m) => m.senderId !== get().me.id && (m.seq ?? 0) > conversation.readSeq)?.id
           : undefined
       set((s) => ({ unreadMarker: { ...s.unreadMarker, [conversationId]: firstUnread } }))
       updateConversation(conversationId, { unread: 0, readSeq: lastSeq(messages) })
@@ -187,7 +169,7 @@ export const useChatStore = create<ChatStore>()((set, get) => {
       const message: ChatMessage = {
         id: crypto.randomUUID(),
         conversationId,
-        senderId: ME.id,
+        senderId: get().me.id,
         content: { kind: "text", text },
         sentAt: Date.now(),
         status: "pending",
@@ -209,7 +191,7 @@ export const useChatStore = create<ChatStore>()((set, get) => {
       const message: ChatMessage = {
         id: crypto.randomUUID(),
         conversationId,
-        senderId: ME.id,
+        senderId: get().me.id,
         content,
         sentAt: Date.now(),
         status: "uploading",
@@ -244,39 +226,6 @@ export const useChatStore = create<ChatStore>()((set, get) => {
       updateMessage(conversationId, messageId, { status: "pending", failReason: undefined })
       deliver(conversationId, messageId)
     },
-
-    receive: (target) => {
-      const { activeId, conversations } = get()
-      const candidates = Object.values(conversations).filter((c) =>
-        target === "active" ? c.id === activeId : c.id !== activeId && !c.blockedReason,
-      )
-      if (candidates.length === 0) return
-      const conversation = pick(candidates)
-      const senderId =
-        conversation.kind === "single"
-          ? conversation.peerId!
-          : pick((conversation.memberIds ?? []).filter((id) => id !== ME.id))
-      const messages = get().messages[conversation.id]
-      const seq = lastSeq(messages) + 1
-      appendMessage({
-        id: crypto.randomUUID(),
-        conversationId: conversation.id,
-        senderId,
-        seq,
-        content: { kind: "text", text: pick(INCOMING_TEXTS) },
-        sentAt: Date.now(),
-        status: "sent",
-      })
-      const isActive = conversation.id === activeId
-      updateConversation(conversation.id, {
-        unread: isActive ? 0 : conversation.unread + 1,
-        readSeq: isActive ? seq : conversation.readSeq,
-        // 对方发来消息，说明对方已经读到这里
-        peerReadSeq: conversation.kind === "single" ? seq : conversation.peerReadSeq,
-      })
-    },
-
-    setFailNextSend: (value) => set({ failNextSend: value }),
 
     setConnection: (status) => {
       clearConnectionTimers()

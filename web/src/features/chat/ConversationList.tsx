@@ -58,7 +58,9 @@ export function ConversationList({ activeId, className }: { activeId?: string; c
         {rows.map((row) => (
           <ConversationItem key={row.conversation.id} row={row} active={row.conversation.id === activeId} now={now} />
         ))}
-        {rows.length === 0 && <li className="px-3 py-10 text-center text-sm text-muted-foreground">没有找到相关会话</li>}
+        {rows.length === 0 && (
+          <li className="px-3 py-10 text-center text-sm text-muted-foreground">{query.trim() ? "没有找到相关会话" : "还没有会话"}</li>
+        )}
       </motion.ul>
     </aside>
   )
