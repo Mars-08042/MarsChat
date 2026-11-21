@@ -60,6 +60,7 @@ storage:
     # 只授权该 Bucket 读写的 RAM 用户 AccessKey
     access_key_id: ${OSS_ACCESS_KEY_ID:}
     access_key_secret: ${OSS_ACCESS_KEY_SECRET:}
+    # 对象名前缀。对象名为 {key_prefix}files/2026/11/{文件 ID}，年、月取自文件 ID 中的生成时间（UTC）
     key_prefix: ${OSS_KEY_PREFIX:marschat/}
     # 已绑定到 Bucket 的自定义域名（例如 https://files.example.com），为空时用 Bucket 默认域名
     public_endpoint: ${OSS_PUBLIC_ENDPOINT:}

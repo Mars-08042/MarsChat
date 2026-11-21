@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Mars-08042/MarsChat/app/media/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/media/internal/conf"
+	"github.com/Mars-08042/MarsChat/pkg/idgen"
 )
 
 func testOSSConf() *conf.Oss {
@@ -34,6 +36,46 @@ func TestOSSConfigValidation(t *testing.T) {
 	_, err := newOSSStorage(c)
 	if err == nil || !strings.Contains(err.Error(), "bucket") || !strings.Contains(err.Error(), "access_key_secret") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// idAt 构造在 at 时刻生成的 snowflake ID（节点号、序号为 0），并用 idgen.Decompose 核对位布局。
+func idAt(t *testing.T, at time.Time) int64 {
+	t.Helper()
+	const epochMs, timeShift = 1767225600000, 22
+	id := (at.UnixMilli() - epochMs) << timeShift
+	if got, _, _ := idgen.Decompose(id); !got.Equal(at) {
+		t.Fatalf("idgen layout changed: Decompose(%d) = %v, want %v", id, got, at)
+	}
+	return id
+}
+
+// 对象名按 ID 中的生成时间（UTC）分年、月目录，原文件与缩略图各自分开。
+func TestOSSObjectName(t *testing.T) {
+	s, err := newOSSStorage(testOSSConf())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastNov := idAt(t, time.Date(2026, 11, 30, 23, 59, 59, 999e6, time.UTC))
+	firstDec := idAt(t, time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC))
+	cases := []struct {
+		key  string
+		want string
+	}{
+		{biz.ObjectKey(lastNov, biz.VariantOriginal), "marschat/files/2026/11/" + strconv.FormatInt(lastNov, 10)},
+		{biz.ObjectKey(lastNov, biz.VariantThumbnail), "marschat/thumbs/2026/11/" + strconv.FormatInt(lastNov, 10) + ".jpg"},
+		{biz.ObjectKey(firstDec, biz.VariantOriginal), "marschat/files/2026/12/" + strconv.FormatInt(firstDec, 10)},
+	}
+	for _, c := range cases {
+		got, err := s.objectName(c.key)
+		if err != nil || got != c.want {
+			t.Errorf("objectName(%q) = %q, %v; want %q", c.key, got, err, c.want)
+		}
+	}
+	for _, bad := range []string{"", "42", "files/", "files/abc", "files/-1", "files/0.jpg"} {
+		if got, err := s.objectName(bad); err == nil {
+			t.Errorf("objectName(%q) = %q, want error", bad, got)
+		}
 	}
 }
 
@@ -56,12 +98,13 @@ func TestOSSPresign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.Scheme != "https" || u.Host != "marschat-test.oss-cn-hangzhou.aliyuncs.com" || u.Path != "/marschat/files/42" {
+	if u.Scheme != "https" || u.Host != "marschat-test.oss-cn-hangzhou.aliyuncs.com" || u.Path != "/marschat/files/2026/01/42" {
 		t.Fatalf("unexpected url %s", raw)
 	}
 	q := u.Query()
-	if q.Get("response-content-type") != obj.ContentType || q.Get("response-content-disposition") != obj.ContentDisposition {
-		t.Fatalf("response overrides missing: %v", q)
+	// OSS 拒绝 GET 覆盖 Content-Type，类型由上传时的对象元数据决定
+	if q.Has("response-content-type") || q.Get("response-content-disposition") != obj.ContentDisposition {
+		t.Fatalf("unexpected response overrides: %v", q)
 	}
 	if q.Get("x-oss-signature-version") != "OSS4-HMAC-SHA256" || q.Get("x-oss-signature") == "" {
 		t.Fatalf("not a V4 signature: %v", q)
@@ -85,7 +128,7 @@ func TestOSSPresign(t *testing.T) {
 			t.Fatal(err)
 		}
 		u, _ := url.Parse(raw)
-		if u.Host != "files.example.com" || u.Path != "/marschat/files/42" {
+		if u.Host != "files.example.com" || u.Path != "/marschat/files/2026/01/42" {
 			t.Fatalf("unexpected url %s", raw)
 		}
 	})
@@ -157,11 +200,11 @@ func TestOSSPutAndDelete(t *testing.T) {
 		t.Fatalf("requests: %+v", f.requests)
 	}
 	put, del := f.requests[0], f.requests[1]
-	if put.method != http.MethodPut || put.path != "/marschat-test/marschat/files/42" || put.body != "hello oss" ||
+	if put.method != http.MethodPut || put.path != "/marschat-test/marschat/files/2026/01/42" || put.body != "hello oss" ||
 		put.contentLength != 9 || put.contentType != "image/png" || !strings.HasPrefix(put.auth, "OSS4-HMAC-SHA256 ") {
 		t.Fatalf("unexpected put %+v", put)
 	}
-	if del.method != http.MethodDelete || del.path != "/marschat-test/marschat/files/42" {
+	if del.method != http.MethodDelete || del.path != "/marschat-test/marschat/files/2026/01/42" {
 		t.Fatalf("unexpected delete %+v", del)
 	}
 }

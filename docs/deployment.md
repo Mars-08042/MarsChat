@@ -408,23 +408,38 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 **阿里云 OSS（`oss`）**：上传经 media 写入 OSS，下载用 OSS 的 V4 预签名地址，客户端直连 OSS，不经过 media。
 
 1. 在 OSS 控制台创建 Bucket，读写权限选**私有**。
-2. 在 RAM 控制台创建 RAM 用户，只授予该 Bucket 的读写权限（`oss:PutObject`、`oss:GetObject`、`oss:DeleteObject`，资源限定为 `acs:oss:*:*:<bucket>/*`），生成 AccessKey。不要使用主账号的 AccessKey。
+2. 在 RAM 控制台创建 RAM 用户（不需要控制台登录），为它生成 AccessKey；不要使用主账号的 AccessKey。再创建下面的自定义权限策略并授权给该用户：只能读写该 Bucket 中 `marschat/` 前缀下的对象（前缀与 `MARSCHAT_OSS_KEY_PREFIX` 一致；`GetObject` 是预签名下载地址需要的权限）。
+
+   ```json
+   {
+     "Version": "1",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": ["oss:PutObject", "oss:GetObject", "oss:DeleteObject"],
+         "Resource": ["acs:oss:*:*:<bucket>/marschat/*"]
+       }
+     ]
+   }
+   ```
+
 3. 在 `.env` 中设置（变量名见 [.env.example](../.env.example)，AccessKey 只写在 `.env`）：
 
    ```bash
    MARSCHAT_STORAGE_PROVIDER=oss
-   MARSCHAT_OSS_REGION=cn-hangzhou          # Bucket 所在地域
+   MARSCHAT_OSS_REGION=cn-hangzhou          # Bucket 所在地域，即控制台地址 .../bucket/oss-<地域>/<bucket>/... 中去掉 oss- 的部分
    MARSCHAT_OSS_BUCKET=<bucket 名称>
    MARSCHAT_OSS_ACCESS_KEY_ID=<RAM 用户的 AccessKey ID>
    MARSCHAT_OSS_ACCESS_KEY_SECRET=<RAM 用户的 AccessKey Secret>
    ```
 
-4. 重启 media：宿主机重新 `make run-media`；容器模式 `docker compose --profile apps up -d media`。配置不完整时启动失败并列出缺少的项。启动时不访问 OSS，AccessKey 错误或 Bucket 不存在要到第一次上传时才会暴露（返回 `503 DEPENDENCY_UNAVAILABLE`，OSS 的错误码见 media 的请求日志）。
+4. 重启 media：宿主机重新 `make run-media`；容器模式 `docker compose --profile apps up -d --wait media`（代码有更新时先 `make images`）。media 只有一个实例，重建后网关要等几秒才能从 Consul 发现新实例，期间请求返回 `503`。配置不完整时启动失败并列出缺少的项。启动时不访问 OSS，AccessKey 错误或 Bucket 不存在要到第一次上传时才会暴露（返回 `503 DEPENDENCY_UNAVAILABLE`，OSS 的错误码见 media 的请求日志）。
 
 说明：
 
+- 对象名为 `marschat/files/<年>/<月>/<文件 ID>`（原文件）和 `marschat/thumbs/<年>/<月>/<文件 ID>.jpg`（缩略图），年、月取自文件 ID 中的生成时间（UTC），北京时间每月 1 日 0～8 点上传的文件在上个月的目录中。OSS 的“目录”只是对象名中的 `/`，不需要预先创建。
 - `MARSCHAT_OSS_ENDPOINT` 留空时按地域使用公网地址；部署在同地域 ECS 上时可以填内网地址，节省流量费用。`MARSCHAT_OSS_KEY_PREFIX` 是对象键前缀（默认 `marschat/`），多个环境共用一个 Bucket 时用它区分。
-- 2019 年 9 月 23 日之后创建的 Bucket，用默认域名在浏览器标签页中直接打开图片会被强制下载；要预览时为 Bucket 绑定已备案的自定义域名，填入 `MARSCHAT_OSS_PUBLIC_ENDPOINT`（例如 `https://files.example.com`），预签名地址改用该域名。`<img>` 嵌入是否受影响在 OSS 手动验证中确认（尚未执行）。
+- 2019 年 9 月 23 日之后创建的 Bucket，用默认域名在浏览器标签页中直接打开图片会被强制下载；要预览时为 Bucket 绑定已备案的自定义域名，填入 `MARSCHAT_OSS_PUBLIC_ENDPOINT`（例如 `https://files.example.com`），预签名地址改用该域名。实测原图与缩略图的下载响应都是 `Content-Disposition: attachment`；`<img>` 嵌入预计不受影响，尚未在浏览器中验证。
 - 前端以后用 `fetch` 读取文件内容（而不只是 `<img>` 显示、链接下载）时，需要在 Bucket 上配置跨域（CORS）规则。
 - OSS 按存储量、请求次数和公网下行流量计费。开发时用完记得清理 Bucket，或者切回 `local`。
 - **切换存储不迁移已有文件**：每个文件记录了它写入时的存储，切换后，写在另一种存储中的文件在换取下载地址时被省略（客户端看到的是文件不可用），新上传的文件写入新存储。切回原来的存储，这些文件恢复可用。

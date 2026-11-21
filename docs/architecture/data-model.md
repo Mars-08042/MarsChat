@@ -196,7 +196,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 ### 2.4 media（`marschat_media`，迁移 `000001_init`）
 
-文件内容在文件存储中（默认仓库下的 `data/media/`，可切换为阿里云 OSS，见 [ADR-0007](adr/0007-object-storage.md)），数据库只存元数据。对象键由 ID 推出：原文件 `files/{id}`，缩略图 `thumbs/{id}.jpg`；本地存储再按文件名哈希分到 256 个子目录，OSS 加上 `key_prefix`。
+文件内容在文件存储中（默认仓库下的 `data/media/`，可切换为阿里云 OSS，见 [ADR-0007](adr/0007-object-storage.md)），数据库只存元数据。对象键由 ID 推出：原文件 `files/{id}`，缩略图 `thumbs/{id}.jpg`；本地存储再按文件名哈希分到 256 个子目录；OSS 的对象名为 `{key_prefix}files/{yyyy}/{mm}/{id}`，年、月取自 ID 中的生成时间（UTC）。
 
 **files**（写入后不再修改）
 

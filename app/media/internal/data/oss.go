@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/Mars-08042/MarsChat/app/media/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/media/internal/conf"
+	"github.com/Mars-08042/MarsChat/pkg/idgen"
 )
 
 // 建立连接的超时。单次读写的超时用 SDK 默认值：上传是长时间的流式写入，总时长由请求的截止时间控制
@@ -63,11 +67,29 @@ func newOSSStorage(c *conf.Oss) (*ossStorage, error) {
 
 func (*ossStorage) Kind() int32 { return biz.StorageOSS }
 
+// objectName 把对象键（biz.ObjectKey：files/{id}、thumbs/{id}.jpg）映射为 OSS 中的对象名
+// {key_prefix}files/2026/11/{id}，在控制台中按年、月分目录浏览。年月取自 snowflake ID 中的生成时间（UTC），
+// 对象名仍然只由 ID 推出，数据库不用另存路径；月初 0～8 点（北京时间）上传的文件归入上个月的目录。
+func (s *ossStorage) objectName(key string) (string, error) {
+	dir, name := path.Split(key)
+	idPart, _, _ := strings.Cut(name, ".")
+	id, err := strconv.ParseInt(idPart, 10, 64)
+	if dir == "" || err != nil || id <= 0 {
+		return "", fmt.Errorf("invalid object key %q", key)
+	}
+	t, _, _ := idgen.Decompose(id)
+	return s.prefix + dir + t.Format("2006/01/") + name, nil
+}
+
 // Put 流式上传：body 不可 Seek 时 SDK 不会重试，失败直接返回，由客户端重新上传。
 func (s *ossStorage) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
-	_, err := s.client.PutObject(ctx, &oss.PutObjectRequest{
+	name, err := s.objectName(key)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.PutObject(ctx, &oss.PutObjectRequest{
 		Bucket:        oss.Ptr(s.bucket),
-		Key:           oss.Ptr(s.prefix + key),
+		Key:           oss.Ptr(name),
 		Body:          r,
 		ContentLength: oss.Ptr(size),
 		ContentType:   oss.Ptr(contentType),
@@ -77,9 +99,13 @@ func (s *ossStorage) Put(ctx context.Context, key string, r io.Reader, size int6
 
 // Delete 删除对象。OSS 对不存在的对象同样返回成功。
 func (s *ossStorage) Delete(ctx context.Context, key string) error {
-	_, err := s.client.DeleteObject(ctx, &oss.DeleteObjectRequest{
+	name, err := s.objectName(key)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.DeleteObject(ctx, &oss.DeleteObjectRequest{
 		Bucket: oss.Ptr(s.bucket),
-		Key:    oss.Ptr(s.prefix + key),
+		Key:    oss.Ptr(name),
 	})
 	return err
 }
@@ -87,10 +113,16 @@ func (s *ossStorage) Delete(ctx context.Context, key string) error {
 // SignURL 生成预签名 GET 地址，只做本地计算。response-content-type 与 response-content-disposition
 // 参与签名，客户端不能改成内联显示任意文件。
 func (s *ossStorage) SignURL(ctx context.Context, obj biz.Object, expires time.Time) (string, error) {
+	name, err := s.objectName(obj.Key)
+	if err != nil {
+		return "", err
+	}
+	// 不带 response-content-type：OSS 出于安全考虑拒绝 GET 请求覆盖 Content-Type
+	// （400 InvalidRequest，EC 0017-00000902）。响应类型取自 Put 时写入的对象元数据，
+	// 两者都来自 biz.ServeHeaders，取值相同。
 	res, err := s.presigner.Presign(ctx, &oss.GetObjectRequest{
 		Bucket:                     oss.Ptr(s.bucket),
-		Key:                        oss.Ptr(s.prefix + obj.Key),
-		ResponseContentType:        oss.Ptr(obj.ContentType),
+		Key:                        oss.Ptr(name),
 		ResponseContentDisposition: oss.Ptr(obj.ContentDisposition),
 	}, oss.PresignExpiration(expires))
 	if err != nil {

@@ -62,7 +62,7 @@ type Storage interface {
 }
 ```
 
-对象键：原文件 `files/{file_id}`，缩略图 `thumbs/{file_id}.jpg`。文件 ID 是 snowflake，不含用户输入，键里不会出现路径穿越。
+对象键：原文件 `files/{file_id}`，缩略图 `thumbs/{file_id}.jpg`。文件 ID 是 snowflake，不含用户输入，键里不会出现路径穿越。各存储再把对象键映射为自己的路径：local 按哈希分子目录，oss 按年、月分目录（见下文）。
 
 **local（默认）**
 
@@ -76,9 +76,10 @@ type Storage interface {
 
 - SDK：官方 `github.com/aliyun/alibabacloud-oss-go-sdk-v2`，静态 AccessKey（RAM 用户，只授予该 Bucket 的读写权限），签名 V4。
 - 配置：`region`（如 `cn-hangzhou`）、`bucket`、`access_key_id`、`access_key_secret`；可选 `endpoint`（部署在同地域 ECS 时可用内网地址）、`key_prefix`（默认 `marschat/`，便于与其他数据共用 Bucket）、`public_endpoint`（下载地址使用的自定义域名）。
+- 对象名：`{key_prefix}files/{yyyy}/{mm}/{file_id}`、`{key_prefix}thumbs/{yyyy}/{mm}/{file_id}.jpg`，年、月取自文件 ID 中的生成时间（UTC），在控制台中按年、月分目录浏览。对象名仍然只由 ID 推出，数据库不另存路径。
 - 写入：`PutObject`，传入读取器与长度，Bucket 保持私有。
-- 下载：`Presign(GetObjectRequest)` 本地计算签名，不访问网络；通过 `ResponseContentDisposition`、`ResponseContentType` 覆盖响应头。
-- 已知限制：2019 年 9 月 23 日之后创建的 Bucket，用默认域名（`<bucket>.oss-<region>.aliyuncs.com`）直接打开图片或 HTML 时，OSS 强制加上 `Content-Disposition: attachment`。`<img>` 嵌入一般不受影响（实施时验证）；要在浏览器标签页中直接预览，需要为 Bucket 绑定已备案的自定义域名并配置 `public_endpoint`。来源见第 5 节。
+- 下载：`Presign(GetObjectRequest)` 本地计算签名，不访问网络；通过 `ResponseContentDisposition` 覆盖 `Content-Disposition`。`Content-Type` 取上传时写入的对象元数据：OSS 不允许 GET 请求覆盖 `Content-Type`，见第 10 节。
+- 已知限制：2019 年 9 月 23 日之后创建的 Bucket，用默认域名（`<bucket>.oss-<region>.aliyuncs.com`）直接打开图片或 HTML 时，OSS 强制加上 `Content-Disposition: attachment`。实测（2026-11-21）原图与缩略图的预签名地址都返回 `Content-Disposition: attachment`，覆盖的文件名也被丢弃；`<img>` 嵌入预计不受影响，尚未在浏览器中验证；要在浏览器标签页中直接预览，需要为 Bucket 绑定已备案的自定义域名并配置 `public_endpoint`。来源见第 5 节。
 - 启动时只校验配置是否完整，不访问 OSS：网络暂时不通不应阻止服务启动，与 SMTP 发送方一致。上传时 OSS 不可用返回 `503`。
 
 切换存储不会迁移已有文件：两种存储的文件互不可见，切换前的文件在新存储中找不到，签发下载地址时按不存在省略。
@@ -325,7 +326,7 @@ OSS 默认域名强制下载的来源：[阿里云开发者社区：绑定自定
 | 上传与数据库写入之间进程退出留下孤儿对象 | 记为技术债；影响只是占用空间，不影响正确性 |
 | 访问密钥泄露 | 仍需登录才能换到下载地址，地址 10 分钟有效；需要撤销时改用 5.3 的方案 B |
 | 恶意文件当作页面执行 | 非图片一律以 `attachment` 和 `application/octet-stream` 下载；SVG 不内联 |
-| OSS 默认域名直接打开图片时被强制下载 | `<img>` 嵌入预计不受影响，在 OSS 手动验证中确认（尚未执行）；需要预览时绑定自定义域名并配置 `public_endpoint` |
+| OSS 默认域名直接打开图片时被强制下载 | 已实测默认域名返回 `attachment`；`<img>` 嵌入预计不受影响，尚未在浏览器中验证；需要预览时绑定自定义域名并配置 `public_endpoint` |
 | OSS 凭据泄露 | 使用只授权单个 Bucket 的 RAM 用户 AccessKey，只放在 `.env`；日志不打印配置 |
 | 经网关上传的大请求被缓冲到 APISIX 磁盘 | 100 MB 可以接受；必要时对 media 路由关闭请求缓冲。是否落盘尚未核实；集群测试中 20 MiB 经网关上传约 0.6 秒、下载约 0.14 秒 |
 
@@ -358,3 +359,5 @@ OSS 默认域名强制下载的来源：[阿里云开发者社区：绑定自定
 ## 10. 实施中的调整
 
 1. 缩略图并发与内存预算（2026-11-21）：3.6 原来按“两个并发、每个约 64 MB”估算，漏了 CatmullRom 缩放的中间缓冲（目标宽 × 原图高 × 32 字节，1600 万像素约 41 MB），16 位 PNG 的位图也按 64 MB 算少了一半。实测两个并发解码 1440 万像素的 8 位 PNG，media 进程峰值常驻内存 330 MiB，已超过 `GOMEMLIMIT`；按估算，两个 1600 万像素的 16 位 PNG 同时解码，存活内存约 340 MB，GC 也回收不掉，可能被 OOM 杀掉。另外，图片在排队等待解码前就整体读入内存，并发上传多时这部分没有上限。调整为：同时只解码 1 张；读入内存的图片按 `Content-Length` 预留预算，合计 64 MiB（`golang.org/x/sync/semaphore`，`x/sync` 原本就是直接依赖），超过预算的单个请求按预算计、独占执行。代价是多张大图并发上传时排队：8 张 1440 万像素的图片总耗时从 1.0 秒变为 1.75 秒。
+2. OSS 对象名按年、月分目录（2026-11-21）：开发者希望在 OSS 控制台中按年、月浏览上传的文件。对象名从 `{key_prefix}files/{id}` 改为 `{key_prefix}files/{yyyy}/{mm}/{id}`（缩略图同理），年、月取自 snowflake ID 中的生成时间，对象名仍然只由 ID 推出，表结构和接口不变。OSS 还没有实际使用过（手动验证尚未执行），没有旧对象需要迁移。按 UTC 计算是因为 ID 中的时间戳与服务器时区无关，同一个文件在任何实例上都映射到同一个对象名；代价是北京时间每月 1 日 0～8 点上传的文件归入上个月的目录。local 仍按哈希分子目录：本地目录不需要人工浏览，按月分目录会让当月目录的文件数没有上限。
+3. 预签名地址不再覆盖 `Content-Type`（2026-11-21）：OSS 手动验证时，上传成功，但预签名地址下载全部返回 `400 InvalidRequest`（`Can not override response header on content-type`，EC `0017-00000902`）：OSS 出于安全考虑，不允许 GET 请求用 `response-content-type` 覆盖响应类型。离线单元测试只校验签名格式，假服务器不执行这条规则，所以之前没有发现。改为预签名地址只覆盖 `Content-Disposition`，`Content-Type` 取上传时写入的对象元数据：上传与下载时的类型都来自 `ServeHeaders`，取值相同。`response-content-disposition` 仍然有效（普通文件返回覆盖的附件文件名），没有旧地址需要兼容。
