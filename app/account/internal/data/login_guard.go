@@ -23,10 +23,10 @@ func NewLoginGuard(rdb *redis.Client) biz.LoginGuard {
 	return &loginGuard{rdb: rdb}
 }
 
-func loginFailKey(phone string) string { return "account:login_fail:" + phone }
+func loginFailKey(email string) string { return "account:login_fail:" + email }
 
-func (g *loginGuard) Locked(ctx context.Context, phone string, maxFailures int) (bool, time.Duration, error) {
-	key := loginFailKey(phone)
+func (g *loginGuard) Locked(ctx context.Context, email string, maxFailures int) (bool, time.Duration, error) {
+	key := loginFailKey(email)
 	pipe := g.rdb.Pipeline()
 	get := pipe.Get(ctx, key)
 	ttl := pipe.PTTL(ctx, key)
@@ -46,11 +46,11 @@ func (g *loginGuard) Locked(ctx context.Context, phone string, maxFailures int) 
 	return true, ttl.Val(), nil
 }
 
-func (g *loginGuard) RecordFailure(ctx context.Context, phone string, maxFailures int, window, lock time.Duration) error {
-	return recordFailureScript.Run(ctx, g.rdb, []string{loginFailKey(phone)},
+func (g *loginGuard) RecordFailure(ctx context.Context, email string, maxFailures int, window, lock time.Duration) error {
+	return recordFailureScript.Run(ctx, g.rdb, []string{loginFailKey(email)},
 		maxFailures, window.Milliseconds(), lock.Milliseconds()).Err()
 }
 
-func (g *loginGuard) Reset(ctx context.Context, phone string) error {
-	return g.rdb.Del(ctx, loginFailKey(phone)).Err()
+func (g *loginGuard) Reset(ctx context.Context, email string) error {
+	return g.rdb.Del(ctx, loginFailKey(email)).Err()
 }

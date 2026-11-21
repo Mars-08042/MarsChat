@@ -29,14 +29,14 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 - 时间列为 `DATETIME(3)`，按 UTC 读写；应用写入前把时间截断到毫秒，与列精度一致。
 - 状态类列直接存 proto 枚举的数值，0 保留给 `UNSPECIFIED`。
 
-### 2.1 account（`marschat_account`，迁移 `000001_init`）
+### 2.1 account（`marschat_account`，迁移 `000001_init`、`000002_email`）
 
 **users**
 
 | 列 | 类型 | 说明 |
 |---|---|---|
 | `id` | `BIGINT` PK | snowflake |
-| `phone` | `VARCHAR(16)` | 唯一索引 `uk_phone` |
+| `email` | `VARCHAR(254)` | 唯一索引 `uk_email`；服务端统一转为小写后写入，排序规则 `utf8mb4_0900_ai_ci` 本身也不区分大小写。`000002_email` 替换了原来的 `phone` 列，已有数据填占位邮箱 `u{id}@legacy.invalid`（保留域名，发送方拒绝向它发信） |
 | `password_hash` | `VARCHAR(100)` | bcrypt（cost 12） |
 | `nickname` | `VARCHAR(32)` | 接口限制 1～16 个字符 |
 | `avatar` | `VARCHAR(64)` | media 文件 ID，步骤 6 前为空 |
@@ -64,11 +64,11 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 **outbox_events**：结构见 [pkg/outbox](../../pkg/outbox/outbox.go)，各服务同构。account 写入的事件为 `SessionRevoked`、`UserBanned`（topic `marschat.account.events`，分区键为用户 ID），由 Outbox 发布器发布到 Kafka，见 [data-flow.md](data-flow.md#6-事件与-outbox)。
 
-索引与查询（`EXPLAIN` 于 2026-11-18 在 MySQL 9.7.4 上核对）：
+索引与查询（`EXPLAIN` 于 2026-11-18 在 MySQL 9.7.4 上核对，`uk_email` 于 2026-11-20 核对）：
 
 | 索引 | 查询 | 说明 |
 |---|---|---|
-| `users.uk_phone` | 登录、发码前判断是否注册：`WHERE phone = ?` | 常量查找；同时兜底并发注册（唯一键冲突转成 `PHONE_ALREADY_REGISTERED`） |
+| `users.uk_email` | 登录、发码前判断是否注册：`WHERE email = ?` | 常量查找；同时兜底并发注册（唯一键冲突转成 `EMAIL_ALREADY_REGISTERED`） |
 | `users.PRIMARY` | 资料回源、批量资料 `WHERE id IN (...)`、登录与封禁的行锁、布隆过滤器重建 `WHERE id > ? ORDER BY id LIMIT 1000` | 重建扫描为覆盖索引范围扫描 |
 | `sessions.uk_user_active_device (user_id, active_device)` | 同设备登录时吊销旧会话：`WHERE user_id = ? AND active_device = ? FOR UPDATE` | 已吊销会话这一列为 NULL，不占唯一约束，所以同一设备最多一个有效会话，历史全部保留 |
 | `sessions.idx_user_revoked (user_id, revoked_at)` | 设备列表、封禁时吊销全部会话：`WHERE user_id = ? AND revoked_at IS NULL` | 数据量很小时优化器可能改用 `uk_user_active_device` 的 `user_id` 前缀，两者都在候选索引中 |
@@ -200,17 +200,17 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 |---|---|---|---|---|
 | `auth:revoked:sid:{sid}` | String | `token.revocation_ttl`（1 小时，不小于访问令牌有效期） | 退出、踢设备、同设备重新登录、刷新令牌重放时写入 | 吊销名单（会话级），所有服务的鉴权中间件读取 |
 | `auth:revoked:user:{uid}` | String，值为封禁时间（Unix 秒） | 同上 | 封禁事务提交后写入；解封不删除 | 吊销名单（用户级），拒绝 `iat` 不晚于该时间的令牌 |
-| `account:user:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10% 抖动；空值标记 1 分钟 | 资料修改、封禁、解封、设置管理员后删除 | 用户资料缓存（Cache-Aside，不含密码哈希） |
+| `account:user:v2:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10% 抖动；空值标记 1 分钟 | 资料修改、封禁、解封、设置管理员后删除 | 用户资料缓存（Cache-Aside，不含密码哈希）。账号标识从手机号换成邮箱时换了键名（v2），旧键 `account:user:{id}` 随 TTL 过期 |
 | `account:user_bf` | RedisBloom | 无 | 注册后 `BF.INSERT`；重建时整体替换 | 用户 ID 布隆过滤器，容量 100 万、误判率 0.1% |
 | `account:user_bf:ready` | String | 24 小时 | 重建完成后写入；加入失败时删除 | 存在时才信任过滤器的“不存在”判断，到期触发一次重建 |
 | `account:user_bf:dirty` | String | 10 分钟 | 加入过滤器重试仍失败时写入 | 让进行中的重建再做一轮 |
 | `account:user_bf:rebuild` | String，值为持有者随机串 | 5 分钟 | 重建开始时 `SET NX`，结束时校验持有者后删除 | 多实例只有一个在重建 |
-| `account:sms:code:{purpose}:{phone}` | Hash：`h` 验证码 SHA-256、`n` 错误次数 | 5 分钟 | 发送时覆盖；验证成功或错误 5 次后删除 | 短信验证码，注册（1）与登录（2）分开 |
-| `account:sms:cooldown:{phone}` | String | 60 秒 | 发送时设置；短信平台失败时删除 | 发送间隔 |
-| `account:sms:daily:{phone}:{yyyymmdd}` | String 计数 | 25 小时（只用于清理） | 发送时加一；短信平台失败时减一 | 每号每日上限 10 条，日期按北京时间 |
-| `account:rl:sms_ip:{ip}` | ZSET | 窗口长度 | `pkg/ratelimit` 滑动窗口 | 每 IP 每小时 20 次发码；Redis 故障时拒绝发码 |
+| `account:email_code:code:{purpose}:{email}` | Hash：`h` 验证码 SHA-256、`n` 错误次数 | 5 分钟 | 发送时覆盖；验证成功或错误 5 次后删除 | 邮箱验证码，注册（1）与登录（2）分开；邮箱已转为小写 |
+| `account:email_code:cooldown:{email}` | String | 60 秒 | 发送时设置；发信失败时删除 | 发送间隔 |
+| `account:email_code:daily:{email}:{yyyymmdd}` | String 计数 | 25 小时（只用于清理） | 发送时加一；发信失败时减一 | 每个邮箱每日上限 10 封，日期按北京时间 |
+| `account:rl:email_code_ip:{ip}` | ZSET | 窗口长度 | `pkg/ratelimit` 滑动窗口 | 每 IP 每小时 20 次发码；Redis 故障时拒绝发码 |
 | `account:rl:login_ip:{ip}` | ZSET | 窗口长度 | 同上 | 每 IP 每分钟 20 次登录；Redis 故障时放行 |
-| `account:login_fail:{phone}` | String 计数 | 首次失败起 15 分钟；达到 5 次时改为锁定 15 分钟 | 密码错误时加一；登录成功后删除 | 密码错误锁定 |
+| `account:login_fail:{email}` | String 计数 | 首次失败起 15 分钟；达到 5 次时改为锁定 15 分钟 | 密码错误时加一；登录成功后删除 | 密码错误锁定 |
 | `social:group:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10%；空值标记 1 分钟 | 资料修改、成员数变化、转让、解散后删除；social 消费自己的群事件再删一次（兜底） | 群资料缓存，未命中时先查群 ID 布隆过滤器 |
 | `social:group:members:{id}` | String（1 字节标记 + JSON 数组：用户 ID、角色、禁言截止） | 30 分钟 ±10% | 任何成员、角色、禁言变化后删除；同样经事件兜底删除 | 全部成员，供发言权限校验和投递；开启跨实例重建锁 |
 | `social:group:members:{id}:lock` | String，值为持有者随机串 | 3 秒 | 缓存未命中时 `SET NX PX`，回填后校验持有者再删除 | 重建锁：没抢到的实例每 50 毫秒重读缓存，最多 200 毫秒，之后直接回源 |

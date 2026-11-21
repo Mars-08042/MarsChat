@@ -77,7 +77,7 @@ func (uc *GroupUsecase) Create(ctx context.Context, owner int64, in CreateGroupI
 	if err := checkRate(ctx, uc.limiter, uc.logger, "group_create", owner, p.GetGroupCreate()); err != nil {
 		return nil, err
 	}
-	id, err := uc.ids.NextID()
+	id, err := nextID(uc.ids)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func (uc *GroupUsecase) Join(ctx context.Context, me, id int64, message string) 
 		case !errors.Is(err, ErrNotFound):
 			return err
 		}
-		rid, err := uc.ids.NextID()
+		rid, err := nextID(uc.ids)
 		if err != nil {
 			return err
 		}

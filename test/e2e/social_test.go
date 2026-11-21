@@ -46,8 +46,8 @@ type user struct {
 
 func newUser(t *testing.T) user {
 	t.Helper()
-	phone := randomPhone(t)
-	s := register(t, phone, "e2e-social-"+phone)
+	email := randomEmail(t)
+	s := register(t, email, "e2e-social-"+localPart(email))
 	return user{id: s.user.GetId(), token: s.token.GetAccessToken()}
 }
 

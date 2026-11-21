@@ -12,6 +12,7 @@ import (
 
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
 	v1 "github.com/Mars-08042/MarsChat/api/message/v1"
+	"github.com/Mars-08042/MarsChat/pkg/idgen"
 	"github.com/Mars-08042/MarsChat/pkg/kafka"
 	"github.com/Mars-08042/MarsChat/pkg/ratelimit"
 )
@@ -172,4 +173,14 @@ type RateLimiter interface {
 // IDGenerator 生成 snowflake ID。
 type IDGenerator interface {
 	NextID() (int64, error)
+}
+
+// nextID 分配 ID。节点号租约失效（Redis 长时间不可达）是可预期、可恢复的依赖故障，返回 503 让客户端稍后重试，
+// 不当作内部错误；租约的丢失与恢复由 idgen 自己记日志。
+func nextID(ids IDGenerator) (int64, error) {
+	id, err := ids.NextID()
+	if errors.Is(err, idgen.ErrLeaseLost) {
+		return 0, ErrDependencyUnavailable()
+	}
+	return id, err
 }

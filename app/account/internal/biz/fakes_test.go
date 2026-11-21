@@ -31,8 +31,8 @@ func (f *fakeUsers) Create(_ context.Context, u *User) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, x := range f.byID {
-		if x.Phone == u.Phone {
-			return ErrPhoneTaken
+		if x.Email == u.Email {
+			return ErrEmailTaken
 		}
 	}
 	cp := *u
@@ -51,11 +51,11 @@ func (f *fakeUsers) FindByID(_ context.Context, id int64) (*User, error) {
 	return &cp, nil
 }
 
-func (f *fakeUsers) FindByPhone(_ context.Context, phone string) (*User, error) {
+func (f *fakeUsers) FindByEmail(_ context.Context, email string) (*User, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, u := range f.byID {
-		if u.Phone == phone {
+		if u.Email == email {
 			cp := *u
 			return &cp, nil
 		}
@@ -63,8 +63,8 @@ func (f *fakeUsers) FindByPhone(_ context.Context, phone string) (*User, error) 
 	return nil, ErrNotFound
 }
 
-func (f *fakeUsers) ExistsByPhone(ctx context.Context, phone string) (bool, error) {
-	_, err := f.FindByPhone(ctx, phone)
+func (f *fakeUsers) ExistsByEmail(ctx context.Context, email string) (bool, error) {
+	_, err := f.FindByEmail(ctx, email)
 	if errors.Is(err, ErrNotFound) {
 		return false, nil
 	}
@@ -243,51 +243,56 @@ func (f *fakeEvents) Add(_ context.Context, _, _ string, msg proto.Message, _ ti
 	return nil
 }
 
-type fakeSmsStore struct {
+type fakeCodeStore struct {
 	mu       sync.Mutex
 	slot     SlotResult
 	retry    time.Duration
 	codes    map[string]string
 	attempts map[string]int
 	released int
+	// slotFor 记录占用发送名额时传入的邮箱
+	slotFor []string
 }
 
-func newFakeSmsStore() *fakeSmsStore {
-	return &fakeSmsStore{codes: map[string]string{}, attempts: map[string]int{}}
+func newFakeCodeStore() *fakeCodeStore {
+	return &fakeCodeStore{codes: map[string]string{}, attempts: map[string]int{}}
 }
 
-func smsKey(purpose int32, phone string) string { return string(rune('0'+purpose)) + phone }
+func codeKey(purpose int32, email string) string { return string(rune('0'+purpose)) + email }
 
-func (f *fakeSmsStore) AcquireSendSlot(context.Context, string, string, time.Duration, int) (SlotResult, time.Duration, error) {
+func (f *fakeCodeStore) AcquireSendSlot(_ context.Context, email, _ string, _ time.Duration, _ int) (SlotResult, time.Duration, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.slotFor = append(f.slotFor, email)
 	return f.slot, f.retry, nil
 }
 
-func (f *fakeSmsStore) ReleaseSendSlot(context.Context, string, string) error {
+func (f *fakeCodeStore) ReleaseSendSlot(context.Context, string, string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.released++
 	return nil
 }
 
-func (f *fakeSmsStore) SaveCode(_ context.Context, purpose int32, phone, codeHash string, _ time.Duration) error {
+func (f *fakeCodeStore) SaveCode(_ context.Context, purpose int32, email, codeHash string, _ time.Duration) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.codes[smsKey(purpose, phone)] = codeHash
-	f.attempts[smsKey(purpose, phone)] = 0
+	f.codes[codeKey(purpose, email)] = codeHash
+	f.attempts[codeKey(purpose, email)] = 0
 	return nil
 }
 
-func (f *fakeSmsStore) DeleteCode(_ context.Context, purpose int32, phone string) error {
+func (f *fakeCodeStore) DeleteCode(_ context.Context, purpose int32, email string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	delete(f.codes, smsKey(purpose, phone))
+	delete(f.codes, codeKey(purpose, email))
 	return nil
 }
 
-func (f *fakeSmsStore) VerifyCode(_ context.Context, purpose int32, phone, codeHash string, maxAttempts int) (VerifyResult, error) {
+func (f *fakeCodeStore) VerifyCode(_ context.Context, purpose int32, email, codeHash string, maxAttempts int) (VerifyResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	k := smsKey(purpose, phone)
+	k := codeKey(purpose, email)
 	h, ok := f.codes[k]
 	switch {
 	case !ok:
@@ -309,26 +314,26 @@ type fakeGuard struct {
 	failures map[string]int
 }
 
-func (f *fakeGuard) Locked(_ context.Context, phone string, max int) (bool, time.Duration, error) {
+func (f *fakeGuard) Locked(_ context.Context, email string, max int) (bool, time.Duration, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.failures[phone] >= max {
+	if f.failures[email] >= max {
 		return true, time.Minute, nil
 	}
 	return false, 0, nil
 }
 
-func (f *fakeGuard) RecordFailure(_ context.Context, phone string, _ int, _, _ time.Duration) error {
+func (f *fakeGuard) RecordFailure(_ context.Context, email string, _ int, _, _ time.Duration) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.failures[phone]++
+	f.failures[email]++
 	return nil
 }
 
-func (f *fakeGuard) Reset(_ context.Context, phone string) error {
+func (f *fakeGuard) Reset(_ context.Context, email string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	delete(f.failures, phone)
+	delete(f.failures, email)
 	return nil
 }
 
@@ -342,23 +347,31 @@ func (f *fakeLimiter) Allow(context.Context, string, int, time.Duration) (rateli
 }
 
 type fakeSender struct {
-	err      error
-	lastCode string
+	err       error
+	lastTo    string
+	lastCode  string
+	lastTTL   time.Duration
+	sentCount int
 }
 
-func (f *fakeSender) Send(_ context.Context, _, code string, _ int32) error {
-	f.lastCode = code
+func (f *fakeSender) Send(_ context.Context, to, code string, _ int32, ttl time.Duration) error {
+	f.lastTo, f.lastCode, f.lastTTL = to, code, ttl
+	f.sentCount++
 	return f.err
 }
 
 type fakeIDs struct {
-	mu sync.Mutex
-	n  int64
+	mu  sync.Mutex
+	n   int64
+	err error
 }
 
 func (f *fakeIDs) NextID() (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, f.err
+	}
 	f.n++
 	return 1000 + f.n, nil
 }

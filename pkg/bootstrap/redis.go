@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,8 @@ const redisProbeInterval = time.Second
 // 客户端带拨号保护（见 dialGuard），单次拨号不再重试：Redis 不可达时命令立即失败，
 // 调用方按各自的降级策略处理（限流放行、缓存回源等），不会被拨号拖到请求超时。
 func NewRedis(c *conf.Redis, logger *slog.Logger) (*redis.Client, func(), error) {
+	// go-redis 的内部日志是进程级全局设置；每个进程只创建一个客户端，在这里设置即可
+	redis.SetLogger(redisLogger{logger: logger})
 	opts := &redis.Options{
 		Addr:         c.GetAddr(),
 		Password:     c.GetPassword(),
@@ -56,6 +59,27 @@ func NewRedis(c *conf.Redis, logger *slog.Logger) (*redis.Client, func(), error)
 		}
 	}
 	return rdb, cleanup, nil
+}
+
+// redisLogger 把 go-redis 的内部日志转到 slog（默认用标准库 log 写纯文本到 stderr）。
+// go-redis 只给出格式化后的文本、不带级别，这里按内容分级：
+//   - 连接池拨号失败：Redis 不可达期间每次拨号都打一行，拨号保护已在故障开始和恢复时各记一条，降为 DEBUG；
+//   - 内部恢复的 panic：记 ERROR；
+//   - 其他（关闭连接失败、读取推送消息失败等）：不直接影响请求结果，记 WARN。
+type redisLogger struct {
+	logger *slog.Logger
+}
+
+func (l redisLogger) Printf(ctx context.Context, format string, v ...any) {
+	msg := fmt.Sprintf(format, v...)
+	level := slog.LevelWarn
+	switch {
+	case strings.HasPrefix(format, "redis: connection pool: failed to dial"):
+		level = slog.LevelDebug
+	case strings.Contains(msg, "panic"):
+		level = slog.LevelError
+	}
+	l.logger.Log(ctx, level, "go-redis internal log", slog.String("detail", strings.TrimPrefix(msg, "redis: ")))
 }
 
 // RedisCheck 返回检查 Redis 连通性的就绪检查项。

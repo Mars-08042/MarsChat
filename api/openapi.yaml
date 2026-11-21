@@ -56,11 +56,51 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/account.v1.UnbanUserResponse'
+    /v1/auth/email-codes:
+        post:
+            tags:
+                - AccountService
+            description: |-
+                发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+                 邮箱地址去掉首尾空白并转为小写后使用。
+            operationId: AccountService_SendEmailCode
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.SendEmailCodeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.SendEmailCodeResponse'
+    /v1/auth/login/email-code:
+        post:
+            tags:
+                - AccountService
+            description: 邮箱加验证码登录。
+            operationId: AccountService_LoginByEmailCode
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.LoginByEmailCodeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.LoginByEmailCodeResponse'
     /v1/auth/login/password:
         post:
             tags:
                 - AccountService
-            description: 手机号加密码登录。
+            description: 邮箱加密码登录。
             operationId: AccountService_LoginByPassword
             requestBody:
                 content:
@@ -75,25 +115,6 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/account.v1.LoginByPasswordResponse'
-    /v1/auth/login/sms:
-        post:
-            tags:
-                - AccountService
-            description: 手机号加短信验证码登录。
-            operationId: AccountService_LoginBySms
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/account.v1.LoginBySmsRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/account.v1.LoginBySmsResponse'
     /v1/auth/logout:
         post:
             tags:
@@ -136,7 +157,7 @@ paths:
         post:
             tags:
                 - AccountService
-            description: 手机号加短信验证码注册，成功后直接登录当前设备。
+            description: 邮箱加验证码注册，成功后直接登录当前设备。
             operationId: AccountService_Register
             requestBody:
                 content:
@@ -151,25 +172,6 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/account.v1.RegisterResponse'
-    /v1/auth/sms-codes:
-        post:
-            tags:
-                - AccountService
-            description: 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
-            operationId: AccountService_SendSmsCode
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/account.v1.SendSmsCodeRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/account.v1.SendSmsCodeResponse'
     /v1/blocks:
         get:
             tags:
@@ -1036,32 +1038,32 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/account.v1.Session'
-        account.v1.LoginByPasswordRequest:
+        account.v1.LoginByEmailCodeRequest:
             type: object
             properties:
-                phone:
+                email:
                     type: string
-                password:
+                code:
                     type: string
                 device:
                     $ref: '#/components/schemas/account.v1.Device'
-        account.v1.LoginByPasswordResponse:
+        account.v1.LoginByEmailCodeResponse:
             type: object
             properties:
                 user:
                     $ref: '#/components/schemas/account.v1.User'
                 token:
                     $ref: '#/components/schemas/account.v1.TokenPair'
-        account.v1.LoginBySmsRequest:
+        account.v1.LoginByPasswordRequest:
             type: object
             properties:
-                phone:
+                email:
                     type: string
-                smsCode:
+                password:
                     type: string
                 device:
                     $ref: '#/components/schemas/account.v1.Device'
-        account.v1.LoginBySmsResponse:
+        account.v1.LoginByPasswordResponse:
             type: object
             properties:
                 user:
@@ -1087,9 +1089,9 @@ components:
         account.v1.RegisterRequest:
             type: object
             properties:
-                phone:
+                email:
                     type: string
-                smsCode:
+                code:
                     type: string
                 password:
                     type: string
@@ -1108,15 +1110,15 @@ components:
         account.v1.RevokeSessionResponse:
             type: object
             properties: {}
-        account.v1.SendSmsCodeRequest:
+        account.v1.SendEmailCodeRequest:
             type: object
             properties:
-                phone:
+                email:
                     type: string
                 purpose:
                     type: integer
                     format: enum
-        account.v1.SendSmsCodeResponse:
+        account.v1.SendEmailCodeResponse:
             type: object
             properties:
                 cooldownSeconds:
@@ -1192,7 +1194,7 @@ components:
             properties:
                 id:
                     type: string
-                phone:
+                email:
                     type: string
                 nickname:
                     type: string
@@ -1234,7 +1236,7 @@ components:
                 status:
                     type: integer
                     format: enum
-            description: UserProfile 是其他用户可见的公开资料，不含手机号。
+            description: UserProfile 是其他用户可见的公开资料，不含邮箱。
         message.v1.Conversation:
             type: object
             properties:

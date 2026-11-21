@@ -18,11 +18,12 @@ import (
 	"github.com/Mars-08042/MarsChat/app/account/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/auth"
 	pkgconf "github.com/Mars-08042/MarsChat/pkg/conf"
+	"github.com/Mars-08042/MarsChat/pkg/idgen"
 )
 
 const (
 	testCode  = "123456"
-	testPhone = "13800000001"
+	testEmail = "user1@example.com"
 	testPass  = "abc12345"
 )
 
@@ -32,14 +33,15 @@ type env struct {
 	users    *fakeUsers
 	sessions *fakeSessions
 	events   *fakeEvents
-	store    *fakeSmsStore
+	store    *fakeCodeStore
 	guard    *fakeGuard
 	limiter  *fakeLimiter
 	sender   *fakeSender
 	revoker  *fakeRevoker
+	ids      *fakeIDs
 	clock    time.Time
 
-	sms     *SmsUsecase
+	codes   *CodeUsecase
 	auth    *AuthUsecase
 	user    *UserUsecase
 	session *SessionUsecase
@@ -49,9 +51,9 @@ type env struct {
 func testPolicy() *conf.Policy {
 	window := &pkgconf.RateLimit{Limit: 20, Window: durationpb.New(time.Hour)}
 	return &conf.Policy{
-		Sms: &conf.Policy_Sms{
+		EmailCode: &conf.Policy_EmailCode{
 			CodeTtl: durationpb.New(5 * time.Minute), MaxVerifyAttempts: 3,
-			SendInterval: durationpb.New(time.Minute), DailyLimitPerPhone: 10, IpLimit: window,
+			SendInterval: durationpb.New(time.Minute), DailyLimitPerEmail: 10, IpLimit: window,
 		},
 		Login: &conf.Policy_Login{
 			MaxFailures: 3, FailureWindow: durationpb.New(15 * time.Minute),
@@ -76,7 +78,7 @@ func newEnv(t *testing.T) *env {
 	}
 
 	e := &env{
-		users: newFakeUsers(), sessions: newFakeSessions(), events: &fakeEvents{}, store: newFakeSmsStore(),
+		users: newFakeUsers(), sessions: newFakeSessions(), events: &fakeEvents{}, store: newFakeCodeStore(),
 		guard: &fakeGuard{failures: map[string]int{}}, limiter: &fakeLimiter{}, sender: &fakeSender{},
 		revoker: &fakeRevoker{users: map[int64]time.Time{}},
 		clock:   time.Date(2026, 11, 18, 8, 0, 0, 0, time.UTC),
@@ -84,15 +86,15 @@ func newEnv(t *testing.T) *env {
 	now := func() time.Time { return e.clock }
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	policy := NewPolicyHolder(testPolicy())
-	ids := &fakeIDs{}
+	e.ids = &fakeIDs{}
 
-	e.sms, err = NewSmsUsecase(e.store, e.sender, e.limiter, e.users, policy, &conf.Sms{Provider: "log", FixedCode: testCode}, logger)
+	e.codes, err = NewCodeUsecase(e.store, e.sender, e.limiter, e.users, policy, &conf.Mail{Provider: "log", FixedCode: testCode}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.sms.now = now
+	e.codes.now = now
 	// bcrypt 用最低 cost，测试只关心逻辑
-	e.auth, err = NewAuthUsecase(e.users, e.sessions, e.events, fakeTx{}, tokens, e.sms, e.limiter, e.guard, ids,
+	e.auth, err = NewAuthUsecase(e.users, e.sessions, e.events, fakeTx{}, tokens, e.codes, e.limiter, e.guard, e.ids,
 		e.revoker, policy, &conf.Security{BcryptCost: 4}, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -108,14 +110,14 @@ func newEnv(t *testing.T) *env {
 }
 
 // register 发送验证码并注册，返回用户和令牌。
-func (e *env) register(t *testing.T, phone string) (*User, *TokenPair) {
+func (e *env) register(t *testing.T, email string) (*User, *TokenPair) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := e.sms.Send(ctx, phone, PurposeRegister, "1.2.3.4"); err != nil {
+	if _, err := e.codes.Send(ctx, email, PurposeRegister, "1.2.3.4"); err != nil {
 		t.Fatalf("send register code: %v", err)
 	}
 	u, pair, err := e.auth.Register(ctx, RegisterInput{
-		Phone: phone, Code: testCode, Password: testPass, Nickname: "nick", Device: testDevice, IP: "1.2.3.4",
+		Email: email, Code: testCode, Password: testPass, Nickname: "nick", Device: testDevice, IP: "1.2.3.4",
 	})
 	if err != nil {
 		t.Fatalf("register: %v", err)
@@ -138,7 +140,7 @@ func wantReason(t *testing.T, err error, reason v1.ErrorReason) {
 func TestRegisterAndPasswordLogin(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	u, pair := e.register(t, testPhone)
+	u, pair := e.register(t, testEmail)
 	if u.Role != RoleUser || u.Status != StatusNormal || pair.AccessToken == "" {
 		t.Fatalf("unexpected user %+v / pair %+v", u, pair)
 	}
@@ -147,67 +149,67 @@ func TestRegisterAndPasswordLogin(t *testing.T) {
 	}
 
 	// 注册码只能用一次
-	_, _, err := e.auth.Register(ctx, RegisterInput{Phone: testPhone, Code: testCode, Password: testPass, Nickname: "n", Device: testDevice})
-	wantReason(t, err, v1.ErrorReason_SMS_CODE_INVALID)
+	_, _, err := e.auth.Register(ctx, RegisterInput{Email: testEmail, Code: testCode, Password: testPass, Nickname: "n", Device: testDevice})
+	wantReason(t, err, v1.ErrorReason_CODE_INVALID)
 
-	// 已注册的手机号不能再发注册码
-	_, err = e.sms.Send(ctx, testPhone, PurposeRegister, "1.2.3.4")
-	wantReason(t, err, v1.ErrorReason_PHONE_ALREADY_REGISTERED)
+	// 已注册的邮箱不能再发注册码
+	_, err = e.codes.Send(ctx, testEmail, PurposeRegister, "1.2.3.4")
+	wantReason(t, err, v1.ErrorReason_EMAIL_ALREADY_REGISTERED)
 
-	if _, _, err := e.auth.LoginByPassword(ctx, testPhone, testPass, Device{ID: "device-ios-1", Platform: 3}, "1.2.3.4"); err != nil {
+	if _, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, Device{ID: "device-ios-1", Platform: 3}, "1.2.3.4"); err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	_, _, err = e.auth.LoginByPassword(ctx, testPhone, "wrong1234", testDevice, "1.2.3.4")
+	_, _, err = e.auth.LoginByPassword(ctx, testEmail, "wrong1234", testDevice, "1.2.3.4")
 	wantReason(t, err, v1.ErrorReason_INVALID_CREDENTIALS)
-	// 不存在的手机号与密码错误返回同样的错误
-	_, _, err = e.auth.LoginByPassword(ctx, "13900000000", testPass, testDevice, "1.2.3.4")
+	// 不存在的邮箱与密码错误返回同样的错误
+	_, _, err = e.auth.LoginByPassword(ctx, "nobody@example.com", testPass, testDevice, "1.2.3.4")
 	wantReason(t, err, v1.ErrorReason_INVALID_CREDENTIALS)
 }
 
 func TestRegisterRejectsWeakPasswordWithoutConsumingCode(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	if _, err := e.sms.Send(ctx, testPhone, PurposeRegister, ""); err != nil {
+	if _, err := e.codes.Send(ctx, testEmail, PurposeRegister, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := e.auth.Register(ctx, RegisterInput{Phone: testPhone, Code: testCode, Password: "abcdefgh", Nickname: "n", Device: testDevice})
+	_, _, err := e.auth.Register(ctx, RegisterInput{Email: testEmail, Code: testCode, Password: "abcdefgh", Nickname: "n", Device: testDevice})
 	wantReason(t, err, v1.ErrorReason_WEAK_PASSWORD)
-	if _, _, err := e.auth.Register(ctx, RegisterInput{Phone: testPhone, Code: testCode, Password: testPass, Nickname: "n", Device: testDevice}); err != nil {
+	if _, _, err := e.auth.Register(ctx, RegisterInput{Email: testEmail, Code: testCode, Password: testPass, Nickname: "n", Device: testDevice}); err != nil {
 		t.Fatalf("code should still be valid: %v", err)
 	}
 }
 
-func TestSmsCodeAttemptsExhausted(t *testing.T) {
+func TestCodeAttemptsExhausted(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	if _, err := e.sms.Send(ctx, testPhone, PurposeRegister, ""); err != nil {
+	if _, err := e.codes.Send(ctx, testEmail, PurposeRegister, ""); err != nil {
 		t.Fatal(err)
 	}
-	in := RegisterInput{Phone: testPhone, Code: "000000", Password: testPass, Nickname: "n", Device: testDevice}
+	in := RegisterInput{Email: testEmail, Code: "000000", Password: testPass, Nickname: "n", Device: testDevice}
 	for i := 0; i < 2; i++ {
 		_, _, err := e.auth.Register(ctx, in)
-		wantReason(t, err, v1.ErrorReason_SMS_CODE_INVALID)
+		wantReason(t, err, v1.ErrorReason_CODE_INVALID)
 	}
 	_, _, err := e.auth.Register(ctx, in)
-	wantReason(t, err, v1.ErrorReason_SMS_CODE_ATTEMPTS_EXCEEDED)
+	wantReason(t, err, v1.ErrorReason_CODE_ATTEMPTS_EXCEEDED)
 	// 作废之后正确的验证码也不能用
 	in.Code = testCode
 	_, _, err = e.auth.Register(ctx, in)
-	wantReason(t, err, v1.ErrorReason_SMS_CODE_INVALID)
+	wantReason(t, err, v1.ErrorReason_CODE_INVALID)
 }
 
-func TestSendSmsRules(t *testing.T) {
+func TestSendCodeRules(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("login code requires registered phone", func(t *testing.T) {
+	t.Run("login code requires registered email", func(t *testing.T) {
 		e := newEnv(t)
-		_, err := e.sms.Send(ctx, testPhone, PurposeLogin, "")
+		_, err := e.codes.Send(ctx, testEmail, PurposeLogin, "")
 		wantReason(t, err, v1.ErrorReason_USER_NOT_FOUND)
 	})
 	t.Run("ip rate limited", func(t *testing.T) {
 		e := newEnv(t)
 		e.limiter.deny = true
-		_, err := e.sms.Send(ctx, testPhone, PurposeRegister, "")
+		_, err := e.codes.Send(ctx, testEmail, PurposeRegister, "")
 		wantReason(t, err, v1.ErrorReason_RATE_LIMITED)
 		if got := kerrors.FromError(err).Metadata["retry_after_seconds"]; got != "30" {
 			t.Fatalf("retry_after_seconds = %q", got)
@@ -216,8 +218,8 @@ func TestSendSmsRules(t *testing.T) {
 	t.Run("cooldown", func(t *testing.T) {
 		e := newEnv(t)
 		e.store.slot, e.store.retry = SlotTooFrequent, 42*time.Second
-		_, err := e.sms.Send(ctx, testPhone, PurposeRegister, "")
-		wantReason(t, err, v1.ErrorReason_SMS_SEND_TOO_FREQUENT)
+		_, err := e.codes.Send(ctx, testEmail, PurposeRegister, "")
+		wantReason(t, err, v1.ErrorReason_CODE_SEND_TOO_FREQUENT)
 		if got := kerrors.FromError(err).Metadata["retry_after_seconds"]; got != "42" {
 			t.Fatalf("retry_after_seconds = %q", got)
 		}
@@ -226,8 +228,8 @@ func TestSendSmsRules(t *testing.T) {
 		e := newEnv(t)
 		e.store.slot = SlotDailyLimit
 		// 08:00 UTC 是北京时间 16:00，距离次日零点 8 小时
-		_, err := e.sms.Send(ctx, testPhone, PurposeRegister, "")
-		wantReason(t, err, v1.ErrorReason_SMS_DAILY_LIMIT_EXCEEDED)
+		_, err := e.codes.Send(ctx, testEmail, PurposeRegister, "")
+		wantReason(t, err, v1.ErrorReason_CODE_DAILY_LIMIT_EXCEEDED)
 		if got := kerrors.FromError(err).Metadata["retry_after_seconds"]; got != "28800" {
 			t.Fatalf("retry_after_seconds = %q", got)
 		}
@@ -235,26 +237,26 @@ func TestSendSmsRules(t *testing.T) {
 	t.Run("sender failure releases slot and code", func(t *testing.T) {
 		e := newEnv(t)
 		e.sender.err = errors.New("provider down")
-		_, err := e.sms.Send(ctx, testPhone, PurposeRegister, "")
-		wantReason(t, err, v1.ErrorReason_SMS_SEND_FAILED)
+		_, err := e.codes.Send(ctx, testEmail, PurposeRegister, "")
+		wantReason(t, err, v1.ErrorReason_CODE_SEND_FAILED)
 		if e.store.released != 1 || len(e.store.codes) != 0 {
 			t.Fatalf("released=%d codes=%v", e.store.released, e.store.codes)
 		}
 	})
 	t.Run("random code when no fixed code", func(t *testing.T) {
 		e := newEnv(t)
-		e.sms.fixedCode = ""
-		if _, err := e.sms.Send(ctx, testPhone, PurposeRegister, ""); err != nil {
+		e.codes.fixedCode = ""
+		if _, err := e.codes.Send(ctx, testEmail, PurposeRegister, ""); err != nil {
 			t.Fatal(err)
 		}
-		if len(e.sender.lastCode) != 6 || e.store.codes[smsKey(PurposeRegister, testPhone)] != hashCode(e.sender.lastCode) {
+		if len(e.sender.lastCode) != 6 || e.store.codes[codeKey(PurposeRegister, testEmail)] != hashCode(e.sender.lastCode) {
 			t.Fatalf("code %q not stored as hash", e.sender.lastCode)
 		}
 	})
 }
 
 func TestFixedCodeRequiresLogProvider(t *testing.T) {
-	_, err := NewSmsUsecase(nil, nil, nil, nil, nil, &conf.Sms{Provider: "aliyun", FixedCode: "000000"}, nil)
+	_, err := NewCodeUsecase(nil, nil, nil, nil, nil, &conf.Mail{Provider: "aliyun", FixedCode: "000000"}, nil)
 	if err == nil {
 		t.Fatal("expected error for fixed code with non-log provider")
 	}
@@ -263,38 +265,38 @@ func TestFixedCodeRequiresLogProvider(t *testing.T) {
 func TestLoginLockAfterFailures(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	e.register(t, testPhone)
+	e.register(t, testEmail)
 	for i := 0; i < 3; i++ {
-		_, _, err := e.auth.LoginByPassword(ctx, testPhone, "wrong1234", testDevice, "")
+		_, _, err := e.auth.LoginByPassword(ctx, testEmail, "wrong1234", testDevice, "")
 		wantReason(t, err, v1.ErrorReason_INVALID_CREDENTIALS)
 	}
 	// 锁定期间正确的密码也不能登录
-	_, _, err := e.auth.LoginByPassword(ctx, testPhone, testPass, testDevice, "")
+	_, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, testDevice, "")
 	wantReason(t, err, v1.ErrorReason_LOGIN_LOCKED)
 }
 
-func TestSmsLogin(t *testing.T) {
+func TestEmailCodeLogin(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	e.register(t, testPhone)
-	if _, err := e.sms.Send(ctx, testPhone, PurposeLogin, ""); err != nil {
+	e.register(t, testEmail)
+	if _, err := e.codes.Send(ctx, testEmail, PurposeLogin, ""); err != nil {
 		t.Fatal(err)
 	}
 	// 注册码与登录码隔离：登录码不能用于注册流程，反之亦然
-	_, _, err := e.auth.Register(ctx, RegisterInput{Phone: "13800000002", Code: testCode, Password: testPass, Nickname: "n", Device: testDevice})
-	wantReason(t, err, v1.ErrorReason_SMS_CODE_INVALID)
-	if _, _, err := e.auth.LoginBySms(ctx, testPhone, testCode, testDevice, ""); err != nil {
-		t.Fatalf("sms login: %v", err)
+	_, _, err := e.auth.Register(ctx, RegisterInput{Email: "user2@example.com", Code: testCode, Password: testPass, Nickname: "n", Device: testDevice})
+	wantReason(t, err, v1.ErrorReason_CODE_INVALID)
+	if _, _, err := e.auth.LoginByEmailCode(ctx, testEmail, testCode, testDevice, ""); err != nil {
+		t.Fatalf("email code login: %v", err)
 	}
 }
 
 func TestSameDeviceLoginReplacesSession(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	u, first := e.register(t, testPhone)
+	u, first := e.register(t, testEmail)
 	oldSID, _, _ := parseRefreshToken(first.RefreshToken)
 
-	if _, _, err := e.auth.LoginByPassword(ctx, testPhone, testPass, testDevice, ""); err != nil {
+	if _, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, testDevice, ""); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := e.sessions.FindByID(ctx, oldSID)
@@ -316,7 +318,7 @@ func TestSameDeviceLoginReplacesSession(t *testing.T) {
 func TestRefreshRotationAndReuseDetection(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	_, pair1 := e.register(t, testPhone)
+	_, pair1 := e.register(t, testEmail)
 	sid, _, _ := parseRefreshToken(pair1.RefreshToken)
 
 	e.clock = e.clock.Add(time.Minute)
@@ -352,7 +354,7 @@ func TestRefreshRotationAndReuseDetection(t *testing.T) {
 func TestRefreshInvalidInputs(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	_, pair := e.register(t, testPhone)
+	_, pair := e.register(t, testEmail)
 	for _, tok := range []string{"", "garbage", "abc.def", "0.x", "999.secret", pair.RefreshToken + "x"} {
 		_, err := e.auth.Refresh(ctx, tok, "")
 		wantReason(t, err, v1.ErrorReason_REFRESH_TOKEN_INVALID)
@@ -366,12 +368,12 @@ func TestRefreshInvalidInputs(t *testing.T) {
 func TestLogoutAndKick(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	u, web := e.register(t, testPhone)
-	_, ios, err := e.auth.LoginByPassword(ctx, testPhone, testPass, Device{ID: "device-ios-1", Platform: 3}, "")
+	u, web := e.register(t, testEmail)
+	_, ios, err := e.auth.LoginByPassword(ctx, testEmail, testPass, Device{ID: "device-ios-1", Platform: 3}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, otherPair := e.register(t, "13800000002")
+	other, otherPair := e.register(t, "user2@example.com")
 
 	// 不能踢别人的设备，也不暴露会话是否存在
 	err = e.session.Revoke(ctx, principalOf(other, otherPair), principalOf(u, ios).SessionID)
@@ -401,11 +403,11 @@ func TestLogoutAndKick(t *testing.T) {
 func TestBanAndUnban(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	adminUser, adminPair := e.register(t, "13800000009")
+	adminUser, adminPair := e.register(t, "admin@example.com")
 	e.users.byID[adminUser.ID].Role = RoleAdmin
 	adminUser.Role = RoleAdmin
 	admin := principalOf(adminUser, adminPair)
-	u, pair := e.register(t, testPhone)
+	u, pair := e.register(t, testEmail)
 
 	wantReason(t, e.admin.Ban(ctx, principalOf(u, pair), adminUser.ID), v1.ErrorReason_PERMISSION_DENIED)
 	wantReason(t, e.admin.Ban(ctx, admin, admin.UserID), v1.ErrorReason_PERMISSION_DENIED)
@@ -431,10 +433,10 @@ func TestBanAndUnban(t *testing.T) {
 		t.Fatalf("ban again: %v", err)
 	}
 
-	_, _, err := e.auth.LoginByPassword(ctx, testPhone, testPass, testDevice, "")
+	_, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, testDevice, "")
 	wantReason(t, err, v1.ErrorReason_USER_BANNED)
 	// 密码错误时不暴露封禁状态
-	_, _, err = e.auth.LoginByPassword(ctx, testPhone, "wrong1234", testDevice, "")
+	_, _, err = e.auth.LoginByPassword(ctx, testEmail, "wrong1234", testDevice, "")
 	wantReason(t, err, v1.ErrorReason_INVALID_CREDENTIALS)
 	_, err = e.auth.Refresh(ctx, pair.RefreshToken, "")
 	wantReason(t, err, v1.ErrorReason_REFRESH_TOKEN_INVALID)
@@ -443,7 +445,7 @@ func TestBanAndUnban(t *testing.T) {
 		t.Fatalf("unban: %v", err)
 	}
 	e.guard.failures = map[string]int{}
-	if _, _, err := e.auth.LoginByPassword(ctx, testPhone, testPass, testDevice, ""); err != nil {
+	if _, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, testDevice, ""); err != nil {
 		t.Fatalf("login after unban: %v", err)
 	}
 }
@@ -451,7 +453,7 @@ func TestBanAndUnban(t *testing.T) {
 func TestUpdateMe(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	u, _ := e.register(t, testPhone)
+	u, _ := e.register(t, testEmail)
 
 	future := time.Date(2026, 11, 19, 0, 0, 0, 0, time.UTC)
 	_, err := e.user.UpdateMe(ctx, u.ID, ProfileUpdate{SetBirthday: true, Birthday: &future})
@@ -479,4 +481,79 @@ func TestUpdateMe(t *testing.T) {
 	}
 	_, err = e.user.GetUser(ctx, 424242)
 	wantReason(t, err, v1.ErrorReason_USER_NOT_FOUND)
+}
+
+// 邮箱按小写规范化：大小写不同的写法对应同一个账号、同一组发送计数和验证码。
+func TestEmailIsNormalized(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.codes.Send(ctx, " User1@Example.COM ", PurposeRegister, ""); err != nil {
+		t.Fatal(err)
+	}
+	if e.sender.lastTo != testEmail {
+		t.Fatalf("code sent to %q, want %q", e.sender.lastTo, testEmail)
+	}
+	if e.sender.lastTTL != 5*time.Minute {
+		t.Fatalf("sender got ttl %v, want the policy code_ttl 5m", e.sender.lastTTL)
+	}
+	// 发送间隔和每日上限按规范化后的邮箱计数
+	if len(e.store.slotFor) != 1 || e.store.slotFor[0] != testEmail {
+		t.Fatalf("send slot acquired for %q, want [%q]", e.store.slotFor, testEmail)
+	}
+
+	u, _, err := e.auth.Register(ctx, RegisterInput{Email: "USER1@example.com", Code: testCode, Password: testPass, Nickname: "n", Device: testDevice})
+	if err != nil {
+		t.Fatalf("register with another case: %v", err)
+	}
+	if u.Email != testEmail {
+		t.Fatalf("stored email %q, want %q", u.Email, testEmail)
+	}
+	if _, _, err := e.auth.LoginByPassword(ctx, "user1@EXAMPLE.com", testPass, testDevice, ""); err != nil {
+		t.Fatalf("login with another case: %v", err)
+	}
+}
+
+// 节点号租约失效时注册和登录返回 503，客户端可以稍后重试；验证码不被消耗。
+func TestIDLeaseLostReturnsUnavailable(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.register(t, testEmail)
+
+	e.ids.err = idgen.ErrLeaseLost
+	_, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, testDevice, "")
+	wantReason(t, err, v1.ErrorReason_DEPENDENCY_UNAVAILABLE)
+	if kerrors.Code(err) != 503 {
+		t.Fatalf("code = %d, want 503", kerrors.Code(err))
+	}
+	if _, err := e.codes.Send(ctx, "user2@example.com", PurposeRegister, ""); err != nil {
+		t.Fatal(err)
+	}
+	in := RegisterInput{Email: "user2@example.com", Code: testCode, Password: testPass, Nickname: "n", Device: testDevice}
+	_, _, err = e.auth.Register(ctx, in)
+	wantReason(t, err, v1.ErrorReason_DEPENDENCY_UNAVAILABLE)
+
+	// 其他发号错误仍按内部错误处理
+	e.ids.err = idgen.ErrClockBackwards
+	if _, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, testDevice, ""); !errors.Is(err, idgen.ErrClockBackwards) {
+		t.Fatalf("error = %v, want ErrClockBackwards passed through", err)
+	}
+
+	e.ids.err = nil
+	if _, _, err := e.auth.Register(ctx, in); err != nil {
+		t.Fatalf("register after the lease recovered: %v", err)
+	}
+}
+
+func TestMaskEmail(t *testing.T) {
+	for in, want := range map[string]string{
+		"alice@example.com": "a***@example.com",
+		"a@b.cn":            "a***@b.cn",
+		"noat":              "***",
+		"@example.com":      "***",
+		"alice@":            "***",
+	} {
+		if got := MaskEmail(in); got != want {
+			t.Errorf("MaskEmail(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

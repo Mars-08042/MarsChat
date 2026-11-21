@@ -11,31 +11,32 @@ option go_package = "github.com/Mars-08042/MarsChat/api/account/v1;v1";
 // AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
 // 除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
 service AccountService {
-  // 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
-  rpc SendSmsCode(SendSmsCodeRequest) returns (SendSmsCodeResponse) {
+  // 发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+  // 邮箱地址去掉首尾空白并转为小写后使用。
+  rpc SendEmailCode(SendEmailCodeRequest) returns (SendEmailCodeResponse) {
     option (google.api.http) = {
-      post: "/v1/auth/sms-codes"
+      post: "/v1/auth/email-codes"
       body: "*"
     };
   }
-  // 手机号加短信验证码注册，成功后直接登录当前设备。
+  // 邮箱加验证码注册，成功后直接登录当前设备。
   rpc Register(RegisterRequest) returns (RegisterResponse) {
     option (google.api.http) = {
       post: "/v1/auth/register"
       body: "*"
     };
   }
-  // 手机号加密码登录。
+  // 邮箱加密码登录。
   rpc LoginByPassword(LoginByPasswordRequest) returns (LoginByPasswordResponse) {
     option (google.api.http) = {
       post: "/v1/auth/login/password"
       body: "*"
     };
   }
-  // 手机号加短信验证码登录。
-  rpc LoginBySms(LoginBySmsRequest) returns (LoginBySmsResponse) {
+  // 邮箱加验证码登录。
+  rpc LoginByEmailCode(LoginByEmailCodeRequest) returns (LoginByEmailCodeResponse) {
     option (google.api.http) = {
-      post: "/v1/auth/login/sms"
+      post: "/v1/auth/login/email-code"
       body: "*"
     };
   }
@@ -92,11 +93,11 @@ service AccountService {
   }
 }
 
-// 短信验证码用途，不同用途的验证码不能混用。
-enum SmsPurpose {
-  SMS_PURPOSE_UNSPECIFIED = 0;
-  SMS_PURPOSE_REGISTER = 1;
-  SMS_PURPOSE_LOGIN = 2;
+// 验证码用途，不同用途的验证码不能混用。
+enum CodePurpose {
+  CODE_PURPOSE_UNSPECIFIED = 0;
+  CODE_PURPOSE_REGISTER = 1;
+  CODE_PURPOSE_LOGIN = 2;
 }
 
 enum Platform {
@@ -151,7 +152,7 @@ message TokenPair {
 // User 是用户本人可见的完整资料。
 message User {
   int64 id = 1;
-  string phone = 2;
+  string email = 2;
   string nickname = 3;
   // media 服务的文件 ID，未设置时为空
   string avatar = 4;
@@ -164,7 +165,7 @@ message User {
   google.protobuf.Timestamp created_at = 10;
 }
 
-// UserProfile 是其他用户可见的公开资料，不含手机号。
+// UserProfile 是其他用户可见的公开资料，不含邮箱。
 message UserProfile {
   int64 id = 1;
   string nickname = 2;
@@ -185,22 +186,28 @@ message Session {
   bool current = 7;
 }
 
-message SendSmsCodeRequest {
-  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
-  SmsPurpose purpose = 2 [(buf.validate.field).enum = {
+message SendEmailCodeRequest {
+  string email = 1 [(buf.validate.field).string = {
+    email: true
+    max_len: 254
+  }];
+  CodePurpose purpose = 2 [(buf.validate.field).enum = {
     defined_only: true
     not_in: [0]
   }];
 }
 
-message SendSmsCodeResponse {
+message SendEmailCodeResponse {
   // 距离下次可以发送的秒数
   int32 cooldown_seconds = 1;
 }
 
 message RegisterRequest {
-  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
-  string sms_code = 2 [(buf.validate.field).string.pattern = "^[0-9]{6}$"];
+  string email = 1 [(buf.validate.field).string = {
+    email: true
+    max_len: 254
+  }];
+  string code = 2 [(buf.validate.field).string.pattern = "^[0-9]{6}$"];
   // 8～64 位可打印 ASCII 字符，必须同时包含字母和数字
   string password = 3 [(buf.validate.field).string.pattern = "^[!-~]{8,64}$"];
   string nickname = 4 [(buf.validate.field).string = {
@@ -216,7 +223,10 @@ message RegisterResponse {
 }
 
 message LoginByPasswordRequest {
-  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
+  string email = 1 [(buf.validate.field).string = {
+    email: true
+    max_len: 254
+  }];
   string password = 2 [(buf.validate.field).string = {
     min_len: 1
     max_len: 64
@@ -229,13 +239,16 @@ message LoginByPasswordResponse {
   TokenPair token = 2;
 }
 
-message LoginBySmsRequest {
-  string phone = 1 [(buf.validate.field).string.pattern = "^1[3-9][0-9]{9}$"];
-  string sms_code = 2 [(buf.validate.field).string.pattern = "^[0-9]{6}$"];
+message LoginByEmailCodeRequest {
+  string email = 1 [(buf.validate.field).string = {
+    email: true
+    max_len: 254
+  }];
+  string code = 2 [(buf.validate.field).string.pattern = "^[0-9]{6}$"];
   Device device = 3 [(buf.validate.field).required = true];
 }
 
-message LoginBySmsResponse {
+message LoginByEmailCodeResponse {
   User user = 1;
   TokenPair token = 2;
 }

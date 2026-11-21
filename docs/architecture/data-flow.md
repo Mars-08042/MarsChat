@@ -95,7 +95,7 @@
   - message 的业务错误原样返回：`429 RATE_LIMITED`（metadata 带 `retry_after_seconds`）、`400 VALIDATOR`、social 的拒绝原因（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）、`503 DEPENDENCY_UNAVAILABLE`（social 不可用，无法校验权限）；
   - 调用 message 失败或超时：`503 UPSTREAM_UNAVAILABLE`。结果未知，消息可能已经写入，客户端用同一个 `client_msg_id` 重发即可；
   - access 到 message 的熔断打开：`503 CIRCUITBREAKER`。请求没有发出，消息确定没有写入，客户端稍后用同一个 `client_msg_id` 重发；
-  - 单聊的第一条消息要为新会话生成 ID。Redis 停机超过节点号租约（30 秒）后发号失败，返回 `500 INTERNAL`（TD-35），消息没有写入；已有会话的发送不受影响。
+  - 单聊的第一条消息要为新会话生成 ID。Redis 停机超过节点号租约（30 秒）后发号失败，返回 `503 DEPENDENCY_UNAVAILABLE`，消息没有写入，客户端稍后用同一个 `client_msg_id` 重发；已有会话的发送不受影响。
 - access 调 message 时，连接级失败（实例在处理途中退出、连接被拒绝）会自动换实例重试一次，靠 `client_msg_id` 幂等不会存两条；message 调 social 同样重试一次。重试与熔断的规则见 [system.md](system.md#53-服务注册与发现)。
 - 会话内消息有序靠 seq：同一会话的 seq 在锁住会话行的事务内分配，连续、无空洞。
 

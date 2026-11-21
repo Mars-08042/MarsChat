@@ -21,7 +21,7 @@ func NewMySQL(c *conf.MySQL, logger *slog.Logger) (*gorm.DB, func(), error) {
 			// 只记录慢查询和错误；查不到记录是正常业务分支，不记错误日志
 			LogLevel:                  gormlogger.Warn,
 			IgnoreRecordNotFoundError: true,
-			// 日志中只打印带占位符的 SQL，避免手机号等参数落入日志
+			// 日志中只打印带占位符的 SQL，避免邮箱等参数落入日志
 			ParameterizedQueries: true,
 		}),
 		// 把唯一键冲突等驱动错误转换成 gorm.ErrDuplicatedKey 等通用错误，repo 不必依赖 MySQL 错误码

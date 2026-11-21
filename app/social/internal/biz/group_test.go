@@ -8,7 +8,31 @@ import (
 	"time"
 
 	v1 "github.com/Mars-08042/MarsChat/api/social/v1"
+	"github.com/Mars-08042/MarsChat/pkg/idgen"
 )
+
+// 节点号租约失效时，需要发号的写操作返回 503，什么都不写。
+func TestIDLeaseLostReturnsUnavailable(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.newGroup(500, 1, JoinModeApproval, nil, nil)
+	e.ids.err = idgen.ErrLeaseLost
+
+	_, err := e.groupUC.Create(ctx, 1, CreateGroupInput{Name: "g", JoinMode: JoinModeFree})
+	wantReason(t, err, v1.ErrorReason_DEPENDENCY_UNAVAILABLE.String())
+	_, err = e.friendUC.SendRequest(ctx, 1, 2, "hi")
+	wantReason(t, err, v1.ErrorReason_DEPENDENCY_UNAVAILABLE.String())
+	_, err = e.groupUC.Join(ctx, 2, 500, "hi")
+	wantReason(t, err, v1.ErrorReason_DEPENDENCY_UNAVAILABLE.String())
+	if len(e.groups.byID) != 1 || len(e.requests.byID) != 0 || len(e.joins.byID) != 0 || len(e.events.take()) != 0 {
+		t.Fatal("failed writes must not store anything or emit events")
+	}
+
+	e.ids.err = nil
+	if _, err := e.friendUC.SendRequest(ctx, 1, 2, "hi"); err != nil {
+		t.Fatalf("send request after the lease recovered: %v", err)
+	}
+}
 
 // 建群：初始成员必须是好友，数量受策略限制。
 func TestCreateGroup(t *testing.T) {

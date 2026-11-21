@@ -19,7 +19,7 @@ import (
 // userPO 对应 users 表。
 type userPO struct {
 	ID           int64 `gorm:"primaryKey;autoIncrement:false"`
-	Phone        string
+	Email        string
 	PasswordHash string
 	Nickname     string
 	Avatar       string
@@ -36,17 +36,17 @@ func (userPO) TableName() string { return "users" }
 
 func (p *userPO) toBiz() *biz.User {
 	return &biz.User{
-		ID: p.ID, Phone: p.Phone, PasswordHash: p.PasswordHash, Nickname: p.Nickname, Avatar: p.Avatar,
+		ID: p.ID, Email: p.Email, PasswordHash: p.PasswordHash, Nickname: p.Nickname, Avatar: p.Avatar,
 		Gender: p.Gender, Birthday: p.Birthday, Signature: p.Signature, Role: p.Role, Status: p.Status,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }
 
 // cachedUser 是缓存中的资料，不含密码哈希。字段变化时旧缓存按 JSON 规则解码，
-// 新增字段为零值，最多在一个 TTL 内不完整；改变字段含义时要换键名。
+// 新增字段为零值，最多在一个 TTL 内不完整；改变字段含义时要换键名（v2：账号标识从手机号换成邮箱）。
 type cachedUser struct {
 	ID        int64      `json:"id"`
-	Phone     string     `json:"phone"`
+	Email     string     `json:"email"`
 	Nickname  string     `json:"nickname"`
 	Avatar    string     `json:"avatar,omitempty"`
 	Gender    int32      `json:"gender,omitempty"`
@@ -60,7 +60,7 @@ type cachedUser struct {
 
 func newCachedUser(p *userPO) cachedUser {
 	return cachedUser{
-		ID: p.ID, Phone: p.Phone, Nickname: p.Nickname, Avatar: p.Avatar, Gender: p.Gender,
+		ID: p.ID, Email: p.Email, Nickname: p.Nickname, Avatar: p.Avatar, Gender: p.Gender,
 		Birthday: p.Birthday, Signature: p.Signature, Role: p.Role, Status: p.Status,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
@@ -68,14 +68,14 @@ func newCachedUser(p *userPO) cachedUser {
 
 func (c cachedUser) toBiz() *biz.User {
 	return &biz.User{
-		ID: c.ID, Phone: c.Phone, Nickname: c.Nickname, Avatar: c.Avatar, Gender: c.Gender,
+		ID: c.ID, Email: c.Email, Nickname: c.Nickname, Avatar: c.Avatar, Gender: c.Gender,
 		Birthday: c.Birthday, Signature: c.Signature, Role: c.Role, Status: c.Status,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 
 func userCacheKey(id int64) string {
-	return "account:user:" + strconv.FormatInt(id, 10)
+	return "account:user:v2:" + strconv.FormatInt(id, 10)
 }
 
 type userRepo struct {
@@ -107,14 +107,14 @@ func NewUserRepo(d *Data, c *conf.Cache, logger *slog.Logger) biz.UserRepo {
 
 func (r *userRepo) Create(ctx context.Context, u *biz.User) error {
 	po := &userPO{
-		ID: u.ID, Phone: u.Phone, PasswordHash: u.PasswordHash, Nickname: u.Nickname, Avatar: u.Avatar,
+		ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash, Nickname: u.Nickname, Avatar: u.Avatar,
 		Gender: u.Gender, Birthday: u.Birthday, Signature: u.Signature, Role: u.Role, Status: u.Status,
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
 	err := r.d.DB(ctx).Create(po).Error
-	// 主键是 snowflake 不会冲突，唯一键冲突只可能来自 uk_phone
+	// 主键是 snowflake 不会冲突，唯一键冲突只可能来自 uk_email
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return biz.ErrPhoneTaken
+		return biz.ErrEmailTaken
 	}
 	return err
 }
@@ -139,17 +139,17 @@ func (r *userRepo) FindByID(ctx context.Context, id int64) (*biz.User, error) {
 	return po.toBiz(), nil
 }
 
-func (r *userRepo) FindByPhone(ctx context.Context, phone string) (*biz.User, error) {
-	po, err := r.findPO(ctx, "phone = ?", phone)
+func (r *userRepo) FindByEmail(ctx context.Context, email string) (*biz.User, error) {
+	po, err := r.findPO(ctx, "email = ?", email)
 	if err != nil {
 		return nil, err
 	}
 	return po.toBiz(), nil
 }
 
-func (r *userRepo) ExistsByPhone(ctx context.Context, phone string) (bool, error) {
+func (r *userRepo) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	var ids []int64
-	err := r.d.DB(ctx).Model(&userPO{}).Where("phone = ?", phone).Limit(1).Pluck("id", &ids).Error
+	err := r.d.DB(ctx).Model(&userPO{}).Where("email = ?", email).Limit(1).Pluck("id", &ids).Error
 	return len(ids) > 0, err
 }
 

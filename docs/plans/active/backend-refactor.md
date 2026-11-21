@@ -130,8 +130,8 @@
 设计：[account-service.md](../../design/account-service.md)。
 
 - [x] 从步骤 1 移入的公共能力：接口 proto 生成（gRPC、HTTP、OpenAPI）、buf breaking 检查（CI）、protovalidate、错误码、snowflake ID（节点号用 Redis 租约分配）、按服务分库的 SQL 迁移（`migrate/migrate` 镜像）、带三类防护的缓存组件、Redis 限流组件。另外新增 `pkg/jsoncodec`（HTTP 按 protobuf JSON 收发）和 `pkg/middleware/accesslog`（不记录请求体的访问日志）。
-- [x] 手机号加短信验证码注册；密码登录与短信验证码登录；刷新令牌、退出、个人资料、设备列表与踢设备、管理员封禁与解封。
-- [ ] 短信：开发环境只写日志的发送方已实现；验证码存 Redis，加上发送间隔、每日上限、按 IP 限流、验证次数上限，验证后立即失效，限额可热更新。**阿里云短信未实现**（没有 AccessKey，TD-24）。
+- [x] 手机号加短信验证码注册；密码登录与短信验证码登录（2026-11-20 改为邮箱，见下方“插入任务：邮箱验证码”）；刷新令牌、退出、个人资料、设备列表与踢设备、管理员封禁与解封。
+- [x] 短信（2026-11-20 改为邮箱验证码，SMTP 发送方已实现）：开发环境只写日志的发送方已实现；验证码存 Redis，加上发送间隔、每日上限、按 IP 限流、验证次数上限，验证后立即失效，限额可热更新。**阿里云短信未实现**（没有 AccessKey，TD-24）。
 - [x] 密码用 bcrypt 哈希；JWT（Ed25519）访问令牌加按设备签发的刷新令牌（使用后轮换、重放检测）；退出、踢设备和封禁时写入 Redis 吊销名单；公共 JWT 中间件在 `pkg/auth`。
 - [x] 用户资料缓存接入缓存组件，加布隆过滤器；封禁和踢设备时写 Outbox 事件（发布器在步骤 4 实现）。
 - [x] 验证：单元测试；HTTP 接口冒烟测试；e2e 覆盖完整流程与短信限流。
@@ -225,7 +225,7 @@
 
 步骤 1 已完成（2026-11-18），提交 `6685aae`。
 
-步骤 2 已完成（2026-11-18），提交 `bfe2778`，阿里云短信除外（TD-24）。设计 [account-service.md](../../design/account-service.md) 已采纳，实施中的调整记在其第 8 节。验证：`buf lint`、`go vet`、`go build`、`go test -race ./...`、`make e2e`（6 个用例）通过，关键查询 `EXPLAIN` 已核对。
+步骤 2 已完成（2026-11-18），提交 `bfe2778`，阿里云短信除外（TD-24；2026-11-20 改为邮箱验证码后不再适用）。设计 [account-service.md](../../design/account-service.md) 已采纳，实施中的调整记在其第 8 节。验证：`buf lint`、`go vet`、`go build`、`go test -race ./...`、`make e2e`（6 个用例）通过，关键查询 `EXPLAIN` 已核对。
 
 步骤 3 已完成（2026-11-19），提交 `edf0492`。设计 [social-service.md](../../design/social-service.md) 已采纳（第 8 节的 7 个问题均按推荐方案确认），实施中的调整记在其第 9 节。验证：`buf lint`、`go vet`（含 `e2e` 标签）、`go build`、`go test -race ./...`、`make gen` 后无差异、`make e2e`（17 个用例，连续两次）通过，`EXPLAIN` 已在造数据的临时库中核对。
 
@@ -249,7 +249,16 @@
 - [x] 4. 消费韧性与通知：死信队列与重试队列（TD-30）、social 实时通知（2026-11-20：`go test -race ./...` 27 个包通过；宿主机模式 e2e 32 项通过，新增重试队列与死信队列往返、好友与群通知；`make cluster-test` 6 项通过。TD-30 已解决；没有新增 `Ordered` 字段，见设计第 9 节）
 - [x] 5. 故障实验与文档（2026-11-20：`make cluster-test` 13 项通过，含 7 项故障实验，结果见[故障实验结果](#故障实验结果)；Redis 故障实验发现停机后拨号把每条命令拖到几秒，`pkg/bootstrap` 加拨号保护后通过，见 [lessons/redis-dial-stall-docker-dns.md](../../lessons/redis-dial-stall-docker-dns.md)；新增 TD-35、TD-36）
 
-步骤 5 已完成（2026-11-20），提交 `1f8e77e`（第 1～3 段）、`52eb184`（第 4 段）及第 5 段的提交。实施中的调整记在设计第 9 节。验证：`buf lint`、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go test -race ./...`、宿主机模式 `make e2e`、容器模式 `make cluster-test` 通过。
+步骤 5 已完成（2026-11-20），提交 `1f8e77e`（第 1～3 段）、`52eb184`（第 4 段）、`7d20975`（第 5 段）。实施中的调整记在设计第 9 节。验证：`buf lint`、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go test -race ./...`、宿主机模式 `make e2e`、容器模式 `make cluster-test` 通过。
+
+插入任务：邮箱验证码（2026-11-20）。个人认证的阿里云账号无法申请短信签名（TD-24），开发者决定账号标识改为邮箱、验证码经 SMTP 发到个人邮箱。设计 [email-verification.md](../../design/email-verification.md) 已采纳（第 8 节的 5 个问题均按推荐方案确认），顺带修复 TD-35、TD-36、TD-29：
+
+- [x] 1. 接口：`SendEmailCode`、`LoginByEmailCode`，请求字段 `email`、`code`，枚举 `CodePurpose`，错误原因改名并新增 `DEPENDENCY_UNAVAILABLE`
+- [x] 2. account：邮箱规范化与脱敏，Redis 键改名，用户缓存键 `account:user:v2:`，`smtp` 发送方（标准库，隐式 TLS 或 STARTTLS，截止时间不超过请求剩余时间，拒绝保留域名），假 SMTP 服务器单元测试
+- [x] 3. 迁移 `000002_email`（开发库 up → down 1 → up 往返通过，553 行填入占位邮箱）；`grant-admin` 改为按邮箱
+- [x] 4. 技术债：TD-35（发号失败返回 503，访问日志 503 记 WARN）、TD-36（go-redis 内部日志转到 `slog`）、TD-29（同意好友申请时检查拉黑）
+- [x] 5. 文档：features、user-auth、contact、data-model、deployment、system、data-flow、account 与 social 设计、tech-debt
+- [x] 6. 验证（2026-11-20）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go test -race ./...`（27 个包）通过；宿主机模式 e2e 32 项通过，五个服务日志无 ERROR；重建镜像后 `make cluster-test` 13 项通过（含 7 项故障实验），全部应用容器无 ERROR、无 go-redis 纯文本日志；Redis 停机 60 秒实验中需要发号的写操作全部返回 `503 DEPENDENCY_UNAVAILABLE`（实验新增了这条断言，单独重跑通过：18 次，两个 message 实例各 9 次）；`grant-admin` 手动验证成功（邮箱大小写混写）、邮箱不存在、非法输入三种情况。真实发信：容器模式经网关向开发者的邮箱发送注册码和登录码各一封（1.53 秒、1.18 秒），完成注册、密码登录和邮箱验证码登录，验证码一次性使用；首次按 465 端口发送因 TLS 被截获失败，改用 587，见 [lessons/smtp-465-tls-interception.md](../../lessons/smtp-465-tls-interception.md)
 
 下一步：步骤 6（media 服务）。开始前先写设计文档，重点是 MinIO 的部署与端口、上传大小和类型限制、下载权限校验、缩略图处理（可复用第 4 段的重试队列与死信队列）。
 
@@ -270,14 +279,14 @@
 | 杀掉持有 Outbox 租约的 message | 另一个实例 8.0～11.1 秒后接手：租约 TTL 10 秒，从最后一次续期（每 3 秒一次）起算，非持有者每 0.5 秒尝试获取一次，再加上 kill 命令本身的耗时。推送最长延迟与接手耗时一致；没有重复推送 |
 | 暂停 Kafka 30 秒 | 暂停期间 30 次发送全部确认（事件留在 Outbox）；恢复后 1.5～4.3 秒追平，按顺序推送 |
 | 停掉 Redis 20 秒 | 停机期间 18～19 次发送全部确认（限流、吊销检查放行）；25 条中 22 条经推送到达（Redis 恢复后积压的事件发布），3 条只经补拉（停机期间 delivery 查不到在线路由） |
-| 停掉 Redis 60 秒 | 已有会话的 62 次发送全部成功，它们不需要发号。需要发号的写操作（给新好友发第一条消息，要新建会话）最后一次成功在停机后 27.9 秒，第一次失败在 30.3 秒（节点号租约 TTL 30 秒），失败返回 `500 INTERNAL`（TD-35）；两个 message 实例分别拒绝 8 次和 7 次。Redis 恢复后 3.8 秒恢复发号，两个 message 实例、account、social 各换用一次新节点号（TD-34 的修复）；恢复后注册和好友申请正常 |
+| 停掉 Redis 60 秒 | 已有会话的 62 次发送全部成功，它们不需要发号。需要发号的写操作（给新好友发第一条消息，要新建会话）最后一次成功在停机后 27.9 秒，第一次失败在 30.3 秒（节点号租约 TTL 30 秒），失败返回 `500 INTERNAL`（TD-35，2026-11-20 改为 `503 DEPENDENCY_UNAVAILABLE`）；两个 message 实例分别拒绝 8 次和 7 次。Redis 恢复后 3.8 秒恢复发号，两个 message 实例、account、social 各换用一次新节点号（TD-34 的修复）；恢复后注册和好友申请正常 |
 
 问题与处理：
 
 - 跨实例推送延迟呈两极分布（第 2 段发现）：事务提交后的立即唤醒只在本进程有效。第 3 段加入经 Redis 发布订阅的跨实例唤醒。
 - Redis 停机约 3 秒后发送开始失败（本段发现）：拨号把每条命令拖到几秒，见“遇到的问题”。修复前的数据：停机 20 秒的实验中，发送在 10 秒内没有得到确认（`503 UPSTREAM_UNAVAILABLE`）。
 - 60 秒实验的预期写得不准：设计写的是“发号失败，写操作返回错误”，但 message 只有新建单聊会话时才发号，已有会话里发消息不受影响。实验改为分别验证这两类写操作。
-- 新增 TD-35（发号失败返回 500 并记 ERROR）、TD-36（go-redis 内部日志是纯文本，故障期间每次拨号失败一行）。
+- 新增 TD-35（发号失败返回 500 并记 ERROR）、TD-36（go-redis 内部日志是纯文本，故障期间每次拨号失败一行）。两项已在 2026-11-20 的邮箱验证码任务中解决。
 
 ## 遇到的问题
 
@@ -287,6 +296,7 @@
 - 2026-11-18：`make run-account` 报 `unexpected EOF while looking for matching '"'`。GnuWin32 make 3.81 按 GBK 代码页把命令行传给 sh，echo 中文提示的 UTF-8 字节和相邻引号组成了非法字符，引号丢失。Makefile 的命令行改为只用 ASCII，并加了注释。
 - 2026-11-18：account 的 HTTP 接口不接受枚举名字、int64 输出为数字。Kratos v3 的 `json` codec 改为纯标准库实现，不再按 protobuf JSON 处理 proto 消息。新增 `pkg/jsoncodec` 覆盖注册，见 [lessons/kratos-v3-server-defaults.md](../../lessons/kratos-v3-server-defaults.md)。
 - 2026-11-18：Kratos 自带的 `logging` 中间件会把请求体（含密码、验证码、刷新令牌）写进日志，`recovery` 记录 panic 时也打印请求体；非 Kratos 错误的原文会返回给客户端。改用自己实现的 `pkg/middleware/accesslog`，见同一篇 lesson。
+- 2026-11-20：真实发信时 465 端口报 `certificate signed by unknown authority`。开发机到 `smtp.qq.com:465`、`smtp.163.com:465` 的 TLS 连接被截获，拿到的是名为 `Public Certificate` 的自签证书，587（STARTTLS）与 HTTPS 正常。改用 587，见 [lessons/smtp-465-tls-interception.md](../../lessons/smtp-465-tls-interception.md)。
 - 2026-11-19：补 TD-27 的布隆过滤器集成测试时发现，`BF.EXISTS` 在 go-redis v9 默认的 RESP3 下返回布尔值，原代码按整数读取，读取失败后放行，account 的用户 ID 过滤器从步骤 2 起没有拦截过任何 ID。已改用 `Cmd.Bool()` 并在解析失败时记 WARN，见 [lessons/redis-resp3-reply-types.md](../../lessons/redis-resp3-reply-types.md)。
 
 - 2026-11-20：Redis 故障实验中，停掉 Redis 约 3 秒后发消息开始失败，而设计预期 20 秒内照常成功。容器停止后服务名从 Docker DNS 中消失，每次解析约 1 秒才失败；go-redis v9.23 默认单次拨号重试 5 次、命令重试 3 次，一条命令就用完了调用方的截止时间，限流的“失败放行”来不及生效。`pkg/bootstrap.NewRedis` 加拨号保护并关闭单次拨号内的重试，见 [lessons/redis-dial-stall-docker-dns.md](../../lessons/redis-dial-stall-docker-dns.md)。

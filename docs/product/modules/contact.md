@@ -25,7 +25,7 @@ social 服务的好友与拉黑部分，设计与规则细节见 [social-service
 |---|---|---|
 | `SendFriendRequest` | `POST /v1/friend-requests` | `userId`、`message`；返回待处理申请，或 `becameFriends = true` |
 | `ListReceivedFriendRequests` / `ListSentFriendRequests` | `GET /v1/friend-requests/received`、`/sent` | 收到的只有待处理的，发出的含全部状态；`peer` 为对方资料 |
-| `AcceptFriendRequest` / `RejectFriendRequest` | `POST /v1/friend-requests/{request_id}/accept`、`/reject` | 仅接收方 |
+| `AcceptFriendRequest` / `RejectFriendRequest` | `POST /v1/friend-requests/{request_id}/accept`、`/reject` | 仅接收方；同意时任一方已拉黑对方，申请改为已失效并返回 `403 FRIEND_REQUEST_NOT_ALLOWED` |
 | `ListFriends` | `GET /v1/friends` | 带资料 |
 | `DeleteFriend` | `DELETE /v1/friends/{user_id}` | 幂等 |
 | `BlockUser` / `UnblockUser` / `ListBlockedUsers` | `POST /v1/blocks`、`DELETE /v1/blocks/{user_id}`、`GET /v1/blocks` | 幂等 |

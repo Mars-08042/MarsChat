@@ -14,7 +14,7 @@ import (
 type AccountService struct {
 	v1.UnimplementedAccountServiceServer
 
-	sms      *biz.SmsUsecase
+	codes    *biz.CodeUsecase
 	auth     *biz.AuthUsecase
 	users    *biz.UserUsecase
 	sessions *biz.SessionUsecase
@@ -23,23 +23,23 @@ type AccountService struct {
 }
 
 // NewAccountService 创建对外服务。
-func NewAccountService(sms *biz.SmsUsecase, auth *biz.AuthUsecase, users *biz.UserUsecase,
+func NewAccountService(codes *biz.CodeUsecase, auth *biz.AuthUsecase, users *biz.UserUsecase,
 	sessions *biz.SessionUsecase, admin *biz.AdminUsecase, ip *clientip.Resolver) *AccountService {
-	return &AccountService{sms: sms, auth: auth, users: users, sessions: sessions, admin: admin, ip: ip}
+	return &AccountService{codes: codes, auth: auth, users: users, sessions: sessions, admin: admin, ip: ip}
 }
 
-func (s *AccountService) SendSmsCode(ctx context.Context, req *v1.SendSmsCodeRequest) (*v1.SendSmsCodeResponse, error) {
-	cooldown, err := s.sms.Send(ctx, req.GetPhone(), int32(req.GetPurpose()), s.ip.FromContext(ctx))
+func (s *AccountService) SendEmailCode(ctx context.Context, req *v1.SendEmailCodeRequest) (*v1.SendEmailCodeResponse, error) {
+	cooldown, err := s.codes.Send(ctx, req.GetEmail(), int32(req.GetPurpose()), s.ip.FromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
-	return &v1.SendSmsCodeResponse{CooldownSeconds: int32(math.Ceil(cooldown.Seconds()))}, nil
+	return &v1.SendEmailCodeResponse{CooldownSeconds: int32(math.Ceil(cooldown.Seconds()))}, nil
 }
 
 func (s *AccountService) Register(ctx context.Context, req *v1.RegisterRequest) (*v1.RegisterResponse, error) {
 	u, pair, err := s.auth.Register(ctx, biz.RegisterInput{
-		Phone:    req.GetPhone(),
-		Code:     req.GetSmsCode(),
+		Email:    req.GetEmail(),
+		Code:     req.GetCode(),
 		Password: req.GetPassword(),
 		Nickname: req.GetNickname(),
 		Device:   toDevice(req.GetDevice()),
@@ -52,19 +52,19 @@ func (s *AccountService) Register(ctx context.Context, req *v1.RegisterRequest) 
 }
 
 func (s *AccountService) LoginByPassword(ctx context.Context, req *v1.LoginByPasswordRequest) (*v1.LoginByPasswordResponse, error) {
-	u, pair, err := s.auth.LoginByPassword(ctx, req.GetPhone(), req.GetPassword(), toDevice(req.GetDevice()), s.ip.FromContext(ctx))
+	u, pair, err := s.auth.LoginByPassword(ctx, req.GetEmail(), req.GetPassword(), toDevice(req.GetDevice()), s.ip.FromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
 	return &v1.LoginByPasswordResponse{User: toUser(u), Token: toTokenPair(pair, time.Now())}, nil
 }
 
-func (s *AccountService) LoginBySms(ctx context.Context, req *v1.LoginBySmsRequest) (*v1.LoginBySmsResponse, error) {
-	u, pair, err := s.auth.LoginBySms(ctx, req.GetPhone(), req.GetSmsCode(), toDevice(req.GetDevice()), s.ip.FromContext(ctx))
+func (s *AccountService) LoginByEmailCode(ctx context.Context, req *v1.LoginByEmailCodeRequest) (*v1.LoginByEmailCodeResponse, error) {
+	u, pair, err := s.auth.LoginByEmailCode(ctx, req.GetEmail(), req.GetCode(), toDevice(req.GetDevice()), s.ip.FromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
-	return &v1.LoginBySmsResponse{User: toUser(u), Token: toTokenPair(pair, time.Now())}, nil
+	return &v1.LoginByEmailCodeResponse{User: toUser(u), Token: toTokenPair(pair, time.Now())}, nil
 }
 
 func (s *AccountService) RefreshToken(ctx context.Context, req *v1.RefreshTokenRequest) (*v1.RefreshTokenResponse, error) {

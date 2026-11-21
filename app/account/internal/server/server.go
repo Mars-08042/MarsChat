@@ -22,11 +22,11 @@ type Middlewares []middleware.Middleware
 
 // 不需要登录的接口。AccountInternalService 只在内网 gRPC 上提供，也不经过令牌校验
 var publicOperations = map[string]bool{
-	v1.OperationAccountServiceSendSmsCode:     true,
-	v1.OperationAccountServiceRegister:        true,
-	v1.OperationAccountServiceLoginByPassword: true,
-	v1.OperationAccountServiceLoginBySms:      true,
-	v1.OperationAccountServiceRefreshToken:    true,
+	v1.OperationAccountServiceSendEmailCode:    true,
+	v1.OperationAccountServiceRegister:         true,
+	v1.OperationAccountServiceLoginByPassword:  true,
+	v1.OperationAccountServiceLoginByEmailCode: true,
+	v1.OperationAccountServiceRefreshToken:     true,
 }
 
 // requiresAuth 用白名单表示公开接口：AccountService 新增的接口默认需要登录，忘记配置时是安全的一侧。

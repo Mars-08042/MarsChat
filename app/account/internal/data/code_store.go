@@ -11,7 +11,7 @@ import (
 )
 
 // 每日计数键名带日期，自然换天；TTL 只用于清理，取 25 小时覆盖时区边界
-const smsDailyTTL = 25 * time.Hour
+const dailyTTL = 25 * time.Hour
 
 // acquireSlotScript 原子地检查冷却和当日上限，通过时设置冷却并计数。
 // 返回 {结果, 剩余冷却毫秒}：0 通过、1 冷却中、2 达到当日上限。
@@ -47,38 +47,38 @@ if redis.call('HINCRBY', KEYS[1], 'n', 1) >= tonumber(ARGV[2]) then
 end
 return 2`)
 
-type smsCodeStore struct{ rdb *redis.Client }
+type codeStore struct{ rdb *redis.Client }
 
-// NewSmsCodeStore 创建验证码存储。
-func NewSmsCodeStore(rdb *redis.Client) biz.SmsCodeStore {
-	return &smsCodeStore{rdb: rdb}
+// NewCodeStore 创建验证码存储。
+func NewCodeStore(rdb *redis.Client) biz.CodeStore {
+	return &codeStore{rdb: rdb}
 }
 
-func smsCodeKey(purpose int32, phone string) string {
-	return "account:sms:code:" + strconv.Itoa(int(purpose)) + ":" + phone
+func codeKey(purpose int32, email string) string {
+	return "account:email_code:code:" + strconv.Itoa(int(purpose)) + ":" + email
 }
 
-func smsCooldownKey(phone string) string { return "account:sms:cooldown:" + phone }
+func cooldownKey(email string) string { return "account:email_code:cooldown:" + email }
 
-func smsDailyKey(phone, day string) string { return "account:sms:daily:" + phone + ":" + day }
+func dailyKey(email, day string) string { return "account:email_code:daily:" + email + ":" + day }
 
-func (s *smsCodeStore) AcquireSendSlot(ctx context.Context, phone, day string, interval time.Duration, dailyLimit int) (biz.SlotResult, time.Duration, error) {
+func (s *codeStore) AcquireSendSlot(ctx context.Context, email, day string, interval time.Duration, dailyLimit int) (biz.SlotResult, time.Duration, error) {
 	res, err := acquireSlotScript.Run(ctx, s.rdb,
-		[]string{smsCooldownKey(phone), smsDailyKey(phone, day)},
-		interval.Milliseconds(), dailyLimit, smsDailyTTL.Milliseconds()).Int64Slice()
+		[]string{cooldownKey(email), dailyKey(email, day)},
+		interval.Milliseconds(), dailyLimit, dailyTTL.Milliseconds()).Int64Slice()
 	if err != nil {
 		return 0, 0, err
 	}
 	return biz.SlotResult(res[0]), time.Duration(res[1]) * time.Millisecond, nil
 }
 
-func (s *smsCodeStore) ReleaseSendSlot(ctx context.Context, phone, day string) error {
-	return releaseSlotScript.Run(ctx, s.rdb, []string{smsCooldownKey(phone), smsDailyKey(phone, day)}).Err()
+func (s *codeStore) ReleaseSendSlot(ctx context.Context, email, day string) error {
+	return releaseSlotScript.Run(ctx, s.rdb, []string{cooldownKey(email), dailyKey(email, day)}).Err()
 }
 
 // SaveCode 覆盖旧验证码，错误次数随之清零；重新获取受发送间隔限制，不会被用来绕过次数上限。
-func (s *smsCodeStore) SaveCode(ctx context.Context, purpose int32, phone, codeHash string, ttl time.Duration) error {
-	key := smsCodeKey(purpose, phone)
+func (s *codeStore) SaveCode(ctx context.Context, purpose int32, email, codeHash string, ttl time.Duration) error {
+	key := codeKey(purpose, email)
 	_, err := s.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.Del(ctx, key)
 		pipe.HSet(ctx, key, "h", codeHash, "n", 0)
@@ -88,12 +88,12 @@ func (s *smsCodeStore) SaveCode(ctx context.Context, purpose int32, phone, codeH
 	return err
 }
 
-func (s *smsCodeStore) DeleteCode(ctx context.Context, purpose int32, phone string) error {
-	return s.rdb.Del(ctx, smsCodeKey(purpose, phone)).Err()
+func (s *codeStore) DeleteCode(ctx context.Context, purpose int32, email string) error {
+	return s.rdb.Del(ctx, codeKey(purpose, email)).Err()
 }
 
-func (s *smsCodeStore) VerifyCode(ctx context.Context, purpose int32, phone, codeHash string, maxAttempts int) (biz.VerifyResult, error) {
-	n, err := verifyCodeScript.Run(ctx, s.rdb, []string{smsCodeKey(purpose, phone)}, codeHash, maxAttempts).Int64()
+func (s *codeStore) VerifyCode(ctx context.Context, purpose int32, email, codeHash string, maxAttempts int) (biz.VerifyResult, error) {
+	n, err := verifyCodeScript.Run(ctx, s.rdb, []string{codeKey(purpose, email)}, codeHash, maxAttempts).Int64()
 	if err != nil {
 		return 0, err
 	}

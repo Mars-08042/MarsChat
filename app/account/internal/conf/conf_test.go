@@ -34,8 +34,8 @@ func TestConfigFileParses(t *testing.T) {
 		// 不打印整个配置，DSN 里可能带密码
 		t.Error("config not fully loaded: server.grpc.addr, mysql.dsn or redis.addr is empty")
 	}
-	if got := bc.GetPolicy().GetSms().GetDailyLimitPerPhone(); got != 10 {
-		t.Errorf("policy.sms.daily_limit_per_phone = %d, want 10", got)
+	if got := bc.GetPolicy().GetEmailCode().GetDailyLimitPerEmail(); got != 10 {
+		t.Errorf("policy.email_code.daily_limit_per_email = %d, want 10", got)
 	}
 	if bc.GetToken().GetRevocationTtl().AsDuration() < bc.GetToken().GetAccessTtl().AsDuration() {
 		t.Error("token.revocation_ttl must cover token.access_ttl")
@@ -80,21 +80,21 @@ func TestPolicyHotReload(t *testing.T) {
 		}
 	}
 
-	rewrite("daily_limit_per_phone: 10", "daily_limit_per_phone: 3")
+	rewrite("daily_limit_per_email: 10", "daily_limit_per_email: 3")
 	select {
 	case p := <-applied:
-		if got := p.GetSms().GetDailyLimitPerPhone(); got != 3 {
-			t.Fatalf("reloaded daily_limit_per_phone = %d, want 3", got)
+		if got := p.GetEmailCode().GetDailyLimitPerEmail(); got != 3 {
+			t.Fatalf("reloaded daily_limit_per_email = %d, want 3", got)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("policy not reloaded within 5s")
 	}
 
 	// 非法值（必须大于 0）不应用
-	rewrite("daily_limit_per_phone: 10", "daily_limit_per_phone: 0")
+	rewrite("daily_limit_per_email: 10", "daily_limit_per_email: 0")
 	select {
 	case p := <-applied:
-		t.Fatalf("invalid policy applied: daily_limit_per_phone = %d", p.GetSms().GetDailyLimitPerPhone())
+		t.Fatalf("invalid policy applied: daily_limit_per_email = %d", p.GetEmailCode().GetDailyLimitPerEmail())
 	case <-time.After(2 * time.Second):
 	}
 	// 确认确实触发了重新加载并被校验拦下，而不是根本没有收到文件变化

@@ -89,8 +89,8 @@ func TestDeliveryGroupPush(t *testing.T) {
 // 封禁经 UserBanned 事件立即踢掉连接，不必等下一次心跳（心跳路径的原因是 UNSPECIFIED）。
 func TestDeliveryKickOnBan(t *testing.T) {
 	resetRateLimits(t)
-	admin := grantAdmin(t, register(t, randomPhone(t), "e2e-admin-ws"))
-	target := register(t, randomPhone(t), "e2e-target-ws")
+	admin := grantAdmin(t, register(t, randomEmail(t), "e2e-admin-ws"))
+	target := register(t, randomEmail(t), "e2e-target-ws")
 	c := dialWS(t)
 	c.Auth(target.token.GetAccessToken())
 

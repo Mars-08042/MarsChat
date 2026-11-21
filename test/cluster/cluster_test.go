@@ -81,8 +81,8 @@ type user struct {
 
 func newUser(t *testing.T) user {
 	t.Helper()
-	phone := testkit.RandomPhone(t)
-	s := testkit.Register(t, gatewayHTTP, phone, "cluster-"+phone)
+	email := testkit.RandomEmail(t)
+	s := testkit.Register(t, gatewayHTTP, email, "cluster-"+testkit.LocalPart(email))
 	return user{id: s.User.GetId(), token: s.Token.GetAccessToken()}
 }
 

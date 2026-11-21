@@ -10,6 +10,7 @@ import (
 	"github.com/google/wire"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/Mars-08042/MarsChat/pkg/idgen"
 	"github.com/Mars-08042/MarsChat/pkg/kafka"
 	"github.com/Mars-08042/MarsChat/pkg/ratelimit"
 )
@@ -17,7 +18,7 @@ import (
 // ProviderSet 是 biz 层的依赖提供者。
 var ProviderSet = wire.NewSet(
 	NewTokenService,
-	NewSmsUsecase,
+	NewCodeUsecase,
 	NewAuthUsecase,
 	NewUserUsecase,
 	NewSessionUsecase,
@@ -30,7 +31,7 @@ const TopicAccountEvents = kafka.TopicAccountEvents
 // 数据层返回的通用错误，由用例转换成对外的业务错误。
 var (
 	ErrNotFound   = errors.New("not found")
-	ErrPhoneTaken = errors.New("phone already registered")
+	ErrEmailTaken = errors.New("email already registered")
 )
 
 // 取值与 account.v1 中的枚举一致，数据库直接存这些数值。
@@ -45,7 +46,7 @@ const (
 // User 是用户。从缓存读取时不包含 PasswordHash。
 type User struct {
 	ID           int64
-	Phone        string
+	Email        string
 	PasswordHash string
 	Nickname     string
 	Avatar       string
@@ -100,11 +101,11 @@ type Transaction interface {
 
 // UserRepo 是用户存储。Find* 直接查数据库，Get* 经过缓存。
 type UserRepo interface {
-	// Create 创建用户，手机号已存在时返回 ErrPhoneTaken
+	// Create 创建用户，邮箱已存在时返回 ErrEmailTaken
 	Create(ctx context.Context, u *User) error
 	FindByID(ctx context.Context, id int64) (*User, error)
-	FindByPhone(ctx context.Context, phone string) (*User, error)
-	ExistsByPhone(ctx context.Context, phone string) (bool, error)
+	FindByEmail(ctx context.Context, email string) (*User, error)
+	ExistsByEmail(ctx context.Context, email string) (bool, error)
 	UpdateProfile(ctx context.Context, id int64, upd ProfileUpdate, now time.Time) error
 	// SetStatus 修改状态，返回是否真的发生了变化
 	SetStatus(ctx context.Context, id int64, status int32, now time.Time) (bool, error)
@@ -139,7 +140,7 @@ type EventRepo interface {
 	Add(ctx context.Context, topic, key string, msg proto.Message, now time.Time) error
 }
 
-// SlotResult 是占用短信发送名额的结果。
+// SlotResult 是占用验证码发送名额的结果。
 type SlotResult int
 
 const (
@@ -160,24 +161,24 @@ const (
 	VerifyExhausted
 )
 
-// SmsCodeStore 保存验证码和发送计数。
-type SmsCodeStore interface {
+// CodeStore 保存验证码和发送计数。
+type CodeStore interface {
 	// AcquireSendSlot 检查发送间隔和当日上限，通过时设置冷却并计数；因发送间隔被拒绝时返回剩余冷却时间
-	AcquireSendSlot(ctx context.Context, phone, day string, interval time.Duration, dailyLimit int) (SlotResult, time.Duration, error)
-	// ReleaseSendSlot 撤销一次占用（短信发送失败时）
-	ReleaseSendSlot(ctx context.Context, phone, day string) error
-	SaveCode(ctx context.Context, purpose int32, phone string, codeHash string, ttl time.Duration) error
-	DeleteCode(ctx context.Context, purpose int32, phone string) error
+	AcquireSendSlot(ctx context.Context, email, day string, interval time.Duration, dailyLimit int) (SlotResult, time.Duration, error)
+	// ReleaseSendSlot 撤销一次占用（邮件发送失败时）
+	ReleaseSendSlot(ctx context.Context, email, day string) error
+	SaveCode(ctx context.Context, purpose int32, email string, codeHash string, ttl time.Duration) error
+	DeleteCode(ctx context.Context, purpose int32, email string) error
 	// VerifyCode 原子地比对并累计错误次数，成功或作废时删除验证码
-	VerifyCode(ctx context.Context, purpose int32, phone string, codeHash string, maxAttempts int) (VerifyResult, error)
+	VerifyCode(ctx context.Context, purpose int32, email string, codeHash string, maxAttempts int) (VerifyResult, error)
 }
 
 // LoginGuard 记录密码错误次数，防止暴力破解。
 type LoginGuard interface {
 	// Locked 判断是否处于锁定状态，返回剩余锁定时间
-	Locked(ctx context.Context, phone string, maxFailures int) (bool, time.Duration, error)
-	RecordFailure(ctx context.Context, phone string, maxFailures int, window, lock time.Duration) error
-	Reset(ctx context.Context, phone string) error
+	Locked(ctx context.Context, email string, maxFailures int) (bool, time.Duration, error)
+	RecordFailure(ctx context.Context, email string, maxFailures int, window, lock time.Duration) error
+	Reset(ctx context.Context, email string) error
 }
 
 // RateLimiter 是按键的滑动窗口限流。
@@ -185,14 +186,24 @@ type RateLimiter interface {
 	Allow(ctx context.Context, key string, limit int, window time.Duration) (ratelimit.Result, error)
 }
 
-// SmsSender 发送短信验证码。
-type SmsSender interface {
-	Send(ctx context.Context, phone, code string, purpose int32) error
+// CodeSender 把验证码发到用户邮箱，ttl 是验证码的有效期，写进邮件正文。
+type CodeSender interface {
+	Send(ctx context.Context, email, code string, purpose int32, ttl time.Duration) error
 }
 
 // IDGenerator 生成全局唯一 ID。
 type IDGenerator interface {
 	NextID() (int64, error)
+}
+
+// nextID 分配 ID。节点号租约失效（Redis 长时间不可达）是可预期、可恢复的依赖故障，返回 503 让客户端稍后重试，
+// 不当作内部错误；租约的丢失与恢复由 idgen 自己记日志。
+func nextID(ids IDGenerator) (int64, error) {
+	id, err := ids.NextID()
+	if errors.Is(err, idgen.ErrLeaseLost) {
+		return 0, ErrDependencyUnavailable()
+	}
+	return id, err
 }
 
 // Revoker 写入吊销名单，所有服务据此拒绝已吊销的访问令牌。

@@ -33,7 +33,7 @@ type Bootstrap struct {
 	Log      *conf.Log              `protobuf:"bytes,5,opt,name=log,proto3" json:"log,omitempty"`
 	Auth     *conf.Auth             `protobuf:"bytes,6,opt,name=auth,proto3" json:"auth,omitempty"`
 	Token    *Token                 `protobuf:"bytes,7,opt,name=token,proto3" json:"token,omitempty"`
-	Sms      *Sms                   `protobuf:"bytes,8,opt,name=sms,proto3" json:"sms,omitempty"`
+	Mail     *Mail                  `protobuf:"bytes,8,opt,name=mail,proto3" json:"mail,omitempty"`
 	// 可热更新，见 Policy
 	Policy        *Policy      `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
 	Security      *Security    `protobuf:"bytes,10,opt,name=security,proto3" json:"security,omitempty"`
@@ -123,9 +123,9 @@ func (x *Bootstrap) GetToken() *Token {
 	return nil
 }
 
-func (x *Bootstrap) GetSms() *Sms {
+func (x *Bootstrap) GetMail() *Mail {
 	if x != nil {
-		return x.Sms
+		return x.Mail
 	}
 	return nil
 }
@@ -254,31 +254,33 @@ func (x *Token) GetRevocationTtl() *durationpb.Duration {
 	return nil
 }
 
-// Sms 是短信发送方的配置，修改后需要重启。
-type Sms struct {
+// Mail 是验证码邮件发送方的配置，修改后需要重启。
+type Mail struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目前只有 log：只写日志，不真正发送
+	// log：只写日志，不真正发送，用于开发和测试；smtp：经 SMTP 服务器发送
 	Provider string `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
-	// 固定验证码，仅供开发和 e2e 测试；为空时随机生成
-	FixedCode     string `protobuf:"bytes,2,opt,name=fixed_code,json=fixedCode,proto3" json:"fixed_code,omitempty"`
+	// 固定验证码，仅供开发和 e2e 测试，只能与 log 一起使用；为空时随机生成
+	FixedCode string `protobuf:"bytes,2,opt,name=fixed_code,json=fixedCode,proto3" json:"fixed_code,omitempty"`
+	// provider 为 smtp 时必填，启动时检查
+	Smtp          *Smtp `protobuf:"bytes,3,opt,name=smtp,proto3" json:"smtp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Sms) Reset() {
-	*x = Sms{}
+func (x *Mail) Reset() {
+	*x = Mail{}
 	mi := &file_account_internal_conf_conf_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Sms) String() string {
+func (x *Mail) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Sms) ProtoMessage() {}
+func (*Mail) ProtoMessage() {}
 
-func (x *Sms) ProtoReflect() protoreflect.Message {
+func (x *Mail) ProtoReflect() protoreflect.Message {
 	mi := &file_account_internal_conf_conf_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -290,29 +292,109 @@ func (x *Sms) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Sms.ProtoReflect.Descriptor instead.
-func (*Sms) Descriptor() ([]byte, []int) {
+// Deprecated: Use Mail.ProtoReflect.Descriptor instead.
+func (*Mail) Descriptor() ([]byte, []int) {
 	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *Sms) GetProvider() string {
+func (x *Mail) GetProvider() string {
 	if x != nil {
 		return x.Provider
 	}
 	return ""
 }
 
-func (x *Sms) GetFixedCode() string {
+func (x *Mail) GetFixedCode() string {
 	if x != nil {
 		return x.FixedCode
 	}
 	return ""
 }
 
+func (x *Mail) GetSmtp() *Smtp {
+	if x != nil {
+		return x.Smtp
+	}
+	return nil
+}
+
+// Smtp 是 SMTP 服务器的连接参数。
+type Smtp struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// host:port。465 端口使用隐式 TLS，其他端口要求服务器支持 STARTTLS，不允许明文发送
+	Addr string `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
+	// 登录用户名，同时作为发件人地址（个人邮箱要求两者一致）
+	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	// 邮箱的 SMTP 授权码，只放在被忽略的 .env 中
+	Password string `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
+	// 一次发送（连接、认证、投递）的最长时间，实际还不会超过请求剩余的截止时间
+	Timeout       *durationpb.Duration `protobuf:"bytes,4,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Smtp) Reset() {
+	*x = Smtp{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Smtp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Smtp) ProtoMessage() {}
+
+func (x *Smtp) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Smtp.ProtoReflect.Descriptor instead.
+func (*Smtp) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Smtp) GetAddr() string {
+	if x != nil {
+		return x.Addr
+	}
+	return ""
+}
+
+func (x *Smtp) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *Smtp) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *Smtp) GetTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.Timeout
+	}
+	return nil
+}
+
 // Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
 type Policy struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sms           *Policy_Sms            `protobuf:"bytes,1,opt,name=sms,proto3" json:"sms,omitempty"`
+	EmailCode     *Policy_EmailCode      `protobuf:"bytes,1,opt,name=email_code,json=emailCode,proto3" json:"email_code,omitempty"`
 	Login         *Policy_Login          `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -320,7 +402,7 @@ type Policy struct {
 
 func (x *Policy) Reset() {
 	*x = Policy{}
-	mi := &file_account_internal_conf_conf_proto_msgTypes[3]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -332,7 +414,7 @@ func (x *Policy) String() string {
 func (*Policy) ProtoMessage() {}
 
 func (x *Policy) ProtoReflect() protoreflect.Message {
-	mi := &file_account_internal_conf_conf_proto_msgTypes[3]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -345,12 +427,12 @@ func (x *Policy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Policy.ProtoReflect.Descriptor instead.
 func (*Policy) Descriptor() ([]byte, []int) {
-	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{3}
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *Policy) GetSms() *Policy_Sms {
+func (x *Policy) GetEmailCode() *Policy_EmailCode {
 	if x != nil {
-		return x.Sms
+		return x.EmailCode
 	}
 	return nil
 }
@@ -374,7 +456,7 @@ type Security struct {
 
 func (x *Security) Reset() {
 	*x = Security{}
-	mi := &file_account_internal_conf_conf_proto_msgTypes[4]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +468,7 @@ func (x *Security) String() string {
 func (*Security) ProtoMessage() {}
 
 func (x *Security) ProtoReflect() protoreflect.Message {
-	mi := &file_account_internal_conf_conf_proto_msgTypes[4]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +481,7 @@ func (x *Security) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Security.ProtoReflect.Descriptor instead.
 func (*Security) Descriptor() ([]byte, []int) {
-	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{4}
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Security) GetBcryptCost() int32 {
@@ -428,7 +510,7 @@ type Cache struct {
 
 func (x *Cache) Reset() {
 	*x = Cache{}
-	mi := &file_account_internal_conf_conf_proto_msgTypes[5]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -440,7 +522,7 @@ func (x *Cache) String() string {
 func (*Cache) ProtoMessage() {}
 
 func (x *Cache) ProtoReflect() protoreflect.Message {
-	mi := &file_account_internal_conf_conf_proto_msgTypes[5]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -453,7 +535,7 @@ func (x *Cache) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cache.ProtoReflect.Descriptor instead.
 func (*Cache) Descriptor() ([]byte, []int) {
-	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{5}
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Cache) GetUserTtl() *durationpb.Duration {
@@ -470,34 +552,34 @@ func (x *Cache) GetNullTtl() *durationpb.Duration {
 	return nil
 }
 
-type Policy_Sms struct {
+type Policy_EmailCode struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	CodeTtl *durationpb.Duration   `protobuf:"bytes,1,opt,name=code_ttl,json=codeTtl,proto3" json:"code_ttl,omitempty"`
 	// 同一个验证码最多验证几次，超过后作废
 	MaxVerifyAttempts int32 `protobuf:"varint,2,opt,name=max_verify_attempts,json=maxVerifyAttempts,proto3" json:"max_verify_attempts,omitempty"`
-	// 同一手机号两次发送的最小间隔
+	// 同一邮箱两次发送的最小间隔
 	SendInterval       *durationpb.Duration `protobuf:"bytes,3,opt,name=send_interval,json=sendInterval,proto3" json:"send_interval,omitempty"`
-	DailyLimitPerPhone int32                `protobuf:"varint,4,opt,name=daily_limit_per_phone,json=dailyLimitPerPhone,proto3" json:"daily_limit_per_phone,omitempty"`
+	DailyLimitPerEmail int32                `protobuf:"varint,4,opt,name=daily_limit_per_email,json=dailyLimitPerEmail,proto3" json:"daily_limit_per_email,omitempty"`
 	IpLimit            *conf.RateLimit      `protobuf:"bytes,5,opt,name=ip_limit,json=ipLimit,proto3" json:"ip_limit,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
-func (x *Policy_Sms) Reset() {
-	*x = Policy_Sms{}
-	mi := &file_account_internal_conf_conf_proto_msgTypes[6]
+func (x *Policy_EmailCode) Reset() {
+	*x = Policy_EmailCode{}
+	mi := &file_account_internal_conf_conf_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Policy_Sms) String() string {
+func (x *Policy_EmailCode) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Policy_Sms) ProtoMessage() {}
+func (*Policy_EmailCode) ProtoMessage() {}
 
-func (x *Policy_Sms) ProtoReflect() protoreflect.Message {
-	mi := &file_account_internal_conf_conf_proto_msgTypes[6]
+func (x *Policy_EmailCode) ProtoReflect() protoreflect.Message {
+	mi := &file_account_internal_conf_conf_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,40 +590,40 @@ func (x *Policy_Sms) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Policy_Sms.ProtoReflect.Descriptor instead.
-func (*Policy_Sms) Descriptor() ([]byte, []int) {
-	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{3, 0}
+// Deprecated: Use Policy_EmailCode.ProtoReflect.Descriptor instead.
+func (*Policy_EmailCode) Descriptor() ([]byte, []int) {
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{4, 0}
 }
 
-func (x *Policy_Sms) GetCodeTtl() *durationpb.Duration {
+func (x *Policy_EmailCode) GetCodeTtl() *durationpb.Duration {
 	if x != nil {
 		return x.CodeTtl
 	}
 	return nil
 }
 
-func (x *Policy_Sms) GetMaxVerifyAttempts() int32 {
+func (x *Policy_EmailCode) GetMaxVerifyAttempts() int32 {
 	if x != nil {
 		return x.MaxVerifyAttempts
 	}
 	return 0
 }
 
-func (x *Policy_Sms) GetSendInterval() *durationpb.Duration {
+func (x *Policy_EmailCode) GetSendInterval() *durationpb.Duration {
 	if x != nil {
 		return x.SendInterval
 	}
 	return nil
 }
 
-func (x *Policy_Sms) GetDailyLimitPerPhone() int32 {
+func (x *Policy_EmailCode) GetDailyLimitPerEmail() int32 {
 	if x != nil {
-		return x.DailyLimitPerPhone
+		return x.DailyLimitPerEmail
 	}
 	return 0
 }
 
-func (x *Policy_Sms) GetIpLimit() *conf.RateLimit {
+func (x *Policy_EmailCode) GetIpLimit() *conf.RateLimit {
 	if x != nil {
 		return x.IpLimit
 	}
@@ -561,7 +643,7 @@ type Policy_Login struct {
 
 func (x *Policy_Login) Reset() {
 	*x = Policy_Login{}
-	mi := &file_account_internal_conf_conf_proto_msgTypes[7]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -573,7 +655,7 @@ func (x *Policy_Login) String() string {
 func (*Policy_Login) ProtoMessage() {}
 
 func (x *Policy_Login) ProtoReflect() protoreflect.Message {
-	mi := &file_account_internal_conf_conf_proto_msgTypes[7]
+	mi := &file_account_internal_conf_conf_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -586,7 +668,7 @@ func (x *Policy_Login) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Policy_Login.ProtoReflect.Descriptor instead.
 func (*Policy_Login) Descriptor() ([]byte, []int) {
-	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{3, 1}
+	return file_account_internal_conf_conf_proto_rawDescGZIP(), []int{4, 1}
 }
 
 func (x *Policy_Login) GetMaxFailures() int32 {
@@ -621,7 +703,7 @@ var File_account_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_account_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	" account/internal/conf/conf.proto\x12\x15marschat.account.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xbb\x05\n" +
+	" account/internal/conf/conf.proto\x12\x15marschat.account.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xbe\x05\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -629,8 +711,8 @@ const file_account_internal_conf_conf_proto_rawDesc = "" +
 	"\x05redis\x18\x04 \x01(\v2\x14.marschat.conf.RedisR\x05redis\x12$\n" +
 	"\x03log\x18\x05 \x01(\v2\x12.marschat.conf.LogR\x03log\x12/\n" +
 	"\x04auth\x18\x06 \x01(\v2\x13.marschat.conf.AuthB\x06\xbaH\x03\xc8\x01\x01R\x04auth\x12:\n" +
-	"\x05token\x18\a \x01(\v2\x1c.marschat.account.conf.TokenB\x06\xbaH\x03\xc8\x01\x01R\x05token\x124\n" +
-	"\x03sms\x18\b \x01(\v2\x1a.marschat.account.conf.SmsB\x06\xbaH\x03\xc8\x01\x01R\x03sms\x12=\n" +
+	"\x05token\x18\a \x01(\v2\x1c.marschat.account.conf.TokenB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
+	"\x04mail\x18\b \x01(\v2\x1b.marschat.account.conf.MailB\x06\xbaH\x03\xc8\x01\x01R\x04mail\x12=\n" +
 	"\x06policy\x18\t \x01(\v2\x1d.marschat.account.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x12C\n" +
 	"\bsecurity\x18\n" +
 	" \x01(\v2\x1f.marschat.account.conf.SecurityB\x06\xbaH\x03\xc8\x01\x01R\bsecurity\x12:\n" +
@@ -646,20 +728,27 @@ const file_account_internal_conf_conf_proto_rawDesc = "" +
 	"\vrefresh_ttl\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\n" +
 	"refreshTtl\x12H\n" +
 	"\x0erotation_grace\x18\x05 \x01(\v2\x19.google.protobuf.DurationB\x06\xbaH\x03\xc8\x01\x01R\rrotationGrace\x12M\n" +
-	"\x0erevocation_ttl\x18\x06 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\rrevocationTtl\"b\n" +
-	"\x03Sms\x12&\n" +
-	"\bprovider\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05R\x03logR\bprovider\x123\n" +
+	"\x0erevocation_ttl\x18\x06 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\rrevocationTtl\"\x9a\x01\n" +
+	"\x04Mail\x12,\n" +
+	"\bprovider\x18\x01 \x01(\tB\x10\xbaH\rr\vR\x03logR\x04smtpR\bprovider\x123\n" +
 	"\n" +
-	"fixed_code\x18\x02 \x01(\tB\x14\xbaH\x11r\x0f2\r^$|^[0-9]{6}$R\tfixedCode\"\xe1\x05\n" +
-	"\x06Policy\x12;\n" +
-	"\x03sms\x18\x01 \x01(\v2!.marschat.account.conf.Policy.SmsB\x06\xbaH\x03\xc8\x01\x01R\x03sms\x12A\n" +
-	"\x05login\x18\x02 \x01(\v2#.marschat.account.conf.Policy.LoginB\x06\xbaH\x03\xc8\x01\x01R\x05login\x1a\xc7\x02\n" +
-	"\x03Sms\x12A\n" +
+	"fixed_code\x18\x02 \x01(\tB\x14\xbaH\x11r\x0f2\r^$|^[0-9]{6}$R\tfixedCode\x12/\n" +
+	"\x04smtp\x18\x03 \x01(\v2\x1b.marschat.account.conf.SmtpR\x04smtp\"\x95\x01\n" +
+	"\x04Smtp\x12\x12\n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\x12A\n" +
+	"\atimeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\f\xbaH\t\xaa\x01\x06\"\x02\b\n" +
+	"*\x00R\atimeout\"\xfa\x05\n" +
+	"\x06Policy\x12N\n" +
+	"\n" +
+	"email_code\x18\x01 \x01(\v2'.marschat.account.conf.Policy.EmailCodeB\x06\xbaH\x03\xc8\x01\x01R\temailCode\x12A\n" +
+	"\x05login\x18\x02 \x01(\v2#.marschat.account.conf.Policy.LoginB\x06\xbaH\x03\xc8\x01\x01R\x05login\x1a\xcd\x02\n" +
+	"\tEmailCode\x12A\n" +
 	"\bcode_ttl\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\acodeTtl\x127\n" +
 	"\x13max_verify_attempts\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x11maxVerifyAttempts\x12K\n" +
 	"\rsend_interval\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\fsendInterval\x12:\n" +
-	"\x15daily_limit_per_phone\x18\x04 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x12dailyLimitPerPhone\x12;\n" +
+	"\x15daily_limit_per_email\x18\x04 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\x12dailyLimitPerEmail\x12;\n" +
 	"\bip_limit\x18\x05 \x01(\v2\x18.marschat.conf.RateLimitB\x06\xbaH\x03\xc8\x01\x01R\aipLimit\x1a\x8c\x02\n" +
 	"\x05Login\x12*\n" +
 	"\fmax_failures\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02 \x00R\vmaxFailures\x12M\n" +
@@ -687,60 +776,63 @@ func file_account_internal_conf_conf_proto_rawDescGZIP() []byte {
 	return file_account_internal_conf_conf_proto_rawDescData
 }
 
-var file_account_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_account_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_account_internal_conf_conf_proto_goTypes = []any{
 	(*Bootstrap)(nil),           // 0: marschat.account.conf.Bootstrap
 	(*Token)(nil),               // 1: marschat.account.conf.Token
-	(*Sms)(nil),                 // 2: marschat.account.conf.Sms
-	(*Policy)(nil),              // 3: marschat.account.conf.Policy
-	(*Security)(nil),            // 4: marschat.account.conf.Security
-	(*Cache)(nil),               // 5: marschat.account.conf.Cache
-	(*Policy_Sms)(nil),          // 6: marschat.account.conf.Policy.Sms
-	(*Policy_Login)(nil),        // 7: marschat.account.conf.Policy.Login
-	(*conf.Server)(nil),         // 8: marschat.conf.Server
-	(*conf.Registry)(nil),       // 9: marschat.conf.Registry
-	(*conf.MySQL)(nil),          // 10: marschat.conf.MySQL
-	(*conf.Redis)(nil),          // 11: marschat.conf.Redis
-	(*conf.Log)(nil),            // 12: marschat.conf.Log
-	(*conf.Auth)(nil),           // 13: marschat.conf.Auth
-	(*conf.Kafka)(nil),          // 14: marschat.conf.Kafka
-	(*conf.Outbox)(nil),         // 15: marschat.conf.Outbox
-	(*durationpb.Duration)(nil), // 16: google.protobuf.Duration
-	(*conf.RateLimit)(nil),      // 17: marschat.conf.RateLimit
+	(*Mail)(nil),                // 2: marschat.account.conf.Mail
+	(*Smtp)(nil),                // 3: marschat.account.conf.Smtp
+	(*Policy)(nil),              // 4: marschat.account.conf.Policy
+	(*Security)(nil),            // 5: marschat.account.conf.Security
+	(*Cache)(nil),               // 6: marschat.account.conf.Cache
+	(*Policy_EmailCode)(nil),    // 7: marschat.account.conf.Policy.EmailCode
+	(*Policy_Login)(nil),        // 8: marschat.account.conf.Policy.Login
+	(*conf.Server)(nil),         // 9: marschat.conf.Server
+	(*conf.Registry)(nil),       // 10: marschat.conf.Registry
+	(*conf.MySQL)(nil),          // 11: marschat.conf.MySQL
+	(*conf.Redis)(nil),          // 12: marschat.conf.Redis
+	(*conf.Log)(nil),            // 13: marschat.conf.Log
+	(*conf.Auth)(nil),           // 14: marschat.conf.Auth
+	(*conf.Kafka)(nil),          // 15: marschat.conf.Kafka
+	(*conf.Outbox)(nil),         // 16: marschat.conf.Outbox
+	(*durationpb.Duration)(nil), // 17: google.protobuf.Duration
+	(*conf.RateLimit)(nil),      // 18: marschat.conf.RateLimit
 }
 var file_account_internal_conf_conf_proto_depIdxs = []int32{
-	8,  // 0: marschat.account.conf.Bootstrap.server:type_name -> marschat.conf.Server
-	9,  // 1: marschat.account.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
-	10, // 2: marschat.account.conf.Bootstrap.mysql:type_name -> marschat.conf.MySQL
-	11, // 3: marschat.account.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
-	12, // 4: marschat.account.conf.Bootstrap.log:type_name -> marschat.conf.Log
-	13, // 5: marschat.account.conf.Bootstrap.auth:type_name -> marschat.conf.Auth
+	9,  // 0: marschat.account.conf.Bootstrap.server:type_name -> marschat.conf.Server
+	10, // 1: marschat.account.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
+	11, // 2: marschat.account.conf.Bootstrap.mysql:type_name -> marschat.conf.MySQL
+	12, // 3: marschat.account.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
+	13, // 4: marschat.account.conf.Bootstrap.log:type_name -> marschat.conf.Log
+	14, // 5: marschat.account.conf.Bootstrap.auth:type_name -> marschat.conf.Auth
 	1,  // 6: marschat.account.conf.Bootstrap.token:type_name -> marschat.account.conf.Token
-	2,  // 7: marschat.account.conf.Bootstrap.sms:type_name -> marschat.account.conf.Sms
-	3,  // 8: marschat.account.conf.Bootstrap.policy:type_name -> marschat.account.conf.Policy
-	4,  // 9: marschat.account.conf.Bootstrap.security:type_name -> marschat.account.conf.Security
-	5,  // 10: marschat.account.conf.Bootstrap.cache:type_name -> marschat.account.conf.Cache
-	14, // 11: marschat.account.conf.Bootstrap.kafka:type_name -> marschat.conf.Kafka
-	15, // 12: marschat.account.conf.Bootstrap.outbox:type_name -> marschat.conf.Outbox
-	16, // 13: marschat.account.conf.Token.access_ttl:type_name -> google.protobuf.Duration
-	16, // 14: marschat.account.conf.Token.refresh_ttl:type_name -> google.protobuf.Duration
-	16, // 15: marschat.account.conf.Token.rotation_grace:type_name -> google.protobuf.Duration
-	16, // 16: marschat.account.conf.Token.revocation_ttl:type_name -> google.protobuf.Duration
-	6,  // 17: marschat.account.conf.Policy.sms:type_name -> marschat.account.conf.Policy.Sms
-	7,  // 18: marschat.account.conf.Policy.login:type_name -> marschat.account.conf.Policy.Login
-	16, // 19: marschat.account.conf.Cache.user_ttl:type_name -> google.protobuf.Duration
-	16, // 20: marschat.account.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
-	16, // 21: marschat.account.conf.Policy.Sms.code_ttl:type_name -> google.protobuf.Duration
-	16, // 22: marschat.account.conf.Policy.Sms.send_interval:type_name -> google.protobuf.Duration
-	17, // 23: marschat.account.conf.Policy.Sms.ip_limit:type_name -> marschat.conf.RateLimit
-	16, // 24: marschat.account.conf.Policy.Login.failure_window:type_name -> google.protobuf.Duration
-	16, // 25: marschat.account.conf.Policy.Login.lock_duration:type_name -> google.protobuf.Duration
-	17, // 26: marschat.account.conf.Policy.Login.ip_limit:type_name -> marschat.conf.RateLimit
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	2,  // 7: marschat.account.conf.Bootstrap.mail:type_name -> marschat.account.conf.Mail
+	4,  // 8: marschat.account.conf.Bootstrap.policy:type_name -> marschat.account.conf.Policy
+	5,  // 9: marschat.account.conf.Bootstrap.security:type_name -> marschat.account.conf.Security
+	6,  // 10: marschat.account.conf.Bootstrap.cache:type_name -> marschat.account.conf.Cache
+	15, // 11: marschat.account.conf.Bootstrap.kafka:type_name -> marschat.conf.Kafka
+	16, // 12: marschat.account.conf.Bootstrap.outbox:type_name -> marschat.conf.Outbox
+	17, // 13: marschat.account.conf.Token.access_ttl:type_name -> google.protobuf.Duration
+	17, // 14: marschat.account.conf.Token.refresh_ttl:type_name -> google.protobuf.Duration
+	17, // 15: marschat.account.conf.Token.rotation_grace:type_name -> google.protobuf.Duration
+	17, // 16: marschat.account.conf.Token.revocation_ttl:type_name -> google.protobuf.Duration
+	3,  // 17: marschat.account.conf.Mail.smtp:type_name -> marschat.account.conf.Smtp
+	17, // 18: marschat.account.conf.Smtp.timeout:type_name -> google.protobuf.Duration
+	7,  // 19: marschat.account.conf.Policy.email_code:type_name -> marschat.account.conf.Policy.EmailCode
+	8,  // 20: marschat.account.conf.Policy.login:type_name -> marschat.account.conf.Policy.Login
+	17, // 21: marschat.account.conf.Cache.user_ttl:type_name -> google.protobuf.Duration
+	17, // 22: marschat.account.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
+	17, // 23: marschat.account.conf.Policy.EmailCode.code_ttl:type_name -> google.protobuf.Duration
+	17, // 24: marschat.account.conf.Policy.EmailCode.send_interval:type_name -> google.protobuf.Duration
+	18, // 25: marschat.account.conf.Policy.EmailCode.ip_limit:type_name -> marschat.conf.RateLimit
+	17, // 26: marschat.account.conf.Policy.Login.failure_window:type_name -> google.protobuf.Duration
+	17, // 27: marschat.account.conf.Policy.Login.lock_duration:type_name -> google.protobuf.Duration
+	18, // 28: marschat.account.conf.Policy.Login.ip_limit:type_name -> marschat.conf.RateLimit
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_account_internal_conf_conf_proto_init() }
@@ -754,7 +846,7 @@ func file_account_internal_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_internal_conf_conf_proto_rawDesc), len(file_account_internal_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -31,9 +31,9 @@ var ProviderSet = wire.NewSet(
 	NewUserRepo,
 	NewSessionRepo,
 	NewEventRepo,
-	NewSmsCodeStore,
+	NewCodeStore,
 	NewLoginGuard,
-	NewSmsSender,
+	NewCodeSender,
 	NewIDGenerator,
 	NewRateLimiter,
 	NewRevoker,
@@ -124,23 +124,29 @@ func NewRevoker(rdb *redis.Client) biz.Revoker {
 	return auth.NewRevocations(rdb)
 }
 
-// NewSmsSender 按配置选择短信发送方。
-func NewSmsSender(c *conf.Sms, logger *slog.Logger) (biz.SmsSender, error) {
+// NewCodeSender 按配置选择验证码邮件的发送方。
+func NewCodeSender(c *conf.Mail, logger *slog.Logger) (biz.CodeSender, error) {
 	switch c.GetProvider() {
 	case "log":
-		return &logSmsSender{logger: logger}, nil
+		return &logCodeSender{logger: logger}, nil
+	case "smtp":
+		s, err := newSMTPSender(c.GetSmtp(), logger)
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
 	default:
-		return nil, fmt.Errorf("unsupported sms provider %q", c.GetProvider())
+		return nil, fmt.Errorf("unsupported mail provider %q", c.GetProvider())
 	}
 }
 
-// logSmsSender 只把验证码写进日志，用于开发和测试，生产环境必须换成真实的短信平台。
-type logSmsSender struct {
+// logCodeSender 只把验证码写进日志，用于开发和测试，生产环境必须使用 smtp。
+type logCodeSender struct {
 	logger *slog.Logger
 }
 
-func (s *logSmsSender) Send(_ context.Context, phone, code string, purpose int32) error {
-	s.logger.Info("sms code (log provider, dev only)",
-		slog.String("phone", biz.MaskPhone(phone)), slog.String("code", code), slog.Int("purpose", int(purpose)))
+func (s *logCodeSender) Send(_ context.Context, email, code string, purpose int32, _ time.Duration) error {
+	s.logger.Info("verification code (log provider, dev only)",
+		slog.String("email", biz.MaskEmail(email)), slog.String("code", code), slog.Int("purpose", int(purpose)))
 	return nil
 }

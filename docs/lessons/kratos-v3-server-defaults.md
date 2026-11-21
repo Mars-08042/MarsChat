@@ -45,7 +45,7 @@ code=500 reason="" message="Error 1062 (23000): Duplicate entry '13800000001' fo
 
 ### 验证
 
-`pkg/middleware/accesslog` 的单元测试用带密码的登录请求覆盖四种情况：成功、业务错误、内部错误、panic。断言日志里没有密码和手机号，内部错误不会返回给客户端，原始错误写进了日志。
+`pkg/middleware/accesslog` 的单元测试用带密码的登录请求覆盖四种情况：成功、业务错误、内部错误、panic。断言日志里没有密码和账号（当时是手机号，2026-11-20 起是邮箱），内部错误不会返回给客户端，原始错误写进了日志。
 
 ## 二、HTTP 接口不按 protobuf JSON 规则收发
 
@@ -95,6 +95,6 @@ Kratos 提供了 contrib 兼容包 `contrib/encoding/json/v3`，行为相同，�
 ## 预防
 
 - 不使用 Kratos 自带的 `logging`、`recovery` 中间件；新服务的中间件链用 `bootstrap.ServerMiddlewares` 组装（步骤 3 从 account 的 `server.go` 抽出），`accesslog` 在最外层。
-- 任何会写日志的地方都不要整体打印请求、响应或配置对象，只挑需要的字段；手机号用 `biz.MaskPhone` 脱敏。
+- 任何会写日志的地方都不要整体打印请求、响应或配置对象，只挑需要的字段；邮箱用 `biz.MaskEmail` 脱敏（2026-11-20 之前是手机号与 `biz.MaskPhone`）。
 - 新服务都通过 `pkg/bootstrap` 启动，不要绕过它直接创建 HTTP 服务器，否则 `pkg/jsoncodec` 不会生效。
 - 升级 Kratos 时，检查 `encoding/json`、`logging`、`recovery`、`errors.FromError` 的行为是否有变化。`pkg/jsoncodec` 和 `pkg/middleware/accesslog` 的测试会先失败。

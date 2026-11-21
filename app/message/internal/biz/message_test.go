@@ -10,6 +10,7 @@ import (
 	kerrors "github.com/go-kratos/kratos/v3/errors"
 
 	v1 "github.com/Mars-08042/MarsChat/api/message/v1"
+	"github.com/Mars-08042/MarsChat/pkg/idgen"
 )
 
 const (
@@ -127,6 +128,23 @@ func TestSendPermissionErrors(t *testing.T) {
 	if len(e.s.msgs) != 0 || len(e.s.convs) != 0 {
 		t.Error("rejected sends must not write anything")
 	}
+}
+
+// 节点号租约失效时无法新建单聊会话，返回 503；已有会话不需要发号，照常发送。
+func TestSendIDLeaseLost(t *testing.T) {
+	e := newEnv(t)
+	e.send(t, alice, TypeSingle, bob, "first")
+	e.ids.err = idgen.ErrLeaseLost
+
+	_, err := e.msg.Send(context.Background(), SendInput{SenderID: alice, ConnectionID: 1, PeerType: TypeSingle, PeerID: carol, ClientMsgID: "x", Content: text("x")})
+	wantReason(t, err, v1.ErrorReason_DEPENDENCY_UNAVAILABLE.String())
+	if kerrors.Code(err) != 503 {
+		t.Fatalf("code = %d, want 503", kerrors.Code(err))
+	}
+	if len(e.s.convs) != 1 {
+		t.Fatalf("conversations = %d, want only the existing one", len(e.s.convs))
+	}
+	e.send(t, bob, TypeSingle, alice, "reply")
 }
 
 func TestSendRateLimit(t *testing.T) {

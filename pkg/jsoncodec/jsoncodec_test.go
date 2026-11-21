@@ -15,11 +15,11 @@ import (
 
 func TestProtoMessageUsesProtoJSON(t *testing.T) {
 	c := encoding.GetCodec("json")
-	var req v1.SendSmsCodeRequest
-	if err := c.Unmarshal([]byte(`{"phone":"13800000000","purpose":"SMS_PURPOSE_LOGIN","unknown":1}`), &req); err != nil {
+	var req v1.SendEmailCodeRequest
+	if err := c.Unmarshal([]byte(`{"email":"user@example.com","purpose":"CODE_PURPOSE_LOGIN","unknown":1}`), &req); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if req.GetPurpose() != v1.SmsPurpose_SMS_PURPOSE_LOGIN {
+	if req.GetPurpose() != v1.CodePurpose_CODE_PURPOSE_LOGIN {
 		t.Fatalf("purpose = %v", req.GetPurpose())
 	}
 

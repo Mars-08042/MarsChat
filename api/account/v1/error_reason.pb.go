@@ -28,23 +28,23 @@ type ErrorReason int32
 
 const (
 	ErrorReason_ERROR_REASON_UNSPECIFIED ErrorReason = 0
-	// 429：同一手机号发送过于频繁
-	ErrorReason_SMS_SEND_TOO_FREQUENT ErrorReason = 1
-	// 429：同一手机号当天发送次数已达上限
-	ErrorReason_SMS_DAILY_LIMIT_EXCEEDED ErrorReason = 2
+	// 429：同一邮箱发送验证码过于频繁
+	ErrorReason_CODE_SEND_TOO_FREQUENT ErrorReason = 1
+	// 429：同一邮箱当天发送验证码的次数已达上限
+	ErrorReason_CODE_DAILY_LIMIT_EXCEEDED ErrorReason = 2
 	// 429：同一 IP 请求过于频繁
 	ErrorReason_RATE_LIMITED ErrorReason = 3
 	// 429：密码连续错误次数过多，暂时锁定
 	ErrorReason_LOGIN_LOCKED ErrorReason = 4
-	// 503：短信平台发送失败，可以立即重试（不占用发送间隔和每日次数）
-	ErrorReason_SMS_SEND_FAILED ErrorReason = 5
+	// 503：验证码邮件发送失败，可以立即重试（不占用发送间隔和每日次数）
+	ErrorReason_CODE_SEND_FAILED ErrorReason = 5
 	// 400：验证码错误或已过期
-	ErrorReason_SMS_CODE_INVALID ErrorReason = 10
+	ErrorReason_CODE_INVALID ErrorReason = 10
 	// 400：验证码错误次数过多，已作废，需要重新获取
-	ErrorReason_SMS_CODE_ATTEMPTS_EXCEEDED ErrorReason = 11
+	ErrorReason_CODE_ATTEMPTS_EXCEEDED ErrorReason = 11
 	// 400：密码必须同时包含字母和数字
 	ErrorReason_WEAK_PASSWORD ErrorReason = 12
-	// 401：手机号或密码错误
+	// 401：邮箱或密码错误
 	ErrorReason_INVALID_CREDENTIALS ErrorReason = 20
 	// 401：刷新令牌无效、过期或所属会话已失效，需要重新登录
 	ErrorReason_REFRESH_TOKEN_INVALID ErrorReason = 21
@@ -56,23 +56,25 @@ const (
 	ErrorReason_USER_NOT_FOUND ErrorReason = 40
 	// 404：会话不存在或不属于当前用户
 	ErrorReason_SESSION_NOT_FOUND ErrorReason = 41
-	// 409：手机号已注册
-	ErrorReason_PHONE_ALREADY_REGISTERED ErrorReason = 50
+	// 409：邮箱已注册
+	ErrorReason_EMAIL_ALREADY_REGISTERED ErrorReason = 50
 	// 409：刷新令牌刚被另一个请求轮换（例如多个标签页同时刷新），应改用本地最新的令牌
 	ErrorReason_REFRESH_TOKEN_ROTATED ErrorReason = 51
+	// 503：依赖的存储暂时不可用（例如 Redis 长时间不可达，无法分配 ID），可以稍后重试
+	ErrorReason_DEPENDENCY_UNAVAILABLE ErrorReason = 60
 )
 
 // Enum value maps for ErrorReason.
 var (
 	ErrorReason_name = map[int32]string{
 		0:  "ERROR_REASON_UNSPECIFIED",
-		1:  "SMS_SEND_TOO_FREQUENT",
-		2:  "SMS_DAILY_LIMIT_EXCEEDED",
+		1:  "CODE_SEND_TOO_FREQUENT",
+		2:  "CODE_DAILY_LIMIT_EXCEEDED",
 		3:  "RATE_LIMITED",
 		4:  "LOGIN_LOCKED",
-		5:  "SMS_SEND_FAILED",
-		10: "SMS_CODE_INVALID",
-		11: "SMS_CODE_ATTEMPTS_EXCEEDED",
+		5:  "CODE_SEND_FAILED",
+		10: "CODE_INVALID",
+		11: "CODE_ATTEMPTS_EXCEEDED",
 		12: "WEAK_PASSWORD",
 		20: "INVALID_CREDENTIALS",
 		21: "REFRESH_TOKEN_INVALID",
@@ -80,27 +82,29 @@ var (
 		31: "PERMISSION_DENIED",
 		40: "USER_NOT_FOUND",
 		41: "SESSION_NOT_FOUND",
-		50: "PHONE_ALREADY_REGISTERED",
+		50: "EMAIL_ALREADY_REGISTERED",
 		51: "REFRESH_TOKEN_ROTATED",
+		60: "DEPENDENCY_UNAVAILABLE",
 	}
 	ErrorReason_value = map[string]int32{
-		"ERROR_REASON_UNSPECIFIED":   0,
-		"SMS_SEND_TOO_FREQUENT":      1,
-		"SMS_DAILY_LIMIT_EXCEEDED":   2,
-		"RATE_LIMITED":               3,
-		"LOGIN_LOCKED":               4,
-		"SMS_SEND_FAILED":            5,
-		"SMS_CODE_INVALID":           10,
-		"SMS_CODE_ATTEMPTS_EXCEEDED": 11,
-		"WEAK_PASSWORD":              12,
-		"INVALID_CREDENTIALS":        20,
-		"REFRESH_TOKEN_INVALID":      21,
-		"USER_BANNED":                30,
-		"PERMISSION_DENIED":          31,
-		"USER_NOT_FOUND":             40,
-		"SESSION_NOT_FOUND":          41,
-		"PHONE_ALREADY_REGISTERED":   50,
-		"REFRESH_TOKEN_ROTATED":      51,
+		"ERROR_REASON_UNSPECIFIED":  0,
+		"CODE_SEND_TOO_FREQUENT":    1,
+		"CODE_DAILY_LIMIT_EXCEEDED": 2,
+		"RATE_LIMITED":              3,
+		"LOGIN_LOCKED":              4,
+		"CODE_SEND_FAILED":          5,
+		"CODE_INVALID":              10,
+		"CODE_ATTEMPTS_EXCEEDED":    11,
+		"WEAK_PASSWORD":             12,
+		"INVALID_CREDENTIALS":       20,
+		"REFRESH_TOKEN_INVALID":     21,
+		"USER_BANNED":               30,
+		"PERMISSION_DENIED":         31,
+		"USER_NOT_FOUND":            40,
+		"SESSION_NOT_FOUND":         41,
+		"EMAIL_ALREADY_REGISTERED":  50,
+		"REFRESH_TOKEN_ROTATED":     51,
+		"DEPENDENCY_UNAVAILABLE":    60,
 	}
 )
 
@@ -136,17 +140,17 @@ var File_account_v1_error_reason_proto protoreflect.FileDescriptor
 const file_account_v1_error_reason_proto_rawDesc = "" +
 	"\n" +
 	"\x1daccount/v1/error_reason.proto\x12\n" +
-	"account.v1*\xa6\x03\n" +
+	"account.v1*\xbd\x03\n" +
 	"\vErrorReason\x12\x1c\n" +
-	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x19\n" +
-	"\x15SMS_SEND_TOO_FREQUENT\x10\x01\x12\x1c\n" +
-	"\x18SMS_DAILY_LIMIT_EXCEEDED\x10\x02\x12\x10\n" +
+	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16CODE_SEND_TOO_FREQUENT\x10\x01\x12\x1d\n" +
+	"\x19CODE_DAILY_LIMIT_EXCEEDED\x10\x02\x12\x10\n" +
 	"\fRATE_LIMITED\x10\x03\x12\x10\n" +
-	"\fLOGIN_LOCKED\x10\x04\x12\x13\n" +
-	"\x0fSMS_SEND_FAILED\x10\x05\x12\x14\n" +
-	"\x10SMS_CODE_INVALID\x10\n" +
-	"\x12\x1e\n" +
-	"\x1aSMS_CODE_ATTEMPTS_EXCEEDED\x10\v\x12\x11\n" +
+	"\fLOGIN_LOCKED\x10\x04\x12\x14\n" +
+	"\x10CODE_SEND_FAILED\x10\x05\x12\x10\n" +
+	"\fCODE_INVALID\x10\n" +
+	"\x12\x1a\n" +
+	"\x16CODE_ATTEMPTS_EXCEEDED\x10\v\x12\x11\n" +
 	"\rWEAK_PASSWORD\x10\f\x12\x17\n" +
 	"\x13INVALID_CREDENTIALS\x10\x14\x12\x19\n" +
 	"\x15REFRESH_TOKEN_INVALID\x10\x15\x12\x0f\n" +
@@ -154,8 +158,9 @@ const file_account_v1_error_reason_proto_rawDesc = "" +
 	"\x11PERMISSION_DENIED\x10\x1f\x12\x12\n" +
 	"\x0eUSER_NOT_FOUND\x10(\x12\x15\n" +
 	"\x11SESSION_NOT_FOUND\x10)\x12\x1c\n" +
-	"\x18PHONE_ALREADY_REGISTERED\x102\x12\x19\n" +
-	"\x15REFRESH_TOKEN_ROTATED\x103B2Z0github.com/Mars-08042/MarsChat/api/account/v1;v1b\x06proto3"
+	"\x18EMAIL_ALREADY_REGISTERED\x102\x12\x19\n" +
+	"\x15REFRESH_TOKEN_ROTATED\x103\x12\x1a\n" +
+	"\x16DEPENDENCY_UNAVAILABLE\x10<B2Z0github.com/Mars-08042/MarsChat/api/account/v1;v1b\x06proto3"
 
 var (
 	file_account_v1_error_reason_proto_rawDescOnce sync.Once

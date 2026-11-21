@@ -24,7 +24,7 @@ import (
 	"github.com/Mars-08042/MarsChat/test/testkit"
 )
 
-// 依赖本地配置：account 使用 log 短信发送方和默认固定验证码 000000（app/account/configs/config.yaml）。
+// 依赖本地配置：account 使用 log 发送方和默认固定验证码 000000（app/account/configs/config.yaml）。
 // make e2e 会加载 .env，测试用其中的密码直接连接 Redis 和 MySQL 做准备工作。
 const (
 	accountHTTP = "http://127.0.0.1:18010"
@@ -61,9 +61,14 @@ func wantError(t *testing.T, status int, e *apiError, wantStatus int, wantReason
 	}
 }
 
-func randomPhone(t *testing.T) string {
+// localPart 返回邮箱 @ 之前的部分，用于拼设备 ID（设备 ID 不允许 @ 和 .）。
+func localPart(email string) string {
+	return testkit.LocalPart(email)
+}
+
+func randomEmail(t *testing.T) string {
 	t.Helper()
-	return testkit.RandomPhone(t)
+	return testkit.RandomEmail(t)
 }
 
 func device(id string, p v1.Platform) *v1.Device {
@@ -86,32 +91,32 @@ type session struct {
 	token *v1.TokenPair
 }
 
-func register(t *testing.T, phone, deviceID string) session {
+func register(t *testing.T, email, deviceID string) session {
 	t.Helper()
-	mustCall(t, http.MethodPost, "/v1/auth/sms-codes", "",
-		&v1.SendSmsCodeRequest{Phone: phone, Purpose: v1.SmsPurpose_SMS_PURPOSE_REGISTER}, nil)
+	mustCall(t, http.MethodPost, "/v1/auth/email-codes", "",
+		&v1.SendEmailCodeRequest{Email: email, Purpose: v1.CodePurpose_CODE_PURPOSE_REGISTER}, nil)
 	var resp v1.RegisterResponse
 	mustCall(t, http.MethodPost, "/v1/auth/register", "", &v1.RegisterRequest{
-		Phone: phone, SmsCode: fixedCode, Password: password, Nickname: "小克",
+		Email: email, Code: fixedCode, Password: password, Nickname: "小克",
 		Device: device(deviceID, v1.Platform_PLATFORM_WEB),
 	}, &resp)
 	return session{user: resp.GetUser(), token: resp.GetToken()}
 }
 
-func loginByPassword(t *testing.T, phone, deviceID string) session {
+func loginByPassword(t *testing.T, email, deviceID string) session {
 	t.Helper()
 	var resp v1.LoginByPasswordResponse
 	mustCall(t, http.MethodPost, "/v1/auth/login/password", "", &v1.LoginByPasswordRequest{
-		Phone: phone, Password: password, Device: device(deviceID, v1.Platform_PLATFORM_ANDROID),
+		Email: email, Password: password, Device: device(deviceID, v1.Platform_PLATFORM_ANDROID),
 	}, &resp)
 	return session{user: resp.GetUser(), token: resp.GetToken()}
 }
 
 func TestAccountFlow(t *testing.T) {
 	resetRateLimits(t)
-	phone := randomPhone(t)
-	web := register(t, phone, "e2e-web-"+phone)
-	if web.user.GetPhone() != phone || web.user.GetNickname() != "小克" || web.user.GetRole() != v1.Role_ROLE_USER {
+	email := randomEmail(t)
+	web := register(t, email, "e2e-web-"+localPart(email))
+	if web.user.GetEmail() != email || web.user.GetNickname() != "小克" || web.user.GetRole() != v1.Role_ROLE_USER {
 		t.Fatalf("registered user = %v", web.user)
 	}
 	if web.token.GetAccessExpiresIn() != 900 {
@@ -119,9 +124,9 @@ func TestAccountFlow(t *testing.T) {
 	}
 
 	// 发送间隔
-	status, e := call(t, http.MethodPost, "/v1/auth/sms-codes", "",
-		&v1.SendSmsCodeRequest{Phone: phone, Purpose: v1.SmsPurpose_SMS_PURPOSE_LOGIN}, nil)
-	wantError(t, status, e, 429, "SMS_SEND_TOO_FREQUENT")
+	status, e := call(t, http.MethodPost, "/v1/auth/email-codes", "",
+		&v1.SendEmailCodeRequest{Email: email, Purpose: v1.CodePurpose_CODE_PURPOSE_LOGIN}, nil)
+	wantError(t, status, e, 429, "CODE_SEND_TOO_FREQUENT")
 	if e.Metadata["retry_after_seconds"] == "" {
 		t.Error("retry_after_seconds missing")
 	}
@@ -146,7 +151,7 @@ func TestAccountFlow(t *testing.T) {
 	}
 
 	// 第二台设备
-	android := loginByPassword(t, phone, "e2e-android-"+phone)
+	android := loginByPassword(t, email, "e2e-android-"+localPart(email))
 	var list v1.ListSessionsResponse
 	mustCall(t, http.MethodGet, "/v1/sessions", web.token.GetAccessToken(), nil, &list)
 	if len(list.GetSessions()) != 2 {
@@ -178,18 +183,18 @@ func TestAccountFlow(t *testing.T) {
 	status, e = call(t, http.MethodGet, "/v1/users/me", web.token.GetAccessToken(), nil, nil)
 	wantError(t, status, e, 401, "UNAUTHORIZED")
 
-	// 短信登录。注册时发过码，先清掉发送间隔
-	newRedisClient(t).Del(context.Background(), "account:sms:cooldown:"+phone)
-	mustCall(t, http.MethodPost, "/v1/auth/sms-codes", "", &v1.SendSmsCodeRequest{Phone: phone, Purpose: v1.SmsPurpose_SMS_PURPOSE_LOGIN}, nil)
-	var smsLogin v1.LoginBySmsResponse
-	mustCall(t, http.MethodPost, "/v1/auth/login/sms", "", &v1.LoginBySmsRequest{
-		Phone: phone, SmsCode: fixedCode, Device: device("e2e-web-"+phone, v1.Platform_PLATFORM_WEB),
-	}, &smsLogin)
+	// 验证码登录。注册时发过码，先清掉发送间隔
+	newRedisClient(t).Del(context.Background(), "account:email_code:cooldown:"+email)
+	mustCall(t, http.MethodPost, "/v1/auth/email-codes", "", &v1.SendEmailCodeRequest{Email: email, Purpose: v1.CodePurpose_CODE_PURPOSE_LOGIN}, nil)
+	var codeLogin v1.LoginByEmailCodeResponse
+	mustCall(t, http.MethodPost, "/v1/auth/login/email-code", "", &v1.LoginByEmailCodeRequest{
+		Email: email, Code: fixedCode, Device: device("e2e-web-"+localPart(email), v1.Platform_PLATFORM_WEB),
+	}, &codeLogin)
 }
 
 func TestRefreshTokenReuseRevokesSession(t *testing.T) {
 	resetRateLimits(t)
-	s := register(t, randomPhone(t), "e2e-reuse-device")
+	s := register(t, randomEmail(t), "e2e-reuse-device")
 	var refreshed v1.RefreshTokenResponse
 	mustCall(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: s.token.GetRefreshToken()}, &refreshed)
 
@@ -217,7 +222,7 @@ func grantAdmin(t *testing.T, s session) session {
 	if err := db.Exec("UPDATE users SET role = 2 WHERE id = ?", s.user.GetId()).Error; err != nil {
 		t.Fatal(err)
 	}
-	newRedisClient(t).Del(context.Background(), "account:user:"+strconv.FormatInt(s.user.GetId(), 10))
+	newRedisClient(t).Del(context.Background(), "account:user:v2:"+strconv.FormatInt(s.user.GetId(), 10))
 	var refreshed v1.RefreshTokenResponse
 	mustCall(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: s.token.GetRefreshToken()}, &refreshed)
 	s.token = refreshed.GetToken()
@@ -226,9 +231,9 @@ func grantAdmin(t *testing.T, s session) session {
 
 func TestBanAndUnban(t *testing.T) {
 	resetRateLimits(t)
-	admin := grantAdmin(t, register(t, randomPhone(t), "e2e-admin-device"))
-	phone := randomPhone(t)
-	target := register(t, phone, "e2e-target-device")
+	admin := grantAdmin(t, register(t, randomEmail(t), "e2e-admin-device"))
+	email := randomEmail(t)
+	target := register(t, email, "e2e-target-device")
 	banPath := "/v1/admin/users/" + strconv.FormatInt(target.user.GetId(), 10)
 
 	status, e := call(t, http.MethodPost, "/v1/admin/users/"+strconv.FormatInt(admin.user.GetId(), 10)+"/ban", target.token.GetAccessToken(), &v1.BanUserRequest{}, nil)
@@ -240,7 +245,7 @@ func TestBanAndUnban(t *testing.T) {
 	status, e = call(t, http.MethodPost, "/v1/auth/refresh", "", &v1.RefreshTokenRequest{RefreshToken: target.token.GetRefreshToken()}, nil)
 	wantError(t, status, e, 401, "REFRESH_TOKEN_INVALID")
 	status, e = call(t, http.MethodPost, "/v1/auth/login/password", "", &v1.LoginByPasswordRequest{
-		Phone: phone, Password: password, Device: device("e2e-target-device", v1.Platform_PLATFORM_WEB),
+		Email: email, Password: password, Device: device("e2e-target-device", v1.Platform_PLATFORM_WEB),
 	}, nil)
 	wantError(t, status, e, 403, "USER_BANNED")
 	var profile v1.GetUserResponse
@@ -252,18 +257,18 @@ func TestBanAndUnban(t *testing.T) {
 	mustCall(t, http.MethodPost, banPath+"/unban", admin.token.GetAccessToken(), &v1.UnbanUserRequest{}, nil)
 	// iat 按秒计，封禁时间所在的那一秒签发的令牌仍会被拒绝，等到下一秒再登录
 	time.Sleep(time.Second)
-	again := loginByPassword(t, phone, "e2e-target-device")
+	again := loginByPassword(t, email, "e2e-target-device")
 	mustCall(t, http.MethodGet, "/v1/users/me", again.token.GetAccessToken(), nil, nil)
 }
 
 func TestPublicProfileAndInternalBatchGet(t *testing.T) {
 	resetRateLimits(t)
-	a := register(t, randomPhone(t), "e2e-profile-a")
-	b := register(t, randomPhone(t), "e2e-profile-b")
+	a := register(t, randomEmail(t), "e2e-profile-a")
+	b := register(t, randomEmail(t), "e2e-profile-b")
 
-	// 公开资料不含手机号；新注册的用户已加入布隆过滤器，能查到
+	// 公开资料不含邮箱；新注册的用户已加入布隆过滤器，能查到
 	status, raw := getRaw(t, "/v1/users/"+strconv.FormatInt(b.user.GetId(), 10), a.token.GetAccessToken())
-	if status != 200 || bytes.Contains(raw, []byte(b.user.GetPhone())) {
+	if status != 200 || bytes.Contains(raw, []byte(b.user.GetEmail())) {
 		t.Fatalf("GetUser status %d body %s", status, raw)
 	}
 	st, e := call(t, http.MethodGet, "/v1/users/12345", a.token.GetAccessToken(), nil, nil)
@@ -293,10 +298,10 @@ func TestAuthAndValidationErrors(t *testing.T) {
 	wantError(t, status, e, 401, "UNAUTHORIZED")
 	status, e = call(t, http.MethodGet, "/v1/users/me", "not-a-jwt", nil, nil)
 	wantError(t, status, e, 401, "UNAUTHORIZED")
-	status, e = call(t, http.MethodPost, "/v1/auth/sms-codes", "", &v1.SendSmsCodeRequest{Phone: "12345", Purpose: v1.SmsPurpose_SMS_PURPOSE_REGISTER}, nil)
+	status, e = call(t, http.MethodPost, "/v1/auth/email-codes", "", &v1.SendEmailCodeRequest{Email: "12345", Purpose: v1.CodePurpose_CODE_PURPOSE_REGISTER}, nil)
 	wantError(t, status, e, 400, "VALIDATOR")
 	status, e = call(t, http.MethodPost, "/v1/auth/login/password", "", &v1.LoginByPasswordRequest{
-		Phone: randomPhone(t), Password: "whatever1", Device: device("e2e-nobody", v1.Platform_PLATFORM_WEB),
+		Email: randomEmail(t), Password: "whatever1", Device: device("e2e-nobody", v1.Platform_PLATFORM_WEB),
 	}, nil)
 	wantError(t, status, e, 401, "INVALID_CREDENTIALS")
 }

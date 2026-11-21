@@ -89,14 +89,15 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 - 配置文件中的 `${XXX}` 引用环境变量 `MARSCHAT_XXX`，`${XXX:默认值}` 在变量缺失时取默认值。默认值对应本地开发环境，密码只能来自环境变量。引用的变量缺失且没有默认值时会替换成空字符串，不会报错，密码缺失会在连接依赖时失败。
 - 时长字段按 protobuf `Duration` 的 JSON 格式书写，单位只能是秒（`0.5s`、`3600s`），写成 `500ms`、`1h` 会导致启动失败。每个服务都有解析真实配置文件的单元测试。
 - 配置结构用 protovalidate 规则约束（例如限额必须大于 0），加载时校验。
-- **热更新**：`bootstrap.WatchConfig` 监听某一段配置，文件变化后重新解析、校验，通过才原子替换，不通过时保留旧值并记录错误日志。目前热更新的有 account 的 `policy` 段（短信与登录防护的限额）、social 的 `policy` 段（申请、建群频率与群成员上限）、message 的 `policy` 段（发消息频率、补拉上限与 `TOO_LONG` 阈值）和 access 的 `policy` 段（每连接上行帧频率），读取方每次使用时取一次快照；其余配置修改后需要重启。
+- **热更新**：`bootstrap.WatchConfig` 监听某一段配置，文件变化后重新解析、校验，通过才原子替换，不通过时保留旧值并记录错误日志。目前热更新的有 account 的 `policy` 段（邮箱验证码与登录防护的限额）、social 的 `policy` 段（申请、建群频率与群成员上限）、message 的 `policy` 段（发消息频率、补拉上限与 `TOO_LONG` 阈值）和 access 的 `policy` 段（每连接上行帧频率），读取方每次使用时取一次快照；其余配置修改后需要重启。
 
 ### 5.2 日志
 
 - 统一用标准库 `log/slog`，由 `bootstrap.NewLogger` 创建，输出到 stdout，格式 `text` 或 `json`，每条日志带 `service.name`、`service.version`。
 - GORM 日志接入同一个日志器（`component=gorm`），只记录慢查询（超过 `mysql.slow_threshold`）和错误，查不到记录不算错误；SQL 只打印占位符，不打印参数。
-- 访问日志由 `pkg/middleware/accesslog` 输出（`msg="server request"`），只记操作名、状态码、原因和耗时，**不记录请求体**：登录、注册请求里有密码、验证码和刷新令牌。5xx 记 ERROR，其余记 INFO。不使用 Kratos 自带的 `logging` 和 `recovery` 中间件，它们会打印请求体，见 [lessons/kratos-v3-server-defaults.md](../lessons/kratos-v3-server-defaults.md)。
-- 日志中的手机号脱敏为 `138****8000`。
+- 访问日志由 `pkg/middleware/accesslog` 输出（`msg="server request"`），只记操作名、状态码、原因和耗时，**不记录请求体**：登录、注册请求里有密码、验证码和刷新令牌。503（依赖故障，例如节点号租约失效、下游服务不可用、熔断打开）记 WARN：它可预期、可恢复，根因由依赖侧的日志记录（拨号保护、`idgen` 续期失败等）；其他 5xx 记 ERROR，其余记 INFO。不使用 Kratos 自带的 `logging` 和 `recovery` 中间件，它们会打印请求体，见 [lessons/kratos-v3-server-defaults.md](../lessons/kratos-v3-server-defaults.md)。
+- 日志中的邮箱用 `biz.MaskEmail` 脱敏为 `u***@example.com`（保留首字符和域名）。
+- go-redis 的内部日志（默认用标准库 `log` 写纯文本到 stderr）由 `bootstrap.NewRedis` 通过 `redis.SetLogger` 转到 `slog`（`msg="go-redis internal log"`，原文在 `detail`）。go-redis 不给级别，按内容分级：连接池拨号失败记 DEBUG（拨号保护已在故障开始和恢复时各记一条），内部恢复的 panic 记 ERROR，其他记 WARN。
 
 ### 5.3 服务注册与发现
 
@@ -181,6 +182,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 ### 5.8 错误
 
 - 业务错误用 Kratos errors，错误原因在各服务 proto 的 `ErrorReason` 枚举中定义（[account](../../api/account/v1/error_reason.proto)、[social](../../api/social/v1/error_reason.proto)、[message](../../api/message/v1/error_reason.proto)、[access](../../api/access/v1/error_reason.proto)），在 biz 层的 `errors.go` 中手写构造函数，不使用 errors 代码生成器。HTTP 状态码随错误类型确定：参数与验证码错误 400、凭据无效 401、封禁与无权限 403、不存在 404、冲突 409、限流 429、依赖故障 503。
+- 发号（`pkg/idgen`）在节点号租约失效时返回 `idgen.ErrLeaseLost`（Redis 停机超过 30 秒），各服务 biz 层的 `nextID` 把它转成 `503 DEPENDENCY_UNAVAILABLE`，客户端稍后重试；其他发号错误（时钟大幅回拨）仍按内部错误处理。account 注册时先发号再校验验证码，租约失效不会白白消耗验证码。
 - 错误体为 `{"code", "reason", "message", "metadata"}`。`message` 是给用户看的中文提示；客户端按 `reason` 分支处理，不解析 `message`。
 - 限流类错误（429）在 `metadata.retry_after_seconds` 中给出需要等待的秒数。
 - 框架产生的错误：令牌缺失、无效、过期或已吊销统一为 `401 UNAUTHORIZED`；参数不合法为 `400 VALIDATOR`；请求体无法解码为 `400 CODEC`；内部错误为 `500 INTERNAL`，不带细节。

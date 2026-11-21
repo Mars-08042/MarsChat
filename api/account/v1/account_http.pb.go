@@ -21,13 +21,13 @@ const OperationAccountServiceBanUser = "/account.v1.AccountService/BanUser"
 const OperationAccountServiceGetMe = "/account.v1.AccountService/GetMe"
 const OperationAccountServiceGetUser = "/account.v1.AccountService/GetUser"
 const OperationAccountServiceListSessions = "/account.v1.AccountService/ListSessions"
+const OperationAccountServiceLoginByEmailCode = "/account.v1.AccountService/LoginByEmailCode"
 const OperationAccountServiceLoginByPassword = "/account.v1.AccountService/LoginByPassword"
-const OperationAccountServiceLoginBySms = "/account.v1.AccountService/LoginBySms"
 const OperationAccountServiceLogout = "/account.v1.AccountService/Logout"
 const OperationAccountServiceRefreshToken = "/account.v1.AccountService/RefreshToken"
 const OperationAccountServiceRegister = "/account.v1.AccountService/Register"
 const OperationAccountServiceRevokeSession = "/account.v1.AccountService/RevokeSession"
-const OperationAccountServiceSendSmsCode = "/account.v1.AccountService/SendSmsCode"
+const OperationAccountServiceSendEmailCode = "/account.v1.AccountService/SendEmailCode"
 const OperationAccountServiceUnbanUser = "/account.v1.AccountService/UnbanUser"
 const OperationAccountServiceUpdateMe = "/account.v1.AccountService/UpdateMe"
 
@@ -40,20 +40,21 @@ type AccountServiceHTTPServer interface {
 	GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error)
 	// ListSessions 列出自己当前有效的登录设备。
 	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
-	// LoginByPassword 手机号加密码登录。
+	// LoginByEmailCode 邮箱加验证码登录。
+	LoginByEmailCode(context.Context, *LoginByEmailCodeRequest) (*LoginByEmailCodeResponse, error)
+	// LoginByPassword 邮箱加密码登录。
 	LoginByPassword(context.Context, *LoginByPasswordRequest) (*LoginByPasswordResponse, error)
-	// LoginBySms 手机号加短信验证码登录。
-	LoginBySms(context.Context, *LoginBySmsRequest) (*LoginBySmsResponse, error)
 	// Logout 退出当前设备。
 	Logout(context.Context, *LogoutRequest) (*LogoutResponse, error)
 	// RefreshToken 用刷新令牌换取新的令牌对，旧的刷新令牌随即失效。
 	RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error)
-	// Register 手机号加短信验证码注册，成功后直接登录当前设备。
+	// Register 邮箱加验证码注册，成功后直接登录当前设备。
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	// RevokeSession 让自己的某个设备下线。
 	RevokeSession(context.Context, *RevokeSessionRequest) (*RevokeSessionResponse, error)
-	// SendSmsCode 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
-	SendSmsCode(context.Context, *SendSmsCodeRequest) (*SendSmsCodeResponse, error)
+	// SendEmailCode 发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+	// 邮箱地址去掉首尾空白并转为小写后使用。
+	SendEmailCode(context.Context, *SendEmailCodeRequest) (*SendEmailCodeResponse, error)
 	// UnbanUser 解封用户（管理员）。
 	UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error)
 	// UpdateMe 修改自己的资料，只修改请求中出现的字段。
@@ -62,10 +63,10 @@ type AccountServiceHTTPServer interface {
 
 func RegisterAccountServiceHTTPServer(s *http.Server, srv AccountServiceHTTPServer) {
 	r := s.Route("/")
-	r.Handle("POST", "/v1/auth/sms-codes", _AccountService_SendSmsCode0_HTTP_Handler(srv))
+	r.Handle("POST", "/v1/auth/email-codes", _AccountService_SendEmailCode0_HTTP_Handler(srv))
 	r.Handle("POST", "/v1/auth/register", _AccountService_Register0_HTTP_Handler(srv))
 	r.Handle("POST", "/v1/auth/login/password", _AccountService_LoginByPassword0_HTTP_Handler(srv))
-	r.Handle("POST", "/v1/auth/login/sms", _AccountService_LoginBySms0_HTTP_Handler(srv))
+	r.Handle("POST", "/v1/auth/login/email-code", _AccountService_LoginByEmailCode0_HTTP_Handler(srv))
 	r.Handle("POST", "/v1/auth/refresh", _AccountService_RefreshToken0_HTTP_Handler(srv))
 	r.Handle("POST", "/v1/auth/logout", _AccountService_Logout0_HTTP_Handler(srv))
 	r.Handle("GET", "/v1/users/me", _AccountService_GetMe0_HTTP_Handler(srv))
@@ -77,21 +78,21 @@ func RegisterAccountServiceHTTPServer(s *http.Server, srv AccountServiceHTTPServ
 	r.Handle("POST", "/v1/admin/users/{user_id}/unban", _AccountService_UnbanUser0_HTTP_Handler(srv))
 }
 
-func _AccountService_SendSmsCode0_HTTP_Handler(srv AccountServiceHTTPServer) func(ctx http.Context) error {
+func _AccountService_SendEmailCode0_HTTP_Handler(srv AccountServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
-		var in SendSmsCodeRequest
+		var in SendEmailCodeRequest
 		if err := ctx.Bind(&in); err != nil {
 			return err
 		}
-		http.SetOperation(ctx, OperationAccountServiceSendSmsCode)
+		http.SetOperation(ctx, OperationAccountServiceSendEmailCode)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.SendSmsCode(ctx, req.(*SendSmsCodeRequest))
+			return srv.SendEmailCode(ctx, req.(*SendEmailCodeRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {
 			return err
 		}
-		reply := out.(*SendSmsCodeResponse)
+		reply := out.(*SendEmailCodeResponse)
 		return ctx.Result(200, reply)
 	}
 }
@@ -134,21 +135,21 @@ func _AccountService_LoginByPassword0_HTTP_Handler(srv AccountServiceHTTPServer)
 	}
 }
 
-func _AccountService_LoginBySms0_HTTP_Handler(srv AccountServiceHTTPServer) func(ctx http.Context) error {
+func _AccountService_LoginByEmailCode0_HTTP_Handler(srv AccountServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
-		var in LoginBySmsRequest
+		var in LoginByEmailCodeRequest
 		if err := ctx.Bind(&in); err != nil {
 			return err
 		}
-		http.SetOperation(ctx, OperationAccountServiceLoginBySms)
+		http.SetOperation(ctx, OperationAccountServiceLoginByEmailCode)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.LoginBySms(ctx, req.(*LoginBySmsRequest))
+			return srv.LoginByEmailCode(ctx, req.(*LoginByEmailCodeRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {
 			return err
 		}
-		reply := out.(*LoginBySmsResponse)
+		reply := out.(*LoginByEmailCodeResponse)
 		return ctx.Result(200, reply)
 	}
 }
@@ -345,20 +346,21 @@ type AccountServiceHTTPClient interface {
 	GetUser(ctx context.Context, req *GetUserRequest, opts ...http.CallOption) (rsp *GetUserResponse, err error)
 	// ListSessions 列出自己当前有效的登录设备。
 	ListSessions(ctx context.Context, req *ListSessionsRequest, opts ...http.CallOption) (rsp *ListSessionsResponse, err error)
-	// LoginByPassword 手机号加密码登录。
+	// LoginByEmailCode 邮箱加验证码登录。
+	LoginByEmailCode(ctx context.Context, req *LoginByEmailCodeRequest, opts ...http.CallOption) (rsp *LoginByEmailCodeResponse, err error)
+	// LoginByPassword 邮箱加密码登录。
 	LoginByPassword(ctx context.Context, req *LoginByPasswordRequest, opts ...http.CallOption) (rsp *LoginByPasswordResponse, err error)
-	// LoginBySms 手机号加短信验证码登录。
-	LoginBySms(ctx context.Context, req *LoginBySmsRequest, opts ...http.CallOption) (rsp *LoginBySmsResponse, err error)
 	// Logout 退出当前设备。
 	Logout(ctx context.Context, req *LogoutRequest, opts ...http.CallOption) (rsp *LogoutResponse, err error)
 	// RefreshToken 用刷新令牌换取新的令牌对，旧的刷新令牌随即失效。
 	RefreshToken(ctx context.Context, req *RefreshTokenRequest, opts ...http.CallOption) (rsp *RefreshTokenResponse, err error)
-	// Register 手机号加短信验证码注册，成功后直接登录当前设备。
+	// Register 邮箱加验证码注册，成功后直接登录当前设备。
 	Register(ctx context.Context, req *RegisterRequest, opts ...http.CallOption) (rsp *RegisterResponse, err error)
 	// RevokeSession 让自己的某个设备下线。
 	RevokeSession(ctx context.Context, req *RevokeSessionRequest, opts ...http.CallOption) (rsp *RevokeSessionResponse, err error)
-	// SendSmsCode 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
-	SendSmsCode(ctx context.Context, req *SendSmsCodeRequest, opts ...http.CallOption) (rsp *SendSmsCodeResponse, err error)
+	// SendEmailCode 发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+	// 邮箱地址去掉首尾空白并转为小写后使用。
+	SendEmailCode(ctx context.Context, req *SendEmailCodeRequest, opts ...http.CallOption) (rsp *SendEmailCodeResponse, err error)
 	// UnbanUser 解封用户（管理员）。
 	UnbanUser(ctx context.Context, req *UnbanUserRequest, opts ...http.CallOption) (rsp *UnbanUserResponse, err error)
 	// UpdateMe 修改自己的资料，只修改请求中出现的字段。
@@ -442,15 +444,15 @@ func (c *AccountServiceHTTPClientImpl) ListSessions(ctx context.Context, in *Lis
 	return &out, nil
 }
 
-// LoginByPassword 手机号加密码登录。
-func (c *AccountServiceHTTPClientImpl) LoginByPassword(ctx context.Context, in *LoginByPasswordRequest, opts ...http.CallOption) (*LoginByPasswordResponse, error) {
-	var out LoginByPasswordResponse
-	pattern := "/v1/auth/login/password"
+// LoginByEmailCode 邮箱加验证码登录。
+func (c *AccountServiceHTTPClientImpl) LoginByEmailCode(ctx context.Context, in *LoginByEmailCodeRequest, opts ...http.CallOption) (*LoginByEmailCodeResponse, error) {
+	var out LoginByEmailCodeResponse
+	pattern := "/v1/auth/login/email-code"
 	path := http.BuildPath(pattern, in)
 	opts = append([]http.CallOption{
 		http.Accept("application/protojson"),
 		http.ContentType("application/protojson"),
-		http.Operation(OperationAccountServiceLoginByPassword),
+		http.Operation(OperationAccountServiceLoginByEmailCode),
 		http.PathTemplate(pattern),
 	}, opts...)
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
@@ -460,15 +462,15 @@ func (c *AccountServiceHTTPClientImpl) LoginByPassword(ctx context.Context, in *
 	return &out, nil
 }
 
-// LoginBySms 手机号加短信验证码登录。
-func (c *AccountServiceHTTPClientImpl) LoginBySms(ctx context.Context, in *LoginBySmsRequest, opts ...http.CallOption) (*LoginBySmsResponse, error) {
-	var out LoginBySmsResponse
-	pattern := "/v1/auth/login/sms"
+// LoginByPassword 邮箱加密码登录。
+func (c *AccountServiceHTTPClientImpl) LoginByPassword(ctx context.Context, in *LoginByPasswordRequest, opts ...http.CallOption) (*LoginByPasswordResponse, error) {
+	var out LoginByPasswordResponse
+	pattern := "/v1/auth/login/password"
 	path := http.BuildPath(pattern, in)
 	opts = append([]http.CallOption{
 		http.Accept("application/protojson"),
 		http.ContentType("application/protojson"),
-		http.Operation(OperationAccountServiceLoginBySms),
+		http.Operation(OperationAccountServiceLoginByPassword),
 		http.PathTemplate(pattern),
 	}, opts...)
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
@@ -514,7 +516,7 @@ func (c *AccountServiceHTTPClientImpl) RefreshToken(ctx context.Context, in *Ref
 	return &out, nil
 }
 
-// Register 手机号加短信验证码注册，成功后直接登录当前设备。
+// Register 邮箱加验证码注册，成功后直接登录当前设备。
 func (c *AccountServiceHTTPClientImpl) Register(ctx context.Context, in *RegisterRequest, opts ...http.CallOption) (*RegisterResponse, error) {
 	var out RegisterResponse
 	pattern := "/v1/auth/register"
@@ -549,15 +551,16 @@ func (c *AccountServiceHTTPClientImpl) RevokeSession(ctx context.Context, in *Re
 	return &out, nil
 }
 
-// SendSmsCode 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
-func (c *AccountServiceHTTPClientImpl) SendSmsCode(ctx context.Context, in *SendSmsCodeRequest, opts ...http.CallOption) (*SendSmsCodeResponse, error) {
-	var out SendSmsCodeResponse
-	pattern := "/v1/auth/sms-codes"
+// SendEmailCode 发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+// 邮箱地址去掉首尾空白并转为小写后使用。
+func (c *AccountServiceHTTPClientImpl) SendEmailCode(ctx context.Context, in *SendEmailCodeRequest, opts ...http.CallOption) (*SendEmailCodeResponse, error) {
+	var out SendEmailCodeResponse
+	pattern := "/v1/auth/email-codes"
 	path := http.BuildPath(pattern, in)
 	opts = append([]http.CallOption{
 		http.Accept("application/protojson"),
 		http.ContentType("application/protojson"),
-		http.Operation(OperationAccountServiceSendSmsCode),
+		http.Operation(OperationAccountServiceSendEmailCode),
 		http.PathTemplate(pattern),
 	}, opts...)
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)

@@ -19,19 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_SendSmsCode_FullMethodName     = "/account.v1.AccountService/SendSmsCode"
-	AccountService_Register_FullMethodName        = "/account.v1.AccountService/Register"
-	AccountService_LoginByPassword_FullMethodName = "/account.v1.AccountService/LoginByPassword"
-	AccountService_LoginBySms_FullMethodName      = "/account.v1.AccountService/LoginBySms"
-	AccountService_RefreshToken_FullMethodName    = "/account.v1.AccountService/RefreshToken"
-	AccountService_Logout_FullMethodName          = "/account.v1.AccountService/Logout"
-	AccountService_GetMe_FullMethodName           = "/account.v1.AccountService/GetMe"
-	AccountService_UpdateMe_FullMethodName        = "/account.v1.AccountService/UpdateMe"
-	AccountService_GetUser_FullMethodName         = "/account.v1.AccountService/GetUser"
-	AccountService_ListSessions_FullMethodName    = "/account.v1.AccountService/ListSessions"
-	AccountService_RevokeSession_FullMethodName   = "/account.v1.AccountService/RevokeSession"
-	AccountService_BanUser_FullMethodName         = "/account.v1.AccountService/BanUser"
-	AccountService_UnbanUser_FullMethodName       = "/account.v1.AccountService/UnbanUser"
+	AccountService_SendEmailCode_FullMethodName    = "/account.v1.AccountService/SendEmailCode"
+	AccountService_Register_FullMethodName         = "/account.v1.AccountService/Register"
+	AccountService_LoginByPassword_FullMethodName  = "/account.v1.AccountService/LoginByPassword"
+	AccountService_LoginByEmailCode_FullMethodName = "/account.v1.AccountService/LoginByEmailCode"
+	AccountService_RefreshToken_FullMethodName     = "/account.v1.AccountService/RefreshToken"
+	AccountService_Logout_FullMethodName           = "/account.v1.AccountService/Logout"
+	AccountService_GetMe_FullMethodName            = "/account.v1.AccountService/GetMe"
+	AccountService_UpdateMe_FullMethodName         = "/account.v1.AccountService/UpdateMe"
+	AccountService_GetUser_FullMethodName          = "/account.v1.AccountService/GetUser"
+	AccountService_ListSessions_FullMethodName     = "/account.v1.AccountService/ListSessions"
+	AccountService_RevokeSession_FullMethodName    = "/account.v1.AccountService/RevokeSession"
+	AccountService_BanUser_FullMethodName          = "/account.v1.AccountService/BanUser"
+	AccountService_UnbanUser_FullMethodName        = "/account.v1.AccountService/UnbanUser"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -41,14 +41,15 @@ const (
 // AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
 // 除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
 type AccountServiceClient interface {
-	// 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
-	SendSmsCode(ctx context.Context, in *SendSmsCodeRequest, opts ...grpc.CallOption) (*SendSmsCodeResponse, error)
-	// 手机号加短信验证码注册，成功后直接登录当前设备。
+	// 发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+	// 邮箱地址去掉首尾空白并转为小写后使用。
+	SendEmailCode(ctx context.Context, in *SendEmailCodeRequest, opts ...grpc.CallOption) (*SendEmailCodeResponse, error)
+	// 邮箱加验证码注册，成功后直接登录当前设备。
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
-	// 手机号加密码登录。
+	// 邮箱加密码登录。
 	LoginByPassword(ctx context.Context, in *LoginByPasswordRequest, opts ...grpc.CallOption) (*LoginByPasswordResponse, error)
-	// 手机号加短信验证码登录。
-	LoginBySms(ctx context.Context, in *LoginBySmsRequest, opts ...grpc.CallOption) (*LoginBySmsResponse, error)
+	// 邮箱加验证码登录。
+	LoginByEmailCode(ctx context.Context, in *LoginByEmailCodeRequest, opts ...grpc.CallOption) (*LoginByEmailCodeResponse, error)
 	// 用刷新令牌换取新的令牌对，旧的刷新令牌随即失效。
 	RefreshToken(ctx context.Context, in *RefreshTokenRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error)
 	// 退出当前设备。
@@ -77,10 +78,10 @@ func NewAccountServiceClient(cc grpc.ClientConnInterface) AccountServiceClient {
 	return &accountServiceClient{cc}
 }
 
-func (c *accountServiceClient) SendSmsCode(ctx context.Context, in *SendSmsCodeRequest, opts ...grpc.CallOption) (*SendSmsCodeResponse, error) {
+func (c *accountServiceClient) SendEmailCode(ctx context.Context, in *SendEmailCodeRequest, opts ...grpc.CallOption) (*SendEmailCodeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SendSmsCodeResponse)
-	err := c.cc.Invoke(ctx, AccountService_SendSmsCode_FullMethodName, in, out, cOpts...)
+	out := new(SendEmailCodeResponse)
+	err := c.cc.Invoke(ctx, AccountService_SendEmailCode_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -107,10 +108,10 @@ func (c *accountServiceClient) LoginByPassword(ctx context.Context, in *LoginByP
 	return out, nil
 }
 
-func (c *accountServiceClient) LoginBySms(ctx context.Context, in *LoginBySmsRequest, opts ...grpc.CallOption) (*LoginBySmsResponse, error) {
+func (c *accountServiceClient) LoginByEmailCode(ctx context.Context, in *LoginByEmailCodeRequest, opts ...grpc.CallOption) (*LoginByEmailCodeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(LoginBySmsResponse)
-	err := c.cc.Invoke(ctx, AccountService_LoginBySms_FullMethodName, in, out, cOpts...)
+	out := new(LoginByEmailCodeResponse)
+	err := c.cc.Invoke(ctx, AccountService_LoginByEmailCode_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -214,14 +215,15 @@ func (c *accountServiceClient) UnbanUser(ctx context.Context, in *UnbanUserReque
 // AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
 // 除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
 type AccountServiceServer interface {
-	// 发送短信验证码。同一手机号有发送间隔和每日上限，同一 IP 有频率限制。
-	SendSmsCode(context.Context, *SendSmsCodeRequest) (*SendSmsCodeResponse, error)
-	// 手机号加短信验证码注册，成功后直接登录当前设备。
+	// 发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+	// 邮箱地址去掉首尾空白并转为小写后使用。
+	SendEmailCode(context.Context, *SendEmailCodeRequest) (*SendEmailCodeResponse, error)
+	// 邮箱加验证码注册，成功后直接登录当前设备。
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
-	// 手机号加密码登录。
+	// 邮箱加密码登录。
 	LoginByPassword(context.Context, *LoginByPasswordRequest) (*LoginByPasswordResponse, error)
-	// 手机号加短信验证码登录。
-	LoginBySms(context.Context, *LoginBySmsRequest) (*LoginBySmsResponse, error)
+	// 邮箱加验证码登录。
+	LoginByEmailCode(context.Context, *LoginByEmailCodeRequest) (*LoginByEmailCodeResponse, error)
 	// 用刷新令牌换取新的令牌对，旧的刷新令牌随即失效。
 	RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error)
 	// 退出当前设备。
@@ -250,8 +252,8 @@ type AccountServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAccountServiceServer struct{}
 
-func (UnimplementedAccountServiceServer) SendSmsCode(context.Context, *SendSmsCodeRequest) (*SendSmsCodeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SendSmsCode not implemented")
+func (UnimplementedAccountServiceServer) SendEmailCode(context.Context, *SendEmailCodeRequest) (*SendEmailCodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SendEmailCode not implemented")
 }
 func (UnimplementedAccountServiceServer) Register(context.Context, *RegisterRequest) (*RegisterResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Register not implemented")
@@ -259,8 +261,8 @@ func (UnimplementedAccountServiceServer) Register(context.Context, *RegisterRequ
 func (UnimplementedAccountServiceServer) LoginByPassword(context.Context, *LoginByPasswordRequest) (*LoginByPasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method LoginByPassword not implemented")
 }
-func (UnimplementedAccountServiceServer) LoginBySms(context.Context, *LoginBySmsRequest) (*LoginBySmsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method LoginBySms not implemented")
+func (UnimplementedAccountServiceServer) LoginByEmailCode(context.Context, *LoginByEmailCodeRequest) (*LoginByEmailCodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LoginByEmailCode not implemented")
 }
 func (UnimplementedAccountServiceServer) RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RefreshToken not implemented")
@@ -310,20 +312,20 @@ func RegisterAccountServiceServer(s grpc.ServiceRegistrar, srv AccountServiceSer
 	s.RegisterService(&AccountService_ServiceDesc, srv)
 }
 
-func _AccountService_SendSmsCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SendSmsCodeRequest)
+func _AccountService_SendEmailCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendEmailCodeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AccountServiceServer).SendSmsCode(ctx, in)
+		return srv.(AccountServiceServer).SendEmailCode(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AccountService_SendSmsCode_FullMethodName,
+		FullMethod: AccountService_SendEmailCode_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).SendSmsCode(ctx, req.(*SendSmsCodeRequest))
+		return srv.(AccountServiceServer).SendEmailCode(ctx, req.(*SendEmailCodeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -364,20 +366,20 @@ func _AccountService_LoginByPassword_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AccountService_LoginBySms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LoginBySmsRequest)
+func _AccountService_LoginByEmailCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoginByEmailCodeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AccountServiceServer).LoginBySms(ctx, in)
+		return srv.(AccountServiceServer).LoginByEmailCode(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AccountService_LoginBySms_FullMethodName,
+		FullMethod: AccountService_LoginByEmailCode_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).LoginBySms(ctx, req.(*LoginBySmsRequest))
+		return srv.(AccountServiceServer).LoginByEmailCode(ctx, req.(*LoginByEmailCodeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -552,8 +554,8 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AccountServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "SendSmsCode",
-			Handler:    _AccountService_SendSmsCode_Handler,
+			MethodName: "SendEmailCode",
+			Handler:    _AccountService_SendEmailCode_Handler,
 		},
 		{
 			MethodName: "Register",
@@ -564,8 +566,8 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AccountService_LoginByPassword_Handler,
 		},
 		{
-			MethodName: "LoginBySms",
-			Handler:    _AccountService_LoginBySms_Handler,
+			MethodName: "LoginByEmailCode",
+			Handler:    _AccountService_LoginByEmailCode_Handler,
 		},
 		{
 			MethodName: "RefreshToken",

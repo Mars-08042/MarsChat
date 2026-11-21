@@ -102,8 +102,8 @@ keys: ## 生成开发用 JWT 密钥对并写入 .env（已有时不覆盖）
 	go run ./tools/jwtkey -env .env
 
 .PHONY: grant-admin
-grant-admin: ## 把已注册用户设为管理员，例如 make grant-admin PHONE=13800000000
-	sh scripts/grant-admin.sh "$(PHONE)"
+grant-admin: ## 把已注册用户设为管理员，例如 make grant-admin EMAIL=someone@example.com
+	sh scripts/grant-admin.sh "$(EMAIL)"
 
 # 在宿主机运行服务，自动加载 .env
 # 命令行里只用 ASCII：GnuWin32 make 3.81 按 ANSI 代码页（GBK）把命令传给 sh，

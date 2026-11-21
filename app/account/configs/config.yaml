@@ -1,6 +1,6 @@
 # account 服务配置。${XXX} 引用环境变量 MARSCHAT_XXX，${XXX:默认值} 在变量缺失时取默认值。
 # 默认值对应本地开发环境（compose.yaml），密码和密钥只从环境变量读取。
-# sms.fixed_code 默认 000000 只适用于开发环境的 log 发送方，生产配置必须置空。
+# mail.fixed_code 默认 000000 只适用于开发环境的 log 发送方，使用 smtp 时必须置空（启动时检查）。
 # 时长按 protobuf Duration 的 JSON 格式书写，单位只能是秒，例如 0.5s、3600s；500ms、1h 会解析失败。
 server:
   http:
@@ -49,9 +49,19 @@ token:
   rotation_grace: 10s
   revocation_ttl: 3600s
 
-sms:
-  provider: log
-  fixed_code: ${SMS_FIXED_CODE:000000}
+# 验证码邮件。默认 log：只把验证码写进日志，开发和 e2e 用固定验证码 000000。
+# 真实发送时在 .env 中设置 MARSCHAT_MAIL_PROVIDER=smtp、MARSCHAT_MAIL_FIXED_CODE=（置空）和 SMTP 参数，见 docs/deployment.md
+mail:
+  provider: ${MAIL_PROVIDER:log}
+  fixed_code: ${MAIL_FIXED_CODE:000000}
+  smtp:
+    # host:port，465 端口用隐式 TLS，其他端口要求 STARTTLS
+    addr: ${SMTP_ADDR:}
+    # 发件邮箱，同时是登录用户名
+    username: ${SMTP_USERNAME:}
+    # 邮箱的 SMTP 授权码，不是登录密码
+    password: ${SMTP_PASSWORD:}
+    timeout: 2.5s
 
 security:
   bcrypt_cost: 12
@@ -66,11 +76,11 @@ cache:
 
 # 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
 policy:
-  sms:
+  email_code:
     code_ttl: 300s
     max_verify_attempts: 5
     send_interval: 60s
-    daily_limit_per_phone: 10
+    daily_limit_per_email: 10
     ip_limit:
       limit: 20
       window: 3600s

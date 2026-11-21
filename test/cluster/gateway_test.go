@@ -78,10 +78,10 @@ func TestGatewayClientIP(t *testing.T) {
 	rdb := testkit.NewRedis(t)
 	resetRateLimits(t)
 	const spoofed = "198.51.100.7"
-	_ = rdb.Del(ctx(t), "account:rl:sms_ip:"+spoofed).Err()
+	_ = rdb.Del(ctx(t), "account:rl:email_code_ip:"+spoofed).Err()
 
-	req, err := http.NewRequest(http.MethodPost, gatewayHTTP+"/v1/auth/sms-codes",
-		strings.NewReader(`{"phone":"`+testkit.RandomPhone(t)+`","purpose":"SMS_PURPOSE_REGISTER"}`))
+	req, err := http.NewRequest(http.MethodPost, gatewayHTTP+"/v1/auth/email-codes",
+		strings.NewReader(`{"email":"`+testkit.RandomEmail(t)+`","purpose":"CODE_PURPOSE_REGISTER"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +93,12 @@ func TestGatewayClientIP(t *testing.T) {
 	}
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("send sms code: status %d", res.StatusCode)
+		t.Fatalf("send email code: status %d", res.StatusCode)
 	}
-	if n, _ := rdb.Exists(ctx(t), "account:rl:sms_ip:"+gatewayClientIP).Result(); n != 1 {
+	if n, _ := rdb.Exists(ctx(t), "account:rl:email_code_ip:"+gatewayClientIP).Result(); n != 1 {
 		t.Errorf("rate limit key for %s not found", gatewayClientIP)
 	}
-	if n, _ := rdb.Exists(ctx(t), "account:rl:sms_ip:"+spoofed).Result(); n != 0 {
+	if n, _ := rdb.Exists(ctx(t), "account:rl:email_code_ip:"+spoofed).Result(); n != 0 {
 		t.Errorf("spoofed X-Forwarded-For %s was trusted", spoofed)
 	}
 	resetRateLimits(t)

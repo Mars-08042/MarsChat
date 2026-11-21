@@ -23,12 +23,12 @@ func withRetryAfter(e *errors.Error, d time.Duration) *errors.Error {
 	return e.WithMetadata(map[string]string{"retry_after_seconds": strconv.Itoa(secs)})
 }
 
-func ErrSmsTooFrequent(retry time.Duration) error {
-	return withRetryAfter(newErr(429, v1.ErrorReason_SMS_SEND_TOO_FREQUENT, "验证码发送过于频繁，请稍后再试"), retry)
+func ErrCodeTooFrequent(retry time.Duration) error {
+	return withRetryAfter(newErr(429, v1.ErrorReason_CODE_SEND_TOO_FREQUENT, "验证码发送过于频繁，请稍后再试"), retry)
 }
 
-func ErrSmsDailyLimit(retry time.Duration) error {
-	return withRetryAfter(newErr(429, v1.ErrorReason_SMS_DAILY_LIMIT_EXCEEDED, "今日验证码发送次数已达上限"), retry)
+func ErrCodeDailyLimit(retry time.Duration) error {
+	return withRetryAfter(newErr(429, v1.ErrorReason_CODE_DAILY_LIMIT_EXCEEDED, "今日验证码发送次数已达上限"), retry)
 }
 
 func ErrRateLimited(retry time.Duration) error {
@@ -39,16 +39,20 @@ func ErrLoginLocked(retry time.Duration) error {
 	return withRetryAfter(newErr(429, v1.ErrorReason_LOGIN_LOCKED, "密码错误次数过多，请稍后再试或使用验证码登录"), retry)
 }
 
-func ErrSmsSendFailed() error {
-	return newErr(503, v1.ErrorReason_SMS_SEND_FAILED, "验证码发送失败，请重试")
+func ErrCodeSendFailed() error {
+	return newErr(503, v1.ErrorReason_CODE_SEND_FAILED, "验证码发送失败，请重试")
 }
 
-func ErrSmsCodeInvalid() error {
-	return newErr(400, v1.ErrorReason_SMS_CODE_INVALID, "验证码错误或已过期")
+func ErrDependencyUnavailable() error {
+	return newErr(503, v1.ErrorReason_DEPENDENCY_UNAVAILABLE, "服务暂时不可用，请稍后重试")
 }
 
-func ErrSmsCodeExhausted() error {
-	return newErr(400, v1.ErrorReason_SMS_CODE_ATTEMPTS_EXCEEDED, "验证码错误次数过多，请重新获取")
+func ErrCodeInvalid() error {
+	return newErr(400, v1.ErrorReason_CODE_INVALID, "验证码错误或已过期")
+}
+
+func ErrCodeExhausted() error {
+	return newErr(400, v1.ErrorReason_CODE_ATTEMPTS_EXCEEDED, "验证码错误次数过多，请重新获取")
 }
 
 func ErrWeakPassword() error {
@@ -60,7 +64,7 @@ func ErrInvalidBirthday() error {
 }
 
 func ErrInvalidCredentials() error {
-	return newErr(401, v1.ErrorReason_INVALID_CREDENTIALS, "手机号或密码错误")
+	return newErr(401, v1.ErrorReason_INVALID_CREDENTIALS, "邮箱或密码错误")
 }
 
 func ErrRefreshTokenInvalid() error {
@@ -83,8 +87,8 @@ func ErrSessionNotFound() error {
 	return newErr(404, v1.ErrorReason_SESSION_NOT_FOUND, "设备不存在或已下线")
 }
 
-func ErrPhoneRegistered() error {
-	return newErr(409, v1.ErrorReason_PHONE_ALREADY_REGISTERED, "手机号已注册")
+func ErrEmailRegistered() error {
+	return newErr(409, v1.ErrorReason_EMAIL_ALREADY_REGISTERED, "邮箱已注册")
 }
 
 func ErrRefreshTokenRotated() error {

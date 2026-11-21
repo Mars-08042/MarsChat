@@ -117,7 +117,7 @@ func (uc *FriendUsecase) sendOnce(ctx context.Context, from, to int64, message s
 			return err
 		}
 
-		id, err := uc.ids.NextID()
+		id, err := nextID(uc.ids)
 		if err != nil {
 			return err
 		}
@@ -174,9 +174,20 @@ func (uc *FriendUsecase) addFriends(ctx context.Context, userID, friendID int64,
 // AcceptRequest 同意好友申请，只有接收方可以操作。
 func (uc *FriendUsecase) AcceptRequest(ctx context.Context, me, id int64) error {
 	now := uc.now()
-	return uc.tx.InTx(ctx, func(ctx context.Context) error {
+	blocked := false
+	err := uc.tx.InTx(ctx, func(ctx context.Context) error {
 		r, err := uc.receivedRequest(ctx, me, id)
 		if err != nil {
+			return err
+		}
+		// 申请与拉黑并发时，两个事务互相看不到对方的写入，可能留下一条来自已拉黑用户的待处理申请。
+		// 同意时再检查一次：任一方已拉黑就让申请失效（与拉黑时的处理一致），提交后再返回错误
+		blocked, err = uc.blocks.EitherBlocked(ctx, me, r.FromUserID)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			_, err := uc.requests.Handle(ctx, id, me, RequestExpired, now)
 			return err
 		}
 		// 条件更新保证并发同意只有一次成功
@@ -189,6 +200,10 @@ func (uc *FriendUsecase) AcceptRequest(ctx context.Context, me, id int64) error 
 		}
 		return uc.addFriends(ctx, me, r.FromUserID, now)
 	})
+	if err == nil && blocked {
+		return ErrFriendRequestNotAllowed()
+	}
+	return err
 }
 
 // RejectRequest 拒绝好友申请，只有接收方可以操作。对方之后可以再次申请。

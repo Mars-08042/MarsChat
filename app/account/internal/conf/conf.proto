@@ -16,7 +16,7 @@ message Bootstrap {
   marschat.conf.Log log = 5;
   marschat.conf.Auth auth = 6 [(buf.validate.field).required = true];
   Token token = 7 [(buf.validate.field).required = true];
-  Sms sms = 8 [(buf.validate.field).required = true];
+  Mail mail = 8 [(buf.validate.field).required = true];
   // 可热更新，见 Policy
   Policy policy = 9 [(buf.validate.field).required = true];
   Security security = 10 [(buf.validate.field).required = true];
@@ -48,31 +48,48 @@ message Token {
   ];
 }
 
-// Sms 是短信发送方的配置，修改后需要重启。
-message Sms {
-  // 目前只有 log：只写日志，不真正发送
+// Mail 是验证码邮件发送方的配置，修改后需要重启。
+message Mail {
+  // log：只写日志，不真正发送，用于开发和测试；smtp：经 SMTP 服务器发送
   string provider = 1 [(buf.validate.field).string = {
-    in: ["log"]
+    in: ["log", "smtp"]
   }];
-  // 固定验证码，仅供开发和 e2e 测试；为空时随机生成
+  // 固定验证码，仅供开发和 e2e 测试，只能与 log 一起使用；为空时随机生成
   string fixed_code = 2 [(buf.validate.field).string.pattern = "^$|^[0-9]{6}$"];
+  // provider 为 smtp 时必填，启动时检查
+  Smtp smtp = 3;
+}
+
+// Smtp 是 SMTP 服务器的连接参数。
+message Smtp {
+  // host:port。465 端口使用隐式 TLS，其他端口要求服务器支持 STARTTLS，不允许明文发送
+  string addr = 1;
+  // 登录用户名，同时作为发件人地址（个人邮箱要求两者一致）
+  string username = 2;
+  // 邮箱的 SMTP 授权码，只放在被忽略的 .env 中
+  string password = 3;
+  // 一次发送（连接、认证、投递）的最长时间，实际还不会超过请求剩余的截止时间
+  google.protobuf.Duration timeout = 4 [(buf.validate.field).duration = {
+    gt: {seconds: 0}
+    lte: {seconds: 10}
+  }];
 }
 
 // Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
 message Policy {
-  message Sms {
+  message EmailCode {
     google.protobuf.Duration code_ttl = 1 [
       (buf.validate.field).required = true,
       (buf.validate.field).duration.gt = {seconds: 0}
     ];
     // 同一个验证码最多验证几次，超过后作废
     int32 max_verify_attempts = 2 [(buf.validate.field).int32.gt = 0];
-    // 同一手机号两次发送的最小间隔
+    // 同一邮箱两次发送的最小间隔
     google.protobuf.Duration send_interval = 3 [
       (buf.validate.field).required = true,
       (buf.validate.field).duration.gt = {seconds: 0}
     ];
-    int32 daily_limit_per_phone = 4 [(buf.validate.field).int32.gt = 0];
+    int32 daily_limit_per_email = 4 [(buf.validate.field).int32.gt = 0];
     marschat.conf.RateLimit ip_limit = 5 [(buf.validate.field).required = true];
   }
   message Login {
@@ -88,7 +105,7 @@ message Policy {
     ];
     marschat.conf.RateLimit ip_limit = 4 [(buf.validate.field).required = true];
   }
-  Sms sms = 1 [(buf.validate.field).required = true];
+  EmailCode email_code = 1 [(buf.validate.field).required = true];
   Login login = 2 [(buf.validate.field).required = true];
 }
 

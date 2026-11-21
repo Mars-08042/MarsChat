@@ -368,9 +368,15 @@ func (l fakeLimiter) Allow(context.Context, string, int, time.Duration) (ratelim
 	return ratelimit.Result{Allowed: true}, nil
 }
 
-type fakeIDs struct{ next int64 }
+type fakeIDs struct {
+	next int64
+	err  error
+}
 
 func (g *fakeIDs) NextID() (int64, error) {
+	if g.err != nil {
+		return 0, g.err
+	}
 	g.next++
 	return 1_000_000 + g.next, nil
 }
@@ -382,6 +388,7 @@ type env struct {
 	users   *fakeUsers
 	groups  *fakeGroups
 	policy  *PolicyHolder
+	ids     *fakeIDs
 	msg     *MessageUsecase
 	conv    *ConversationUsecase
 	members *MembershipUsecase
@@ -399,10 +406,10 @@ func newEnv(t *testing.T) *env {
 	t.Helper()
 	s := newStore()
 	e := &env{s: s, perm: &fakePerm{}, limiter: &fakeLimiter{}, users: &fakeUsers{}, groups: &fakeGroups{},
-		policy: NewPolicyHolder(testPolicy())}
+		policy: NewPolicyHolder(testPolicy()), ids: &fakeIDs{}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	tx, convs, members, msgs, events := fakeTx{s}, fakeConvs{s}, fakeMembers{s}, fakeMsgs{s}, fakeEvents{s}
-	e.msg = NewMessageUsecase(tx, convs, members, msgs, events, e.perm, limiterAdapter{e.limiter}, &fakeIDs{}, e.policy, logger)
+	e.msg = NewMessageUsecase(tx, convs, members, msgs, events, e.perm, limiterAdapter{e.limiter}, e.ids, e.policy, logger)
 	e.conv = NewConversationUsecase(tx, convs, members, msgs, events, usersAdapter{e.users}, groupsAdapter{e.groups}, e.policy, logger)
 	e.members = NewMembershipUsecase(tx, convs, members)
 	return e

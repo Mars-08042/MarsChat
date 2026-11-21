@@ -156,7 +156,7 @@ func (uc *MessageUsecase) lockConversation(ctx context.Context, in SendInput, kn
 		}
 		return uc.convs.Lock(ctx, in.PeerID)
 	}
-	id, err := uc.ids.NextID()
+	id, err := nextID(uc.ids)
 	if err != nil {
 		return nil, err
 	}

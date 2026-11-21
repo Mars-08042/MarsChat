@@ -38,7 +38,7 @@ func call(t *testing.T, handler func(context.Context, any) (any, error)) (any, e
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	ctx := transport.NewServerContext(context.Background(), fakeTransport{})
-	req := &v1.LoginByPasswordRequest{Phone: "13800000001", Password: secret}
+	req := &v1.LoginByPasswordRequest{Email: "user1@example.com", Password: secret}
 	reply, err := Server(logger)(handler)(ctx, req)
 	return reply, err, buf.String()
 }
@@ -48,7 +48,7 @@ func TestSuccessLogsOperationWithoutRequestBody(t *testing.T) {
 	if err != nil || reply != "ok" {
 		t.Fatalf("reply = %v, err = %v", reply, err)
 	}
-	if strings.Contains(logs, secret) || strings.Contains(logs, "13800000001") {
+	if strings.Contains(logs, secret) || strings.Contains(logs, "user1@example.com") {
 		t.Fatalf("request body leaked into log: %s", logs)
 	}
 	for _, want := range []string{"level=INFO", "operation=" + v1.OperationAccountServiceLoginByPassword, "code=200"} {
@@ -59,7 +59,7 @@ func TestSuccessLogsOperationWithoutRequestBody(t *testing.T) {
 }
 
 func TestBusinessErrorPassesThroughAtInfo(t *testing.T) {
-	bizErr := kerrors.Unauthorized("INVALID_CREDENTIALS", "手机号或密码错误")
+	bizErr := kerrors.Unauthorized("INVALID_CREDENTIALS", "邮箱或密码错误")
 	_, err, logs := call(t, func(context.Context, any) (any, error) { return nil, bizErr })
 	if !errors.Is(err, bizErr) {
 		t.Fatalf("business error changed: %v", err)
@@ -69,8 +69,28 @@ func TestBusinessErrorPassesThroughAtInfo(t *testing.T) {
 	}
 }
 
+// 503 是可预期、可恢复的依赖故障，记 WARN；其他 5xx 仍记 ERROR。
+func TestServerErrorLevels(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{kerrors.ServiceUnavailable("DEPENDENCY_UNAVAILABLE", "服务暂时不可用，请稍后重试"), "level=WARN"},
+		{kerrors.GatewayTimeout("TIMEOUT", "timeout"), "level=ERROR"},
+		{kerrors.InternalServer("BROKEN", "broken"), "level=ERROR"},
+	} {
+		_, err, logs := call(t, func(context.Context, any) (any, error) { return nil, tc.err })
+		if !errors.Is(err, tc.err) {
+			t.Fatalf("server error changed: %v", err)
+		}
+		if !strings.Contains(logs, tc.want) || !strings.Contains(logs, "reason="+kerrors.Reason(tc.err)) {
+			t.Errorf("%v: want %s with reason in log: %s", tc.err, tc.want, logs)
+		}
+	}
+}
+
 func TestInternalErrorIsSanitized(t *testing.T) {
-	dbErr := errors.New("Error 1062 (23000): Duplicate entry '13800000001' for key 'users.uk_phone'")
+	dbErr := errors.New("Error 1062 (23000): Duplicate entry 'user1@example.com' for key 'users.uk_email'")
 	_, err, logs := call(t, func(context.Context, any) (any, error) { return nil, dbErr })
 	se := kerrors.FromError(err)
 	if se.Code != 500 || se.Reason != "INTERNAL" || strings.Contains(se.Message, "1062") {

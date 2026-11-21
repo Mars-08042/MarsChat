@@ -25,7 +25,7 @@ const (
 
 // RegisterInput 是注册参数。
 type RegisterInput struct {
-	Phone    string
+	Email    string
 	Code     string
 	Password string
 	Nickname string
@@ -40,7 +40,7 @@ type AuthUsecase struct {
 	events     EventRepo
 	tx         Transaction
 	tokens     *TokenService
-	sms        *SmsUsecase
+	codes      *CodeUsecase
 	limiter    RateLimiter
 	guard      LoginGuard
 	ids        IDGenerator
@@ -54,7 +54,7 @@ type AuthUsecase struct {
 
 // NewAuthUsecase 创建认证用例。
 func NewAuthUsecase(users UserRepo, sessions SessionRepo, events EventRepo, tx Transaction, tokens *TokenService,
-	sms *SmsUsecase, limiter RateLimiter, guard LoginGuard, ids IDGenerator, revoker Revoker,
+	codes *CodeUsecase, limiter RateLimiter, guard LoginGuard, ids IDGenerator, revoker Revoker,
 	policy *PolicyHolder, sec *conf.Security, logger *slog.Logger) (*AuthUsecase, error) {
 	cost := int(sec.GetBcryptCost())
 	dummy, err := newDummyHash(cost)
@@ -62,7 +62,7 @@ func NewAuthUsecase(users UserRepo, sessions SessionRepo, events EventRepo, tx T
 		return nil, err
 	}
 	return &AuthUsecase{
-		users: users, sessions: sessions, events: events, tx: tx, tokens: tokens, sms: sms,
+		users: users, sessions: sessions, events: events, tx: tx, tokens: tokens, codes: codes,
 		limiter: limiter, guard: guard, ids: ids, revoker: revoker, policy: policy,
 		bcryptCost: cost, dummyHash: dummy, logger: logger,
 		now: nowUTC,
@@ -75,29 +75,31 @@ func (uc *AuthUsecase) Register(ctx context.Context, in RegisterInput) (*User, *
 	if err := checkPasswordStrength(in.Password); err != nil {
 		return nil, nil, err
 	}
-	if err := uc.sms.Verify(ctx, PurposeRegister, in.Phone, in.Code); err != nil {
+	in.Email = NormalizeEmail(in.Email)
+	// 发号同样在校验验证码之前：节点号租约失效时直接返回 503，验证码留着重试用
+	uid, err := nextID(uc.ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := uc.codes.Verify(ctx, PurposeRegister, in.Email, in.Code); err != nil {
 		return nil, nil, err
 	}
 	hash, err := hashPassword(in.Password, uc.bcryptCost)
 	if err != nil {
 		return nil, nil, err
 	}
-	uid, err := uc.ids.NextID()
-	if err != nil {
-		return nil, nil, err
-	}
 	now := uc.now()
 	u := &User{
-		ID: uid, Phone: in.Phone, PasswordHash: hash, Nickname: in.Nickname,
+		ID: uid, Email: in.Email, PasswordHash: hash, Nickname: in.Nickname,
 		Role: RoleUser, Status: StatusNormal, CreatedAt: now, UpdatedAt: now,
 	}
 
 	var pair *TokenPair
 	err = uc.tx.InTx(ctx, func(ctx context.Context) error {
-		// 手机号唯一约束兜底并发注册：两个请求都通过了验证码校验时，只有一个能插入成功
+		// 邮箱唯一约束兜底并发注册：两个请求都通过了验证码校验时，只有一个能插入成功
 		if err := uc.users.Create(ctx, u); err != nil {
-			if errors.Is(err, ErrPhoneTaken) {
-				return ErrPhoneRegistered()
+			if errors.Is(err, ErrEmailTaken) {
+				return ErrEmailRegistered()
 			}
 			return err
 		}
@@ -113,12 +115,13 @@ func (uc *AuthUsecase) Register(ctx context.Context, in RegisterInput) (*User, *
 }
 
 // LoginByPassword 密码登录。
-func (uc *AuthUsecase) LoginByPassword(ctx context.Context, phone, password string, dev Device, ip string) (*User, *TokenPair, error) {
+func (uc *AuthUsecase) LoginByPassword(ctx context.Context, email, password string, dev Device, ip string) (*User, *TokenPair, error) {
+	email = NormalizeEmail(email)
 	p := uc.policy.Load().GetLogin()
 	if err := uc.checkIPLimit(ctx, ip); err != nil {
 		return nil, nil, err
 	}
-	locked, retry, err := uc.guard.Locked(ctx, phone, int(p.GetMaxFailures()))
+	locked, retry, err := uc.guard.Locked(ctx, email, int(p.GetMaxFailures()))
 	if err != nil {
 		// 失败计数不可用时不阻断登录，bcrypt 本身的耗时和 IP 限流仍然限制了暴力破解速度
 		uc.logger.Warn("login guard unavailable", slog.Any("error", err))
@@ -126,38 +129,39 @@ func (uc *AuthUsecase) LoginByPassword(ctx context.Context, phone, password stri
 		return nil, nil, ErrLoginLocked(retry)
 	}
 
-	u, err := uc.users.FindByPhone(ctx, phone)
+	u, err := uc.users.FindByEmail(ctx, email)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, nil, err
 	}
 	if u == nil {
 		comparePassword(uc.dummyHash, password)
-		uc.recordFailure(ctx, phone)
+		uc.recordFailure(ctx, email)
 		return nil, nil, ErrInvalidCredentials()
 	}
 	if !comparePassword(u.PasswordHash, password) {
-		uc.recordFailure(ctx, phone)
+		uc.recordFailure(ctx, email)
 		return nil, nil, ErrInvalidCredentials()
 	}
 	// 密码正确后才提示封禁，避免未认证的人探测账号状态
 	if u.Status == StatusBanned {
 		return nil, nil, ErrUserBanned()
 	}
-	if err := uc.guard.Reset(ctx, phone); err != nil {
+	if err := uc.guard.Reset(ctx, email); err != nil {
 		uc.logger.Warn("reset login failures failed", slog.Any("error", err))
 	}
 	return uc.login(ctx, u, dev, ip)
 }
 
-// LoginBySms 短信验证码登录。
-func (uc *AuthUsecase) LoginBySms(ctx context.Context, phone, code string, dev Device, ip string) (*User, *TokenPair, error) {
+// LoginByEmailCode 邮箱验证码登录。
+func (uc *AuthUsecase) LoginByEmailCode(ctx context.Context, email, code string, dev Device, ip string) (*User, *TokenPair, error) {
+	email = NormalizeEmail(email)
 	if err := uc.checkIPLimit(ctx, ip); err != nil {
 		return nil, nil, err
 	}
-	if err := uc.sms.Verify(ctx, PurposeLogin, phone, code); err != nil {
+	if err := uc.codes.Verify(ctx, PurposeLogin, email, code); err != nil {
 		return nil, nil, err
 	}
-	u, err := uc.users.FindByPhone(ctx, phone)
+	u, err := uc.users.FindByEmail(ctx, email)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil, ErrUserNotFound()
 	}
@@ -211,7 +215,7 @@ func (uc *AuthUsecase) startSession(ctx context.Context, u *User, dev Device, ip
 			return nil, 0, err
 		}
 	}
-	sid, err := uc.ids.NextID()
+	sid, err := nextID(uc.ids)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -327,9 +331,9 @@ func (uc *AuthUsecase) checkIPLimit(ctx context.Context, ip string) error {
 	return nil
 }
 
-func (uc *AuthUsecase) recordFailure(ctx context.Context, phone string) {
+func (uc *AuthUsecase) recordFailure(ctx context.Context, email string) {
 	p := uc.policy.Load().GetLogin()
-	if err := uc.guard.RecordFailure(ctx, phone, int(p.GetMaxFailures()), p.GetFailureWindow().AsDuration(), p.GetLockDuration().AsDuration()); err != nil {
+	if err := uc.guard.RecordFailure(ctx, email, int(p.GetMaxFailures()), p.GetFailureWindow().AsDuration(), p.GetLockDuration().AsDuration()); err != nil {
 		uc.logger.Warn("record login failure failed", slog.Any("error", err))
 	}
 }

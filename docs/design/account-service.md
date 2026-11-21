@@ -1,6 +1,6 @@
 # 设计：account 服务（重构步骤 2）
 
-- 状态：已实施（2026-11-18 开发者确认，同日实现，实施中的调整见第 8 节） | 日期：2026-11-18 | 关联：[重构计划步骤 2](../plans/active/backend-refactor.md#2-account-服务)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、旧基线 [user-auth.md](../product/modules/user-auth.md)、[admin.md](../product/modules/admin.md)
+- 状态：已实施（2026-11-18 开发者确认，同日实现，实施中的调整见第 8 节）；2026-11-20 起账号标识从手机号改为邮箱、验证码改经 SMTP 发到邮箱，见 [email-verification.md](email-verification.md)，本文中的手机号与短信按邮箱与邮件理解 | 日期：2026-11-18 | 关联：[重构计划步骤 2](../plans/active/backend-refactor.md#2-account-服务)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、旧基线 [user-auth.md](../product/modules/user-auth.md)、[admin.md](../product/modules/admin.md)
 
 ## 1. 背景与目标
 
@@ -325,3 +325,10 @@
 | 内存中的时间精确到纳秒，MySQL `DATETIME(3)` 对多余小数位四舍五入，写入后读回不相等 | 各用例的时钟截断到毫秒 |
 | 唯一键冲突需要识别 MySQL 错误码 | 开启 GORM `TranslateError`，repo 只判断 `gorm.ErrDuplicatedKey` |
 | 每日上限的剩余时间如果取计数键的 TTL，并不是“到次日零点” | 计数键 TTL 固定 25 小时只用于清理（键名带日期，自然换天），剩余时间由 biz 按北京时间计算到次日零点 |
+
+2026-11-20 补充：
+
+| 问题 | 处理 |
+|---|---|
+| 个人认证的阿里云账号无法申请短信签名，短信发送方一直只能写日志（TD-24） | 账号标识改为邮箱，验证码经 SMTP 发到邮箱，Redis 键、用户表与缓存键随之改名，见 [email-verification.md](email-verification.md) |
+| 节点号租约失效时注册、登录返回 `500 INTERNAL`（TD-35） | `nextID` 把 `idgen.ErrLeaseLost` 转成 `503 DEPENDENCY_UNAVAILABLE`；注册改为先发号再校验验证码，租约失效不消耗验证码 |

@@ -201,7 +201,7 @@ docker build -f deploy/docker/Dockerfile --build-arg SERVICE=<服务> -t marscha
 | 范围 | 插件 | 初始值 | 目的 |
 |---|---|---|---|
 | 全部 HTTP 路由，按客户端 IP | `limit-req` | 50 次/秒，突发 100 | 挡住单个来源的洪泛 |
-| `/v1/auth/*`，按客户端 IP | `limit-count` | 60 次/分钟 | 登录、短信接口的第一道防线（服务内的短信与登录限制保留） |
+| `/v1/auth/*`，按客户端 IP | `limit-count` | 60 次/分钟 | 登录、验证码接口的第一道防线（服务内的验证码与登录限制保留） |
 | `/ws`，按客户端 IP | `limit-conn` 与 `limit-req` | 并发 50；握手 10 次/秒 | 防止大量建连和重连风暴 |
 
 - 计数用 `local` 策略，保存在 APISIX 进程内。只有一个网关实例，不需要 Redis 计数。
@@ -553,7 +553,7 @@ message Notification {
 | 5 | Redis 客户端的拨号保护 | `pkg/bootstrap.NewRedis` 加拨号钩子：拨号失败后标记不可达，期间的拨号直接返回上次的错误，后台立即探测、之后每秒一次，成功后恢复；`DialerRetries` 设为 1 | 故障实验发现停掉 Redis 约 3 秒后发送开始失败。容器停止后服务名从 Docker DNS 中消失，每次解析约 1 秒才失败，go-redis 默认单次拨号重试 5 次、命令重试 3 次，一条命令就用完了调用方的截止时间，限流的“失败放行”来不及生效。见 [lessons/redis-dial-stall-docker-dns.md](../lessons/redis-dial-stall-docker-dns.md) |
 | 5 | 60 秒 Redis 实验的预期 | 分别验证两类写操作：已有会话的发送全程成功；给新好友发第一条消息（要为新会话发号）在租约到期后失败，Redis 恢复后成功 | 3.9 节写的“发号失败，写操作返回错误”不准确：message 只有新建单聊会话时才发号 |
 | 5 | 测试客户端 | `test/cluster/session_test.go` 实现客户端约定（断线后随机等待 0～2 秒重连、从本地连续 seq 补拉、按 seq 去重），按连接记录推送、补拉、断线和关闭码；故障注入只操作 `marschat-` 前缀的容器，结束时（包括失败）恢复 | 实验要验证的是“按约定实现的客户端不丢不重”，不能只看服务端日志 |
-| 5 | 发号失败的错误码 | 保持 `500 INTERNAL`，记为 TD-35 | 映射为 503 涉及 account、social、message 三个服务的错误处理，留到步骤 8 接入告警时处理 |
+| 5 | 发号失败的错误码 | 保持 `500 INTERNAL`，记为 TD-35 | 映射为 503 涉及 account、social、message 三个服务的错误处理，留到步骤 8 接入告警时处理（2026-11-20 随邮箱验证码一起解决，改为 `503 DEPENDENCY_UNAVAILABLE`） |
 
 第 1 段验证（2026-11-19）：
 
@@ -601,4 +601,4 @@ message Notification {
   - miniredis 关闭再重启后，客户端在探测间隔内恢复；
   - 去掉快速失败分支后用例失败。
 - 故障实验 7 项与集群测试 6 项通过（`make cluster-test`），各项数据记在[重构计划的故障实验结果](../plans/active/backend-refactor.md#故障实验结果)。首次运行时两项 Redis 实验失败，见上表第 5 段第一行；修复后通过。
-- 每次 Redis 故障，各服务只在开始和恢复时各记一条日志（`redis unreachable, failing dials fast until a probe succeeds`、`redis reachable again`）。60 秒实验中，message 的 ERROR 只有发号失败的访问日志（TD-35）。go-redis 内部的纯文本拨号失败日志仍然逐次输出（TD-36）。
+- 每次 Redis 故障，各服务只在开始和恢复时各记一条日志（`redis unreachable, failing dials fast until a probe succeeds`、`redis reachable again`）。60 秒实验中，message 的 ERROR 只有发号失败的访问日志（TD-35）。go-redis 内部的纯文本拨号失败日志仍然逐次输出（TD-36）。两项均已于 2026-11-20 解决：发号失败返回 503、访问日志记 WARN；go-redis 内部日志转到 `slog`，拨号失败记 DEBUG。

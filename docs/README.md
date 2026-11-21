@@ -59,6 +59,8 @@ docs/
 | [kratos-v3-server-defaults.md](lessons/kratos-v3-server-defaults.md) | Kratos 自带的日志与恢复中间件会把密码等请求体写进日志、内部错误原文返回客户端；v3 的 json codec 不按 protobuf JSON 收发 |
 | [redis-resp3-reply-types.md](lessons/redis-resp3-reply-types.md) | go-redis v9 默认 RESP3，`BF.EXISTS` 返回布尔值，按整数读取会让布隆过滤器静默失效 |
 | [franz-go-record-timestamp-timeout.md](lessons/franz-go-record-timestamp-timeout.md) | franz-go 按记录的 Timestamp 计算投递超时，填事件创建时间会让积压的 Outbox 事件一发出就超时 |
+| [redis-dial-stall-docker-dns.md](lessons/redis-dial-stall-docker-dns.md) | Redis 容器停止后，go-redis 的拨号重试把每条命令拖到几秒，本该放行的调用变成请求超时 |
+| [smtp-465-tls-interception.md](lessons/smtp-465-tls-interception.md) | 开发机到 465 端口的 TLS 连接被截获，SMTP 发信报证书不受信任；改用 587（STARTTLS），不要关闭证书校验 |
 
 ## 编写规则
 

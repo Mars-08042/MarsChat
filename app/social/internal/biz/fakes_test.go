@@ -646,11 +646,15 @@ func (f *fakeLimiter) Allow(_ context.Context, key string, _ int, _ time.Duratio
 type fakeIDs struct {
 	mu   sync.Mutex
 	next int64
+	err  error
 }
 
 func (f *fakeIDs) NextID() (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, f.err
+	}
 	f.next++
 	return f.next, nil
 }
@@ -669,6 +673,7 @@ type env struct {
 	users    *fakeUsers
 	limiter  *fakeLimiter
 	policy   *PolicyHolder
+	ids      *fakeIDs
 	now      time.Time
 
 	friendUC *FriendUsecase
@@ -706,11 +711,11 @@ func newEnv(t *testing.T) *env {
 	}
 	e.users.users[bannedUser] = &UserProfile{ID: bannedUser, Status: userStatusBanned}
 
-	ids := &fakeIDs{next: 1000}
+	e.ids = &fakeIDs{next: 1000}
 	clock := func() time.Time { return e.now }
-	e.friendUC = NewFriendUsecase(fakeTx{}, e.friends, e.requests, e.blocks, e.events, e.users, ids, e.limiter, e.policy, discard)
+	e.friendUC = NewFriendUsecase(fakeTx{}, e.friends, e.requests, e.blocks, e.events, e.users, e.ids, e.limiter, e.policy, discard)
 	e.friendUC.now = clock
-	e.groupUC = NewGroupUsecase(fakeTx{}, e.groups, e.members, e.joins, e.friends, e.events, ids, e.limiter, e.policy, discard)
+	e.groupUC = NewGroupUsecase(fakeTx{}, e.groups, e.members, e.joins, e.friends, e.events, e.ids, e.limiter, e.policy, discard)
 	e.groupUC.now = clock
 	e.permUC = NewPermissionUsecase(e.friends, e.blocks, e.groupUC, e.members)
 	e.permUC.now = clock

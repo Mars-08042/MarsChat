@@ -24,53 +24,53 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// 短信验证码用途，不同用途的验证码不能混用。
-type SmsPurpose int32
+// 验证码用途，不同用途的验证码不能混用。
+type CodePurpose int32
 
 const (
-	SmsPurpose_SMS_PURPOSE_UNSPECIFIED SmsPurpose = 0
-	SmsPurpose_SMS_PURPOSE_REGISTER    SmsPurpose = 1
-	SmsPurpose_SMS_PURPOSE_LOGIN       SmsPurpose = 2
+	CodePurpose_CODE_PURPOSE_UNSPECIFIED CodePurpose = 0
+	CodePurpose_CODE_PURPOSE_REGISTER    CodePurpose = 1
+	CodePurpose_CODE_PURPOSE_LOGIN       CodePurpose = 2
 )
 
-// Enum value maps for SmsPurpose.
+// Enum value maps for CodePurpose.
 var (
-	SmsPurpose_name = map[int32]string{
-		0: "SMS_PURPOSE_UNSPECIFIED",
-		1: "SMS_PURPOSE_REGISTER",
-		2: "SMS_PURPOSE_LOGIN",
+	CodePurpose_name = map[int32]string{
+		0: "CODE_PURPOSE_UNSPECIFIED",
+		1: "CODE_PURPOSE_REGISTER",
+		2: "CODE_PURPOSE_LOGIN",
 	}
-	SmsPurpose_value = map[string]int32{
-		"SMS_PURPOSE_UNSPECIFIED": 0,
-		"SMS_PURPOSE_REGISTER":    1,
-		"SMS_PURPOSE_LOGIN":       2,
+	CodePurpose_value = map[string]int32{
+		"CODE_PURPOSE_UNSPECIFIED": 0,
+		"CODE_PURPOSE_REGISTER":    1,
+		"CODE_PURPOSE_LOGIN":       2,
 	}
 )
 
-func (x SmsPurpose) Enum() *SmsPurpose {
-	p := new(SmsPurpose)
+func (x CodePurpose) Enum() *CodePurpose {
+	p := new(CodePurpose)
 	*p = x
 	return p
 }
 
-func (x SmsPurpose) String() string {
+func (x CodePurpose) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (SmsPurpose) Descriptor() protoreflect.EnumDescriptor {
+func (CodePurpose) Descriptor() protoreflect.EnumDescriptor {
 	return file_account_v1_account_proto_enumTypes[0].Descriptor()
 }
 
-func (SmsPurpose) Type() protoreflect.EnumType {
+func (CodePurpose) Type() protoreflect.EnumType {
 	return &file_account_v1_account_proto_enumTypes[0]
 }
 
-func (x SmsPurpose) Number() protoreflect.EnumNumber {
+func (x CodePurpose) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use SmsPurpose.Descriptor instead.
-func (SmsPurpose) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use CodePurpose.Descriptor instead.
+func (CodePurpose) EnumDescriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{0}
 }
 
@@ -411,7 +411,7 @@ func (x *TokenPair) GetRefreshExpiresIn() int32 {
 type User struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Id       int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Phone    string                 `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
+	Email    string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	Nickname string                 `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
 	// media 服务的文件 ID，未设置时为空
 	Avatar string `protobuf:"bytes,4,opt,name=avatar,proto3" json:"avatar,omitempty"`
@@ -463,9 +463,9 @@ func (x *User) GetId() int64 {
 	return 0
 }
 
-func (x *User) GetPhone() string {
+func (x *User) GetEmail() string {
 	if x != nil {
-		return x.Phone
+		return x.Email
 	}
 	return ""
 }
@@ -526,7 +526,7 @@ func (x *User) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// UserProfile 是其他用户可见的公开资料，不含手机号。
+// UserProfile 是其他用户可见的公开资料，不含邮箱。
 type UserProfile struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -704,28 +704,28 @@ func (x *Session) GetCurrent() bool {
 	return false
 }
 
-type SendSmsCodeRequest struct {
+type SendEmailCodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Phone         string                 `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
-	Purpose       SmsPurpose             `protobuf:"varint,2,opt,name=purpose,proto3,enum=account.v1.SmsPurpose" json:"purpose,omitempty"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Purpose       CodePurpose            `protobuf:"varint,2,opt,name=purpose,proto3,enum=account.v1.CodePurpose" json:"purpose,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SendSmsCodeRequest) Reset() {
-	*x = SendSmsCodeRequest{}
+func (x *SendEmailCodeRequest) Reset() {
+	*x = SendEmailCodeRequest{}
 	mi := &file_account_v1_account_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SendSmsCodeRequest) String() string {
+func (x *SendEmailCodeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SendSmsCodeRequest) ProtoMessage() {}
+func (*SendEmailCodeRequest) ProtoMessage() {}
 
-func (x *SendSmsCodeRequest) ProtoReflect() protoreflect.Message {
+func (x *SendEmailCodeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_account_v1_account_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -737,26 +737,26 @@ func (x *SendSmsCodeRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SendSmsCodeRequest.ProtoReflect.Descriptor instead.
-func (*SendSmsCodeRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SendEmailCodeRequest.ProtoReflect.Descriptor instead.
+func (*SendEmailCodeRequest) Descriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *SendSmsCodeRequest) GetPhone() string {
+func (x *SendEmailCodeRequest) GetEmail() string {
 	if x != nil {
-		return x.Phone
+		return x.Email
 	}
 	return ""
 }
 
-func (x *SendSmsCodeRequest) GetPurpose() SmsPurpose {
+func (x *SendEmailCodeRequest) GetPurpose() CodePurpose {
 	if x != nil {
 		return x.Purpose
 	}
-	return SmsPurpose_SMS_PURPOSE_UNSPECIFIED
+	return CodePurpose_CODE_PURPOSE_UNSPECIFIED
 }
 
-type SendSmsCodeResponse struct {
+type SendEmailCodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 距离下次可以发送的秒数
 	CooldownSeconds int32 `protobuf:"varint,1,opt,name=cooldown_seconds,json=cooldownSeconds,proto3" json:"cooldown_seconds,omitempty"`
@@ -764,20 +764,20 @@ type SendSmsCodeResponse struct {
 	sizeCache       protoimpl.SizeCache
 }
 
-func (x *SendSmsCodeResponse) Reset() {
-	*x = SendSmsCodeResponse{}
+func (x *SendEmailCodeResponse) Reset() {
+	*x = SendEmailCodeResponse{}
 	mi := &file_account_v1_account_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SendSmsCodeResponse) String() string {
+func (x *SendEmailCodeResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SendSmsCodeResponse) ProtoMessage() {}
+func (*SendEmailCodeResponse) ProtoMessage() {}
 
-func (x *SendSmsCodeResponse) ProtoReflect() protoreflect.Message {
+func (x *SendEmailCodeResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_account_v1_account_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -789,12 +789,12 @@ func (x *SendSmsCodeResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SendSmsCodeResponse.ProtoReflect.Descriptor instead.
-func (*SendSmsCodeResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SendEmailCodeResponse.ProtoReflect.Descriptor instead.
+func (*SendEmailCodeResponse) Descriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *SendSmsCodeResponse) GetCooldownSeconds() int32 {
+func (x *SendEmailCodeResponse) GetCooldownSeconds() int32 {
 	if x != nil {
 		return x.CooldownSeconds
 	}
@@ -802,9 +802,9 @@ func (x *SendSmsCodeResponse) GetCooldownSeconds() int32 {
 }
 
 type RegisterRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Phone   string                 `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
-	SmsCode string                 `protobuf:"bytes,2,opt,name=sms_code,json=smsCode,proto3" json:"sms_code,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Email string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Code  string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	// 8～64 位可打印 ASCII 字符，必须同时包含字母和数字
 	Password      string  `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
 	Nickname      string  `protobuf:"bytes,4,opt,name=nickname,proto3" json:"nickname,omitempty"`
@@ -843,16 +843,16 @@ func (*RegisterRequest) Descriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *RegisterRequest) GetPhone() string {
+func (x *RegisterRequest) GetEmail() string {
 	if x != nil {
-		return x.Phone
+		return x.Email
 	}
 	return ""
 }
 
-func (x *RegisterRequest) GetSmsCode() string {
+func (x *RegisterRequest) GetCode() string {
 	if x != nil {
-		return x.SmsCode
+		return x.Code
 	}
 	return ""
 }
@@ -932,7 +932,7 @@ func (x *RegisterResponse) GetToken() *TokenPair {
 
 type LoginByPasswordRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Phone         string                 `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	Device        *Device                `protobuf:"bytes,3,opt,name=device,proto3" json:"device,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -969,9 +969,9 @@ func (*LoginByPasswordRequest) Descriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *LoginByPasswordRequest) GetPhone() string {
+func (x *LoginByPasswordRequest) GetEmail() string {
 	if x != nil {
-		return x.Phone
+		return x.Email
 	}
 	return ""
 }
@@ -1042,29 +1042,29 @@ func (x *LoginByPasswordResponse) GetToken() *TokenPair {
 	return nil
 }
 
-type LoginBySmsRequest struct {
+type LoginByEmailCodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Phone         string                 `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
-	SmsCode       string                 `protobuf:"bytes,2,opt,name=sms_code,json=smsCode,proto3" json:"sms_code,omitempty"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	Device        *Device                `protobuf:"bytes,3,opt,name=device,proto3" json:"device,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *LoginBySmsRequest) Reset() {
-	*x = LoginBySmsRequest{}
+func (x *LoginByEmailCodeRequest) Reset() {
+	*x = LoginByEmailCodeRequest{}
 	mi := &file_account_v1_account_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LoginBySmsRequest) String() string {
+func (x *LoginByEmailCodeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LoginBySmsRequest) ProtoMessage() {}
+func (*LoginByEmailCodeRequest) ProtoMessage() {}
 
-func (x *LoginBySmsRequest) ProtoReflect() protoreflect.Message {
+func (x *LoginByEmailCodeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_account_v1_account_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1076,33 +1076,33 @@ func (x *LoginBySmsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LoginBySmsRequest.ProtoReflect.Descriptor instead.
-func (*LoginBySmsRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use LoginByEmailCodeRequest.ProtoReflect.Descriptor instead.
+func (*LoginByEmailCodeRequest) Descriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *LoginBySmsRequest) GetPhone() string {
+func (x *LoginByEmailCodeRequest) GetEmail() string {
 	if x != nil {
-		return x.Phone
+		return x.Email
 	}
 	return ""
 }
 
-func (x *LoginBySmsRequest) GetSmsCode() string {
+func (x *LoginByEmailCodeRequest) GetCode() string {
 	if x != nil {
-		return x.SmsCode
+		return x.Code
 	}
 	return ""
 }
 
-func (x *LoginBySmsRequest) GetDevice() *Device {
+func (x *LoginByEmailCodeRequest) GetDevice() *Device {
 	if x != nil {
 		return x.Device
 	}
 	return nil
 }
 
-type LoginBySmsResponse struct {
+type LoginByEmailCodeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
 	Token         *TokenPair             `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
@@ -1110,20 +1110,20 @@ type LoginBySmsResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *LoginBySmsResponse) Reset() {
-	*x = LoginBySmsResponse{}
+func (x *LoginByEmailCodeResponse) Reset() {
+	*x = LoginByEmailCodeResponse{}
 	mi := &file_account_v1_account_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LoginBySmsResponse) String() string {
+func (x *LoginByEmailCodeResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LoginBySmsResponse) ProtoMessage() {}
+func (*LoginByEmailCodeResponse) ProtoMessage() {}
 
-func (x *LoginBySmsResponse) ProtoReflect() protoreflect.Message {
+func (x *LoginByEmailCodeResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_account_v1_account_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1135,19 +1135,19 @@ func (x *LoginBySmsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LoginBySmsResponse.ProtoReflect.Descriptor instead.
-func (*LoginBySmsResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use LoginByEmailCodeResponse.ProtoReflect.Descriptor instead.
+func (*LoginByEmailCodeResponse) Descriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *LoginBySmsResponse) GetUser() *User {
+func (x *LoginByEmailCodeResponse) GetUser() *User {
 	if x != nil {
 		return x.User
 	}
 	return nil
 }
 
-func (x *LoginBySmsResponse) GetToken() *TokenPair {
+func (x *LoginByEmailCodeResponse) GetToken() *TokenPair {
 	if x != nil {
 		return x.Token
 	}
@@ -1942,7 +1942,7 @@ const file_account_v1_account_proto_rawDesc = "" +
 	"\x12refresh_expires_in\x18\x04 \x01(\x05R\x10refreshExpiresIn\"\xd7\x02\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
-	"\x05phone\x18\x02 \x01(\tR\x05phone\x12\x1a\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\x12\x1a\n" +
 	"\bnickname\x18\x03 \x01(\tR\bnickname\x12\x16\n" +
 	"\x06avatar\x18\x04 \x01(\tR\x06avatar\x12*\n" +
 	"\x06gender\x18\x05 \x01(\x0e2\x12.account.v1.GenderR\x06gender\x12\x1a\n" +
@@ -1969,36 +1969,40 @@ const file_account_v1_account_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12@\n" +
 	"\x0elast_active_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\x12\x18\n" +
-	"\acurrent\x18\a \x01(\bR\acurrent\"\x81\x01\n" +
-	"\x12SendSmsCodeRequest\x12-\n" +
-	"\x05phone\x18\x01 \x01(\tB\x17\xbaH\x14r\x122\x10^1[3-9][0-9]{9}$R\x05phone\x12<\n" +
-	"\apurpose\x18\x02 \x01(\x0e2\x16.account.v1.SmsPurposeB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\apurpose\"@\n" +
-	"\x13SendSmsCodeResponse\x12)\n" +
-	"\x10cooldown_seconds\x18\x01 \x01(\x05R\x0fcooldownSeconds\"\xfb\x01\n" +
-	"\x0fRegisterRequest\x12-\n" +
-	"\x05phone\x18\x01 \x01(\tB\x17\xbaH\x14r\x122\x10^1[3-9][0-9]{9}$R\x05phone\x12,\n" +
-	"\bsms_code\x18\x02 \x01(\tB\x11\xbaH\x0er\f2\n" +
-	"^[0-9]{6}$R\asmsCode\x120\n" +
+	"\acurrent\x18\a \x01(\bR\acurrent\"w\n" +
+	"\x14SendEmailCodeRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x18\xfe\x01`\x01R\x05email\x12=\n" +
+	"\apurpose\x18\x02 \x01(\x0e2\x17.account.v1.CodePurposeB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\apurpose\"B\n" +
+	"\x15SendEmailCodeResponse\x12)\n" +
+	"\x10cooldown_seconds\x18\x01 \x01(\x05R\x0fcooldownSeconds\"\xe7\x01\n" +
+	"\x0fRegisterRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x18\xfe\x01`\x01R\x05email\x12%\n" +
+	"\x04code\x18\x02 \x01(\tB\x11\xbaH\x0er\f2\n" +
+	"^[0-9]{6}$R\x04code\x120\n" +
 	"\bpassword\x18\x03 \x01(\tB\x14\xbaH\x11r\x0f2\r^[!-~]{8,64}$R\bpassword\x12%\n" +
 	"\bnickname\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18\x10R\bnickname\x122\n" +
 	"\x06device\x18\x05 \x01(\v2\x12.account.v1.DeviceB\x06\xbaH\x03\xc8\x01\x01R\x06device\"e\n" +
 	"\x10RegisterResponse\x12$\n" +
 	"\x04user\x18\x01 \x01(\v2\x10.account.v1.UserR\x04user\x12+\n" +
-	"\x05token\x18\x02 \x01(\v2\x15.account.v1.TokenPairR\x05token\"\xa2\x01\n" +
-	"\x16LoginByPasswordRequest\x12-\n" +
-	"\x05phone\x18\x01 \x01(\tB\x17\xbaH\x14r\x122\x10^1[3-9][0-9]{9}$R\x05phone\x12%\n" +
+	"\x05token\x18\x02 \x01(\v2\x15.account.v1.TokenPairR\x05token\"\x95\x01\n" +
+	"\x16LoginByPasswordRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x18\xfe\x01`\x01R\x05email\x12%\n" +
 	"\bpassword\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\bpassword\x122\n" +
 	"\x06device\x18\x03 \x01(\v2\x12.account.v1.DeviceB\x06\xbaH\x03\xc8\x01\x01R\x06device\"l\n" +
 	"\x17LoginByPasswordResponse\x12$\n" +
 	"\x04user\x18\x01 \x01(\v2\x10.account.v1.UserR\x04user\x12+\n" +
-	"\x05token\x18\x02 \x01(\v2\x15.account.v1.TokenPairR\x05token\"\xa4\x01\n" +
-	"\x11LoginBySmsRequest\x12-\n" +
-	"\x05phone\x18\x01 \x01(\tB\x17\xbaH\x14r\x122\x10^1[3-9][0-9]{9}$R\x05phone\x12,\n" +
-	"\bsms_code\x18\x02 \x01(\tB\x11\xbaH\x0er\f2\n" +
-	"^[0-9]{6}$R\asmsCode\x122\n" +
-	"\x06device\x18\x03 \x01(\v2\x12.account.v1.DeviceB\x06\xbaH\x03\xc8\x01\x01R\x06device\"g\n" +
-	"\x12LoginBySmsResponse\x12$\n" +
+	"\x05token\x18\x02 \x01(\v2\x15.account.v1.TokenPairR\x05token\"\x96\x01\n" +
+	"\x17LoginByEmailCodeRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x18\xfe\x01`\x01R\x05email\x12%\n" +
+	"\x04code\x18\x02 \x01(\tB\x11\xbaH\x0er\f2\n" +
+	"^[0-9]{6}$R\x04code\x122\n" +
+	"\x06device\x18\x03 \x01(\v2\x12.account.v1.DeviceB\x06\xbaH\x03\xc8\x01\x01R\x06device\"m\n" +
+	"\x18LoginByEmailCodeResponse\x12$\n" +
 	"\x04user\x18\x01 \x01(\v2\x10.account.v1.UserR\x04user\x12+\n" +
 	"\x05token\x18\x02 \x01(\v2\x15.account.v1.TokenPairR\x05token\"F\n" +
 	"\x13RefreshTokenRequest\x12/\n" +
@@ -2041,12 +2045,11 @@ const file_account_v1_account_proto_rawDesc = "" +
 	"\x0fBanUserResponse\"4\n" +
 	"\x10UnbanUserRequest\x12 \n" +
 	"\auser_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\x06userId\"\x13\n" +
-	"\x11UnbanUserResponse*Z\n" +
-	"\n" +
-	"SmsPurpose\x12\x1b\n" +
-	"\x17SMS_PURPOSE_UNSPECIFIED\x10\x00\x12\x18\n" +
-	"\x14SMS_PURPOSE_REGISTER\x10\x01\x12\x15\n" +
-	"\x11SMS_PURPOSE_LOGIN\x10\x02*t\n" +
+	"\x11UnbanUserResponse*^\n" +
+	"\vCodePurpose\x12\x1c\n" +
+	"\x18CODE_PURPOSE_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15CODE_PURPOSE_REGISTER\x10\x01\x12\x16\n" +
+	"\x12CODE_PURPOSE_LOGIN\x10\x02*t\n" +
 	"\bPlatform\x12\x18\n" +
 	"\x14PLATFORM_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fPLATFORM_WEB\x10\x01\x12\x14\n" +
@@ -2066,14 +2069,12 @@ const file_account_v1_account_proto_rawDesc = "" +
 	"UserStatus\x12\x1b\n" +
 	"\x17USER_STATUS_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12USER_STATUS_NORMAL\x10\x01\x12\x16\n" +
-	"\x12USER_STATUS_BANNED\x10\x022\xf8\n" +
-	"\n" +
-	"\x0eAccountService\x12m\n" +
-	"\vSendSmsCode\x12\x1e.account.v1.SendSmsCodeRequest\x1a\x1f.account.v1.SendSmsCodeResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/auth/sms-codes\x12c\n" +
+	"\x12USER_STATUS_BANNED\x10\x022\x9a\v\n" +
+	"\x0eAccountService\x12u\n" +
+	"\rSendEmailCode\x12 .account.v1.SendEmailCodeRequest\x1a!.account.v1.SendEmailCodeResponse\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/auth/email-codes\x12c\n" +
 	"\bRegister\x12\x1b.account.v1.RegisterRequest\x1a\x1c.account.v1.RegisterResponse\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/auth/register\x12~\n" +
-	"\x0fLoginByPassword\x12\".account.v1.LoginByPasswordRequest\x1a#.account.v1.LoginByPasswordResponse\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/auth/login/password\x12j\n" +
-	"\n" +
-	"LoginBySms\x12\x1d.account.v1.LoginBySmsRequest\x1a\x1e.account.v1.LoginBySmsResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/auth/login/sms\x12n\n" +
+	"\x0fLoginByPassword\x12\".account.v1.LoginByPasswordRequest\x1a#.account.v1.LoginByPasswordResponse\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/auth/login/password\x12\x83\x01\n" +
+	"\x10LoginByEmailCode\x12#.account.v1.LoginByEmailCodeRequest\x1a$.account.v1.LoginByEmailCodeResponse\"$\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/auth/login/email-code\x12n\n" +
 	"\fRefreshToken\x12\x1f.account.v1.RefreshTokenRequest\x1a .account.v1.RefreshTokenResponse\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/auth/refresh\x12[\n" +
 	"\x06Logout\x12\x19.account.v1.LogoutRequest\x1a\x1a.account.v1.LogoutResponse\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/auth/logout\x12R\n" +
 	"\x05GetMe\x12\x18.account.v1.GetMeRequest\x1a\x19.account.v1.GetMeResponse\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/users/me\x12^\n" +
@@ -2099,43 +2100,43 @@ func file_account_v1_account_proto_rawDescGZIP() []byte {
 var file_account_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_account_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_account_v1_account_proto_goTypes = []any{
-	(SmsPurpose)(0),                 // 0: account.v1.SmsPurpose
-	(Platform)(0),                   // 1: account.v1.Platform
-	(Gender)(0),                     // 2: account.v1.Gender
-	(Role)(0),                       // 3: account.v1.Role
-	(UserStatus)(0),                 // 4: account.v1.UserStatus
-	(*Device)(nil),                  // 5: account.v1.Device
-	(*TokenPair)(nil),               // 6: account.v1.TokenPair
-	(*User)(nil),                    // 7: account.v1.User
-	(*UserProfile)(nil),             // 8: account.v1.UserProfile
-	(*Session)(nil),                 // 9: account.v1.Session
-	(*SendSmsCodeRequest)(nil),      // 10: account.v1.SendSmsCodeRequest
-	(*SendSmsCodeResponse)(nil),     // 11: account.v1.SendSmsCodeResponse
-	(*RegisterRequest)(nil),         // 12: account.v1.RegisterRequest
-	(*RegisterResponse)(nil),        // 13: account.v1.RegisterResponse
-	(*LoginByPasswordRequest)(nil),  // 14: account.v1.LoginByPasswordRequest
-	(*LoginByPasswordResponse)(nil), // 15: account.v1.LoginByPasswordResponse
-	(*LoginBySmsRequest)(nil),       // 16: account.v1.LoginBySmsRequest
-	(*LoginBySmsResponse)(nil),      // 17: account.v1.LoginBySmsResponse
-	(*RefreshTokenRequest)(nil),     // 18: account.v1.RefreshTokenRequest
-	(*RefreshTokenResponse)(nil),    // 19: account.v1.RefreshTokenResponse
-	(*LogoutRequest)(nil),           // 20: account.v1.LogoutRequest
-	(*LogoutResponse)(nil),          // 21: account.v1.LogoutResponse
-	(*GetMeRequest)(nil),            // 22: account.v1.GetMeRequest
-	(*GetMeResponse)(nil),           // 23: account.v1.GetMeResponse
-	(*UpdateMeRequest)(nil),         // 24: account.v1.UpdateMeRequest
-	(*UpdateMeResponse)(nil),        // 25: account.v1.UpdateMeResponse
-	(*GetUserRequest)(nil),          // 26: account.v1.GetUserRequest
-	(*GetUserResponse)(nil),         // 27: account.v1.GetUserResponse
-	(*ListSessionsRequest)(nil),     // 28: account.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),    // 29: account.v1.ListSessionsResponse
-	(*RevokeSessionRequest)(nil),    // 30: account.v1.RevokeSessionRequest
-	(*RevokeSessionResponse)(nil),   // 31: account.v1.RevokeSessionResponse
-	(*BanUserRequest)(nil),          // 32: account.v1.BanUserRequest
-	(*BanUserResponse)(nil),         // 33: account.v1.BanUserResponse
-	(*UnbanUserRequest)(nil),        // 34: account.v1.UnbanUserRequest
-	(*UnbanUserResponse)(nil),       // 35: account.v1.UnbanUserResponse
-	(*timestamppb.Timestamp)(nil),   // 36: google.protobuf.Timestamp
+	(CodePurpose)(0),                 // 0: account.v1.CodePurpose
+	(Platform)(0),                    // 1: account.v1.Platform
+	(Gender)(0),                      // 2: account.v1.Gender
+	(Role)(0),                        // 3: account.v1.Role
+	(UserStatus)(0),                  // 4: account.v1.UserStatus
+	(*Device)(nil),                   // 5: account.v1.Device
+	(*TokenPair)(nil),                // 6: account.v1.TokenPair
+	(*User)(nil),                     // 7: account.v1.User
+	(*UserProfile)(nil),              // 8: account.v1.UserProfile
+	(*Session)(nil),                  // 9: account.v1.Session
+	(*SendEmailCodeRequest)(nil),     // 10: account.v1.SendEmailCodeRequest
+	(*SendEmailCodeResponse)(nil),    // 11: account.v1.SendEmailCodeResponse
+	(*RegisterRequest)(nil),          // 12: account.v1.RegisterRequest
+	(*RegisterResponse)(nil),         // 13: account.v1.RegisterResponse
+	(*LoginByPasswordRequest)(nil),   // 14: account.v1.LoginByPasswordRequest
+	(*LoginByPasswordResponse)(nil),  // 15: account.v1.LoginByPasswordResponse
+	(*LoginByEmailCodeRequest)(nil),  // 16: account.v1.LoginByEmailCodeRequest
+	(*LoginByEmailCodeResponse)(nil), // 17: account.v1.LoginByEmailCodeResponse
+	(*RefreshTokenRequest)(nil),      // 18: account.v1.RefreshTokenRequest
+	(*RefreshTokenResponse)(nil),     // 19: account.v1.RefreshTokenResponse
+	(*LogoutRequest)(nil),            // 20: account.v1.LogoutRequest
+	(*LogoutResponse)(nil),           // 21: account.v1.LogoutResponse
+	(*GetMeRequest)(nil),             // 22: account.v1.GetMeRequest
+	(*GetMeResponse)(nil),            // 23: account.v1.GetMeResponse
+	(*UpdateMeRequest)(nil),          // 24: account.v1.UpdateMeRequest
+	(*UpdateMeResponse)(nil),         // 25: account.v1.UpdateMeResponse
+	(*GetUserRequest)(nil),           // 26: account.v1.GetUserRequest
+	(*GetUserResponse)(nil),          // 27: account.v1.GetUserResponse
+	(*ListSessionsRequest)(nil),      // 28: account.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),     // 29: account.v1.ListSessionsResponse
+	(*RevokeSessionRequest)(nil),     // 30: account.v1.RevokeSessionRequest
+	(*RevokeSessionResponse)(nil),    // 31: account.v1.RevokeSessionResponse
+	(*BanUserRequest)(nil),           // 32: account.v1.BanUserRequest
+	(*BanUserResponse)(nil),          // 33: account.v1.BanUserResponse
+	(*UnbanUserRequest)(nil),         // 34: account.v1.UnbanUserRequest
+	(*UnbanUserResponse)(nil),        // 35: account.v1.UnbanUserResponse
+	(*timestamppb.Timestamp)(nil),    // 36: google.protobuf.Timestamp
 }
 var file_account_v1_account_proto_depIdxs = []int32{
 	1,  // 0: account.v1.Device.platform:type_name -> account.v1.Platform
@@ -2148,26 +2149,26 @@ var file_account_v1_account_proto_depIdxs = []int32{
 	1,  // 7: account.v1.Session.platform:type_name -> account.v1.Platform
 	36, // 8: account.v1.Session.created_at:type_name -> google.protobuf.Timestamp
 	36, // 9: account.v1.Session.last_active_at:type_name -> google.protobuf.Timestamp
-	0,  // 10: account.v1.SendSmsCodeRequest.purpose:type_name -> account.v1.SmsPurpose
+	0,  // 10: account.v1.SendEmailCodeRequest.purpose:type_name -> account.v1.CodePurpose
 	5,  // 11: account.v1.RegisterRequest.device:type_name -> account.v1.Device
 	7,  // 12: account.v1.RegisterResponse.user:type_name -> account.v1.User
 	6,  // 13: account.v1.RegisterResponse.token:type_name -> account.v1.TokenPair
 	5,  // 14: account.v1.LoginByPasswordRequest.device:type_name -> account.v1.Device
 	7,  // 15: account.v1.LoginByPasswordResponse.user:type_name -> account.v1.User
 	6,  // 16: account.v1.LoginByPasswordResponse.token:type_name -> account.v1.TokenPair
-	5,  // 17: account.v1.LoginBySmsRequest.device:type_name -> account.v1.Device
-	7,  // 18: account.v1.LoginBySmsResponse.user:type_name -> account.v1.User
-	6,  // 19: account.v1.LoginBySmsResponse.token:type_name -> account.v1.TokenPair
+	5,  // 17: account.v1.LoginByEmailCodeRequest.device:type_name -> account.v1.Device
+	7,  // 18: account.v1.LoginByEmailCodeResponse.user:type_name -> account.v1.User
+	6,  // 19: account.v1.LoginByEmailCodeResponse.token:type_name -> account.v1.TokenPair
 	6,  // 20: account.v1.RefreshTokenResponse.token:type_name -> account.v1.TokenPair
 	7,  // 21: account.v1.GetMeResponse.user:type_name -> account.v1.User
 	2,  // 22: account.v1.UpdateMeRequest.gender:type_name -> account.v1.Gender
 	7,  // 23: account.v1.UpdateMeResponse.user:type_name -> account.v1.User
 	8,  // 24: account.v1.GetUserResponse.user:type_name -> account.v1.UserProfile
 	9,  // 25: account.v1.ListSessionsResponse.sessions:type_name -> account.v1.Session
-	10, // 26: account.v1.AccountService.SendSmsCode:input_type -> account.v1.SendSmsCodeRequest
+	10, // 26: account.v1.AccountService.SendEmailCode:input_type -> account.v1.SendEmailCodeRequest
 	12, // 27: account.v1.AccountService.Register:input_type -> account.v1.RegisterRequest
 	14, // 28: account.v1.AccountService.LoginByPassword:input_type -> account.v1.LoginByPasswordRequest
-	16, // 29: account.v1.AccountService.LoginBySms:input_type -> account.v1.LoginBySmsRequest
+	16, // 29: account.v1.AccountService.LoginByEmailCode:input_type -> account.v1.LoginByEmailCodeRequest
 	18, // 30: account.v1.AccountService.RefreshToken:input_type -> account.v1.RefreshTokenRequest
 	20, // 31: account.v1.AccountService.Logout:input_type -> account.v1.LogoutRequest
 	22, // 32: account.v1.AccountService.GetMe:input_type -> account.v1.GetMeRequest
@@ -2177,10 +2178,10 @@ var file_account_v1_account_proto_depIdxs = []int32{
 	30, // 36: account.v1.AccountService.RevokeSession:input_type -> account.v1.RevokeSessionRequest
 	32, // 37: account.v1.AccountService.BanUser:input_type -> account.v1.BanUserRequest
 	34, // 38: account.v1.AccountService.UnbanUser:input_type -> account.v1.UnbanUserRequest
-	11, // 39: account.v1.AccountService.SendSmsCode:output_type -> account.v1.SendSmsCodeResponse
+	11, // 39: account.v1.AccountService.SendEmailCode:output_type -> account.v1.SendEmailCodeResponse
 	13, // 40: account.v1.AccountService.Register:output_type -> account.v1.RegisterResponse
 	15, // 41: account.v1.AccountService.LoginByPassword:output_type -> account.v1.LoginByPasswordResponse
-	17, // 42: account.v1.AccountService.LoginBySms:output_type -> account.v1.LoginBySmsResponse
+	17, // 42: account.v1.AccountService.LoginByEmailCode:output_type -> account.v1.LoginByEmailCodeResponse
 	19, // 43: account.v1.AccountService.RefreshToken:output_type -> account.v1.RefreshTokenResponse
 	21, // 44: account.v1.AccountService.Logout:output_type -> account.v1.LogoutResponse
 	23, // 45: account.v1.AccountService.GetMe:output_type -> account.v1.GetMeResponse

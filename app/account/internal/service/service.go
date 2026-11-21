@@ -41,7 +41,7 @@ func toDevice(d *v1.Device) biz.Device {
 func toUser(u *biz.User) *v1.User {
 	return &v1.User{
 		Id:        u.ID,
-		Phone:     u.Phone,
+		Email:     u.Email,
 		Nickname:  u.Nickname,
 		Avatar:    u.Avatar,
 		Gender:    v1.Gender(u.Gender),

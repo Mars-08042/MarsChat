@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/redis/go-redis/v9"
@@ -23,7 +24,7 @@ import (
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
 )
 
-// 依赖本地配置：account 使用 log 短信发送方和默认固定验证码 000000（app/account/configs/config.yaml）。
+// 依赖本地配置：account 使用 log 发送方和默认固定验证码 000000（app/account/configs/config.yaml）。
 const (
 	FixedCode = "000000"
 	Password  = "abc12345"
@@ -89,14 +90,21 @@ func MustCall(t testing.TB, base, method, path, token string, req, resp proto.Me
 	}
 }
 
-// RandomPhone 生成 199 开头的随机手机号，避免与已注册用户冲突。
-func RandomPhone(t testing.TB) string {
+// RandomEmail 生成随机的测试邮箱，避免与已注册用户冲突。域名用保留顶级域 .test，
+// 即使 account 误配成 smtp 发送方也不会真的发出邮件（发送方拒绝保留域名）。
+func RandomEmail(t testing.TB) string {
 	t.Helper()
-	n, err := rand.Int(rand.Reader, big.NewInt(100_000_000))
+	n, err := rand.Int(rand.Reader, big.NewInt(1<<48))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fmt.Sprintf("199%08d", n.Int64())
+	return fmt.Sprintf("e2e-%012x@example.test", n.Int64())
+}
+
+// LocalPart 返回邮箱 @ 之前的部分，只含字母、数字和连字符，可以拼进设备 ID。
+func LocalPart(email string) string {
+	local, _, _ := strings.Cut(email, "@")
+	return local
 }
 
 // Device 构造登录设备信息。
@@ -111,13 +119,13 @@ type Session struct {
 }
 
 // Register 用固定验证码注册新用户，accountBase 是 account 的 HTTP 地址（直连或网关）。
-func Register(t testing.TB, accountBase, phone, deviceID string) Session {
+func Register(t testing.TB, accountBase, email, deviceID string) Session {
 	t.Helper()
-	MustCall(t, accountBase, http.MethodPost, "/v1/auth/sms-codes", "",
-		&accountv1.SendSmsCodeRequest{Phone: phone, Purpose: accountv1.SmsPurpose_SMS_PURPOSE_REGISTER}, nil)
+	MustCall(t, accountBase, http.MethodPost, "/v1/auth/email-codes", "",
+		&accountv1.SendEmailCodeRequest{Email: email, Purpose: accountv1.CodePurpose_CODE_PURPOSE_REGISTER}, nil)
 	var resp accountv1.RegisterResponse
 	MustCall(t, accountBase, http.MethodPost, "/v1/auth/register", "", &accountv1.RegisterRequest{
-		Phone: phone, SmsCode: FixedCode, Password: Password, Nickname: "小克",
+		Email: email, Code: FixedCode, Password: Password, Nickname: "小克",
 		Device: Device(deviceID, accountv1.Platform_PLATFORM_WEB),
 	}, &resp)
 	return Session{User: resp.GetUser(), Token: resp.GetToken()}
@@ -135,7 +143,7 @@ func NewRedis(t testing.TB) *redis.Client {
 // 直连时 IP 为 127.0.0.1；经网关时为 Docker 网络的网关地址（见 GatewayClientIP）。
 func ResetRateLimits(t testing.TB, rdb *redis.Client, ip string) {
 	t.Helper()
-	if err := rdb.Del(context.Background(), "account:rl:sms_ip:"+ip, "account:rl:login_ip:"+ip).Err(); err != nil {
+	if err := rdb.Del(context.Background(), "account:rl:email_code_ip:"+ip, "account:rl:login_ip:"+ip).Err(); err != nil {
 		t.Fatalf("reset rate limits (is MARSCHAT_REDIS_PASSWORD set? run via make): %v", err)
 	}
 }

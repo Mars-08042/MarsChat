@@ -12,13 +12,6 @@
 
 ## 中
 
-### TD-24 短信只有写日志的发送方
-
-- 发现：2026-11-18，重构步骤 2
-- 位置：`app/account/internal/data/data.go` 的 `NewSmsSender`
-- 现状：开发者暂时没有阿里云短信的 AccessKey、签名和模板，只实现了把验证码写进日志的 `log` 发送方，生产环境无法发送验证码。
-- 处理：配置就绪后实现 `aliyun` 发送方（引入 SDK 前征得同意），并验证发送失败时冷却与计数的回滚。
-
 ### TD-26 服务间 gRPC 调用没有认证
 
 - 发现：2026-11-18，重构步骤 2；步骤 3 新增 `SocialInternalService`；步骤 4 新增 `MessageInternalService`、`AccessInternalService`
@@ -56,28 +49,31 @@
 - 现状：`BF.INSERT` 失败后后台按 1s、2s、4s 重试，重试耗尽才删除就绪标记、触发重建。重试期间过滤器仍是就绪状态且不含新 ID，查询这个新用户或新群会返回“不存在”，并写入 1 分钟的空值缓存。只在 Redis 能读写、但 `BF.INSERT` 单独失败时出现（例如过滤器达到内存上限）。
 - 处理：第一次加入失败时立即删除就绪标记（查询改为放行），重试成功后由下一次查询触发重建；或在建群、注册成功后主动删除该 ID 的空值缓存。改动会影响 account 的行为，留到有压测数据后再定。
 
-### TD-29 拉黑与好友申请并发时可能留下一条待处理申请
+## 已解决
 
-- 发现：2026-11-19，重构步骤 3
-- 位置：`app/social/internal/biz/friend.go` 的 `SendRequest` 与 `Block`
-- 现状：两个事务都只读快照、不加锁：A 申请 B 的同时 B 拉黑 A，申请事务看不到拉黑，拉黑事务看不到新申请，结果 B 的收件箱里留下一条来自已拉黑用户的申请。同意它会建立好友关系，但拉黑仍然阻止单聊。
-- 处理：收到的申请列表过滤掉已拉黑用户的申请，或在同意时检查拉黑。影响很小，暂不处理。
+### TD-24 短信只有写日志的发送方
+
+- 发现：2026-11-18，重构步骤 2
+- 解决：2026-11-20，插入任务“邮箱验证码”（不再适用）
+- 处理：个人认证的阿里云账号无法申请短信签名，开发者决定账号标识改为邮箱。验证码经 SMTP 发到邮箱（`app/account/internal/data/mail.go`，标准库实现，465 端口隐式 TLS、其他端口要求 STARTTLS，截止时间不超过请求剩余时间，拒绝发往保留域名），`log` 发送方保留给开发与测试。发送失败时撤销发送间隔和每日计数、删除验证码，返回 `503 CODE_SEND_FAILED`，原有逻辑由单元测试覆盖；SMTP 发送方由假 SMTP 服务器的单元测试覆盖隐式 TLS、STARTTLS、拒绝明文、认证失败、证书不受信任、超时。设计见 [email-verification.md](../design/email-verification.md)。
 
 ### TD-35 节点号租约失效期间，需要发号的写操作返回 500 并记 ERROR
 
 - 发现：2026-11-20，重构步骤 5 的 Redis 故障实验
-- 位置：`pkg/idgen` 的 `ErrLeaseLost`；调用 `NextID` 的 `app/account/internal/biz/auth.go`（注册、登录）、`app/social/internal/biz/friend.go`、`group.go`、`app/message/internal/biz/message.go`（新建单聊会话）
-- 现状：Redis 停机超过节点号租约（30 秒）后，需要发号的写操作按设计失败，但错误没有被识别，统一按未知错误返回 `500 INTERNAL`，访问日志记 ERROR（60 秒实验中 message 记了 13 条 `idgen: node lease lost`）。这是一种可预期、可恢复的依赖故障，客户端应稍后重试，而不是当作服务端缺陷；步骤 8 接入告警后，这些 ERROR 会和真正的缺陷混在一起。
-- 处理：各服务在 biz 层把 `idgen.ErrLeaseLost` 映射为 `503 DEPENDENCY_UNAVAILABLE`，访问日志按 503 记 WARN。涉及三个服务的错误处理，影响接口错误码，留到步骤 8 接入告警时一起处理。
+- 解决：2026-11-20，插入任务“邮箱验证码”
+- 处理：account、social、message 的 biz 层新增 `nextID`，把 `idgen.ErrLeaseLost` 转成 `503 DEPENDENCY_UNAVAILABLE`（account 新增该错误原因，值 60），其他发号错误仍按内部错误处理；`pkg/middleware/accesslog` 改为 503 记 WARN、其他 5xx 记 ERROR（原文写的“访问日志按 503 记 WARN”与代码不符，当时所有 5xx 都记 ERROR）。account 注册改为先发号再校验验证码，租约失效不消耗验证码。单元测试见三个服务的 `TestIDLeaseLostReturnsUnavailable`、`TestSendIDLeaseLost` 与 `accesslog` 的 `TestServerErrorLevels`。
 
 ### TD-36 go-redis 内部日志是纯文本，Redis 不可达期间每次拨号失败都打一行
 
 - 发现：2026-11-20，重构步骤 5 的 Redis 故障实验
-- 位置：`pkg/bootstrap/redis.go`；go-redis `internal.Logger`（默认用标准库 `log` 写 stderr）
-- 现状：go-redis 连接池拨号失败时打印 `redis: connection pool: failed to dial after 1 attempts: ...`，不是 JSON，不经过 `slog`。拨号保护（`dialGuard`）已经在故障开始和恢复时各记一条结构化日志，这些逐次失败的记录只是噪音：60 秒实验中每个进程约 240 行。
-- 处理：用 `redis.SetLogger` 把 go-redis 的内部日志转到 `slog`，连接池拨号失败降为 DEBUG。`SetLogger` 是进程级全局设置，要在各服务启动时调用一次，留到步骤 8 统一整理日志时处理。
+- 解决：2026-11-20，插入任务“邮箱验证码”
+- 处理：`bootstrap.NewRedis` 用 `redis.SetLogger` 把 go-redis 的内部日志转到 `slog`（`msg="go-redis internal log"`，原文在 `detail`）。go-redis 不给级别，按内容分级：连接池拨号失败记 DEBUG，内部恢复的 panic 记 ERROR，其他记 WARN。单元测试见 `pkg/bootstrap/redis_test.go` 的 `TestRedisLoggerLevels`，`TestNewRedisRecoversAfterRestart` 验证真实的拨号失败经 `slog` 输出。
 
-## 已解决
+### TD-29 拉黑与好友申请并发时可能留下一条待处理申请
+
+- 发现：2026-11-19，重构步骤 3
+- 解决：2026-11-20，插入任务“邮箱验证码”
+- 处理：同意好友申请时在同一事务内再检查一次拉黑：任一方已拉黑就把申请改为已失效（与拉黑时的处理一致），提交后返回 `403 FRIEND_REQUEST_NOT_ALLOWED`，不建立好友关系。收到的申请列表仍会显示这条申请，直到接收方处理它。单元测试见 `app/social/internal/biz/friend_test.go` 的 `TestAcceptRequestFromBlockedUser`。
 
 ### TD-30 Kafka 消费没有重试队列和死信队列
 

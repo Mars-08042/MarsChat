@@ -239,6 +239,37 @@ func TestBlockKeepsFriendshipAndExpiresRequests(t *testing.T) {
 }
 
 // 游标分页：多查一条判断是否还有下一页。
+// 申请与拉黑并发时留下的待处理申请不能被同意：同意时发现任一方已拉黑，申请失效，不建立好友关系。
+func TestAcceptRequestFromBlockedUser(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		blocker, other int64
+	}{
+		{"receiver blocked sender", 1, 3},
+		{"sender blocked receiver", 3, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			ctx := context.Background()
+			// 直接写入，模拟两个事务互相看不到对方的结果
+			e.requests.put(&FriendRequest{ID: 1, FromUserID: 3, ToUserID: 1, Status: RequestPending, CreatedAt: e.now, UpdatedAt: e.now})
+			_ = e.blocks.Add(ctx, tc.blocker, tc.other, e.now)
+
+			wantReason(t, e.friendUC.AcceptRequest(ctx, 1, 1), "FRIEND_REQUEST_NOT_ALLOWED")
+			if ok, _ := e.friends.AreFriends(ctx, 1, 3); ok {
+				t.Fatal("accepting a request across a block must not create friendship")
+			}
+			if r, _ := e.requests.FindByID(ctx, 1); r.Status != RequestExpired {
+				t.Fatalf("request status = %d, want expired", r.Status)
+			}
+			if evs := e.events.take(); len(evs) != 0 {
+				t.Fatalf("emitted events %v", eventTypes(evs))
+			}
+			wantReason(t, e.friendUC.AcceptRequest(ctx, 1, 1), "REQUEST_ALREADY_HANDLED")
+		})
+	}
+}
+
 func TestListFriendsPagination(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

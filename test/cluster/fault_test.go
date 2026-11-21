@@ -657,6 +657,12 @@ func TestFaultStopRedisLong(t *testing.T) {
 	if firstFail == 0 {
 		t.Error("no write that needs an ID failed during a 60s Redis outage, expected the ID lease to expire")
 	}
+	// 租约失效是可恢复的依赖故障，应返回 503 让客户端稍后重试，而不是 500
+	for reason := range failReasons {
+		if reason != "503 DEPENDENCY_UNAVAILABLE" {
+			t.Errorf("writes that need an ID failed with %s while the ID lease was lost, want 503 DEPENDENCY_UNAVAILABLE", reason)
+		}
+	}
 	if len(sr.failures) > 0 {
 		t.Errorf("sends in an existing conversation failed while Redis was down: %s", sr.failureSummary())
 	}
@@ -672,7 +678,7 @@ func TestFaultStopRedisLong(t *testing.T) {
 		}
 		switches = append(switches, fmt.Sprintf("%s=%d", c, n))
 		if strings.HasPrefix(c, "marschat-message") {
-			refused = append(refused, fmt.Sprintf("%s=%d", c, strings.Count(logs, `"error":"idgen: node lease lost"`)))
+			refused = append(refused, fmt.Sprintf("%s=%d", c, strings.Count(logs, `"reason":"DEPENDENCY_UNAVAILABLE"`)))
 		}
 	}
 	// account（注册）和 social（好友申请）也要恢复发号

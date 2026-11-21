@@ -37,8 +37,8 @@ func comparePassword(hash, pw string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
 }
 
-// newDummyHash 生成一个与真实密码同样 cost 的哈希。手机号不存在时也用它比较一次，
-// 让“手机号不存在”和“密码错误”的耗时相同，无法据此判断手机号是否注册。
+// newDummyHash 生成一个与真实密码同样 cost 的哈希。邮箱不存在时也用它比较一次，
+// 让“邮箱不存在”和“密码错误”的耗时相同，无法据此判断邮箱是否注册。
 func newDummyHash(cost int) (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

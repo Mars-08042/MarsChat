@@ -70,7 +70,7 @@ func run() error {
 	}
 
 	app, cleanup, err := wireApp(bc.GetServer(), bc.GetRegistry(), bc.GetMysql(), bc.GetRedis(), bc.GetAuth(),
-		bc.GetToken(), bc.GetSms(), bc.GetSecurity(), bc.GetCache(), bc.GetKafka(), bc.GetOutbox(), policy, logger)
+		bc.GetToken(), bc.GetMail(), bc.GetSecurity(), bc.GetCache(), bc.GetKafka(), bc.GetOutbox(), policy, logger)
 	if err != nil {
 		return fmt.Errorf("init app: %w", err)
 	}

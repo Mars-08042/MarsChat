@@ -1,11 +1,14 @@
 package bootstrap
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,6 +42,46 @@ func (d *slowDialer) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 }
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+// syncBuffer 让测试在后台协程写日志的同时读取内容。
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// go-redis 的内部日志按内容分级，经 slog 输出。
+func TestRedisLoggerLevels(t *testing.T) {
+	var buf bytes.Buffer
+	l := redisLogger{logger: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	for _, tc := range []struct {
+		format string
+		args   []any
+		want   string
+	}{
+		{"redis: connection pool: failed to dial after %d attempts: %v", []any{1, errDial}, "level=DEBUG"},
+		{"queuedNewConn panic: %+v", []any{"boom"}, "level=ERROR"},
+		{"redis: failed to close connection: %v", []any{io.ErrClosedPipe}, "level=WARN"},
+	} {
+		buf.Reset()
+		l.Printf(context.Background(), tc.format, tc.args...)
+		out := buf.String()
+		if !strings.Contains(out, tc.want) || !strings.Contains(out, `msg="go-redis internal log"`) || strings.Contains(out, "detail=\"redis: ") {
+			t.Errorf("%s: want %s, got %s", tc.format, tc.want, out)
+		}
+	}
+}
 
 func TestDialGuardFailsFastUntilProbeSucceeds(t *testing.T) {
 	d := &slowDialer{delay: 100 * time.Millisecond}
@@ -106,7 +149,9 @@ func TestDialGuardIgnoresCallerCancel(t *testing.T) {
 
 func TestNewRedisRecoversAfterRestart(t *testing.T) {
 	mr := miniredis.RunT(t)
-	rdb, cleanup, err := NewRedis(&conf.Redis{Addr: mr.Addr()}, discardLogger())
+	var logs syncBuffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	rdb, cleanup, err := NewRedis(&conf.Redis{Addr: mr.Addr()}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +163,10 @@ func TestNewRedisRecoversAfterRestart(t *testing.T) {
 		if err := rdb.Ping(ctx).Err(); err == nil {
 			t.Fatal("ping succeeded while Redis is stopped")
 		}
+	}
+	// NewRedis 接管了 go-redis 的内部日志：连接池拨号失败经 slog 记为 DEBUG
+	if out := logs.String(); !strings.Contains(out, "level=DEBUG") || !strings.Contains(out, "connection pool: failed to dial") {
+		t.Fatalf("pool dial failure not routed to slog at DEBUG: %s", out)
 	}
 
 	if err := mr.Restart(); err != nil {

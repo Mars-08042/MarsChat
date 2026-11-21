@@ -108,12 +108,12 @@ curl -s http://127.0.0.1:18010/readyz    # 就绪探针，检查 MySQL 和 Redis
 make e2e                                 # 全部服务的端到端测试，见“开发命令”
 ```
 
-调用 account 的 HTTP 接口时要带 `Content-Type: application/json`，否则请求体按表单解析。开发环境短信验证码固定为 `000000`（只写日志的发送方，见下方配置），例如：
+调用 account 的 HTTP 接口时要带 `Content-Type: application/json`，否则请求体按表单解析。开发环境的邮箱验证码固定为 `000000`（只写日志的 `log` 发送方，见“验证码邮件”），例如：
 
 ```bash
-curl -s -X POST http://127.0.0.1:18010/v1/auth/sms-codes \
+curl -s -X POST http://127.0.0.1:18010/v1/auth/email-codes \
   -H 'Content-Type: application/json' \
-  -d '{"phone":"13800000001","purpose":"SMS_PURPOSE_REGISTER"}'
+  -d '{"email":"alice@example.test","purpose":"CODE_PURPOSE_REGISTER"}'
 ```
 
 接口列表见 [api/openapi.yaml](../api/openapi.yaml)。Git Bash 中 curl 的命令行参数按系统代码页传递，请求体里直接写中文会被服务端判为非法 UTF-8，测试中文时把请求体放进 UTF-8 文件再用 `-d @文件名`。
@@ -123,10 +123,10 @@ curl -s -X POST http://127.0.0.1:18010/v1/auth/sms-codes \
 系统不提供设置管理员的接口。用户注册后执行：
 
 ```bash
-make grant-admin PHONE=13800000001
+make grant-admin EMAIL=alice@example.test
 ```
 
-脚本 [scripts/grant-admin.sh](../scripts/grant-admin.sh) 在 MySQL 容器中把该用户的 `role` 改为管理员并删除资料缓存。新角色写在访问令牌里，该用户下次刷新令牌或重新登录后生效。
+脚本 [scripts/grant-admin.sh](../scripts/grant-admin.sh) 把邮箱转为小写、校验字符后，在 MySQL 容器中把该用户的 `role` 改为管理员并删除资料缓存。新角色写在访问令牌里，该用户下次刷新令牌或重新登录后生效。
 
 ## 容器模式
 
@@ -216,7 +216,9 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 | `MARSCHAT_LOG_FORMAT` | `text` | `text` 或 `json` |
 | `MARSCHAT_JWT_KEY_ID` | `dev-1` | 访问令牌头部的 `kid`，为轮换密钥预留 |
 | `MARSCHAT_TRUSTED_PROXY` | 空 | account 信任的代理（网关）IP 或 CIDR，只有直接连接方是它时才读取 `X-Forwarded-For`；容器模式为网关的固定 IP `172.30.0.10` |
-| `MARSCHAT_SMS_FIXED_CODE` | `000000` | 开发与 e2e 用的固定验证码，只允许和 `log` 发送方一起使用；置空则随机生成 6 位并写入日志 |
+| `MARSCHAT_MAIL_PROVIDER` | `log` | 验证码邮件的发送方：`log` 只写日志，`smtp` 经 SMTP 真实发信，见“验证码邮件” |
+| `MARSCHAT_MAIL_FIXED_CODE` | `000000` | 开发与 e2e 用的固定验证码，只允许和 `log` 发送方一起使用；置空则随机生成 6 位（`log` 发送方写入日志） |
+| `MARSCHAT_SMTP_ADDR` / `MARSCHAT_SMTP_USERNAME` / `MARSCHAT_SMTP_PASSWORD` | 空 | SMTP 服务器 `host:port`、发件邮箱（同时是登录名）、SMTP 授权码，`smtp` 发送方必填 |
 | `MARSCHAT_ACCOUNT_ENDPOINT` | `discovery:///marschat-account` | social、message 调用 account 的 gRPC 地址；也可以写 `127.0.0.1:19010` 这样的直连地址 |
 | `MARSCHAT_SOCIAL_ENDPOINT` | `discovery:///marschat-social` | message、delivery 调用 social 的地址 |
 | `MARSCHAT_MESSAGE_ENDPOINT` | `discovery:///marschat-message` | access 调用 message 的地址 |
@@ -229,11 +231,11 @@ account 的主要配置段（默认值见 [config.yaml](../app/account/configs/c
 |---|---|---|
 | `auth` | 公钥、签发方、受众（各服务相同） | 重启 |
 | `token` | 私钥、`kid`、访问令牌 900 秒、刷新令牌 30 天、轮换宽限期 10 秒、吊销记录保留 1 小时（不得小于访问令牌有效期） | 重启 |
-| `sms` | 发送方（目前只有 `log`）、固定验证码 | 重启 |
+| `mail` | 发送方（`log` 或 `smtp`）、固定验证码；`smtp` 段为服务器地址、用户名、授权码和单次发送超时 2.5 秒（不超过 10 秒，同时不超过请求的剩余时间） | 重启 |
 | `security` | bcrypt cost（10～14，默认 12）、可信代理 `trusted_proxies`（`${TRUSTED_PROXY:}`，宿主机运行为空，容器模式为网关 IP） | 重启 |
 | `cache` | 资料缓存 1800 秒、空值标记 60 秒 | 重启 |
 | `kafka`、`outbox` | Kafka 地址；Outbox 轮询间隔 0.5 秒（事务提交后会立即唤醒，轮询只是兜底）、每批 200 条、已发布事件保留 7 天 | 重启 |
-| `policy` | 短信：有效期 300 秒、验证 5 次、发送间隔 60 秒、每号每日 10 条、每 IP 每小时 20 次；登录：15 分钟内错 5 次锁定 15 分钟、每 IP 每分钟 20 次 | **热更新**：保存配置文件后自动生效，日志出现 `config reloaded key=policy`；值不合法时保留旧值并记录 ERROR |
+| `policy` | 邮箱验证码：有效期 300 秒、验证 5 次、发送间隔 60 秒、每个邮箱每日 10 封、每 IP 每小时 20 次；登录：15 分钟内错 5 次锁定 15 分钟、每 IP 每分钟 20 次 | **热更新**：保存配置文件后自动生效，日志出现 `config reloaded key=policy`；值不合法时保留旧值并记录 ERROR |
 
 social 的主要配置段（默认值见 [config.yaml](../app/social/configs/config.yaml)）：
 
@@ -272,7 +274,34 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `push` | 调用 access `Push`、`Kick` 的超时 2 秒 | 重启 |
 | `policy` | `push_cooldown`：access 实例不可达（`Unavailable` 或超时）后的冷却期 5 秒（0～60 秒），期间发往它的推送直接跳过，日志出现 `access instance unreachable, connection evicted`；0 表示只摘除连接、下一次立即重新拨号 | **热更新** |
 
-阿里云短信发送方尚未实现（没有 AccessKey、签名和模板），生产环境不能使用 `log` 发送方。
+### 验证码邮件
+
+注册和验证码登录的验证码发到邮箱。默认的 `log` 发送方只把验证码写进 account 日志（`msg="verification code (log provider, dev only)"`），开发和自动化测试使用固定验证码 `000000`；生产环境必须使用 `smtp`。设计见 [email-verification.md](design/email-verification.md)。
+
+用个人邮箱真实发信：
+
+1. 在邮箱网页版的设置中开启 SMTP 服务并生成**授权码**（QQ 邮箱：设置 → 账号 → POP3/IMAP/SMTP 服务；163 邮箱：设置 → POP3/SMTP/IMAP）。授权码只用于第三方客户端登录，不是邮箱密码；泄露后在同一页面作废重新生成即可。
+2. 在 `.env` 中设置（变量名见 [.env.example](../.env.example)，授权码只写在 `.env`）：
+
+   ```bash
+   MARSCHAT_MAIL_PROVIDER=smtp
+   MARSCHAT_MAIL_FIXED_CODE=          # 必须置空，固定验证码只允许和 log 发送方一起使用
+   MARSCHAT_SMTP_ADDR=smtp.qq.com:587 # STARTTLS；其他邮箱的地址与端口以其帮助页面为准
+   MARSCHAT_SMTP_USERNAME=你的邮箱地址
+   MARSCHAT_SMTP_PASSWORD=SMTP 授权码
+   ```
+
+3. 重启 account（宿主机 `make run-account`；容器模式 `docker compose --profile apps up -d account`，compose 会把这些变量传进容器）。配置不完整（缺用户名或授权码、用户名不是邮箱地址、地址不是 `host:port`）时启动失败。
+
+说明：
+
+- 465 端口使用隐式 TLS，其他端口（如 587）要求服务器支持 STARTTLS，不支持时拒绝发送；不会经明文连接传输授权码。服务器证书按系统根证书校验。
+- 日志报 `tls: failed to verify certificate: x509: certificate signed by unknown authority` 时，说明到 SMTP 服务器的 TLS 连接被截获、证书被替换。开发机上 465 端口出现过这种情况，587 正常，排查方法见 [lessons/smtp-465-tls-interception.md](lessons/smtp-465-tls-interception.md)。不要关闭证书校验。
+- 修改 `.env` 中的邮件配置后要重建 account 才生效：容器模式 `docker compose --profile apps up -d account`，宿主机重新 `make run-account`。
+- 2026-11-20 实测（QQ 邮箱，587）：一次发送从请求到 SMTP 服务器接受邮件 1.2～1.5 秒，在 2.5 秒的发送超时以内。
+- 发往保留域名（`.test`、`.example`、`.invalid`、`.localhost`、`example.com/net/org`）的验证码直接按发送失败处理，不占用个人邮箱的每日发信额度。e2e 的测试账号（`@example.test`）和迁移填充的占位邮箱（`@legacy.invalid`）都在其中。
+- 发送失败（连接、认证、服务器拒收、超时）返回 `503 CODE_SEND_FAILED`，撤销本次的发送间隔和每日计数，可以立即重试；原因写在 account 的 ERROR 日志 `send verification code failed` 中（邮箱已脱敏）。
+- 运行 `make e2e`、`make cluster-test` 前把 `MARSCHAT_MAIL_PROVIDER` 改回 `log`（或注释掉），`MARSCHAT_MAIL_FIXED_CODE` 恢复为 `000000`：测试依赖固定验证码。
 
 ## 开发命令
 
