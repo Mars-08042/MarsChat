@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -110,6 +111,43 @@ func loginByPassword(t *testing.T, email, deviceID string) session {
 		Email: email, Password: password, Device: device(deviceID, v1.Platform_PLATFORM_ANDROID),
 	}, &resp)
 	return session{user: resp.GetUser(), token: resp.GetToken()}
+}
+
+// TestConcurrentRegister 同时注册多个用户不能互相死锁。压测准备数据时发现：注册事务中吊销设备旧会话的
+// 加锁查询会锁住会话唯一索引末尾的间隙，并发注册的新用户都落在这个间隙，插入会话时报死锁（1213）。
+func TestConcurrentRegister(t *testing.T) {
+	resetRateLimits(t)
+	const n = 8
+	emails := make([]string, n)
+	for i := range emails {
+		emails[i] = randomEmail(t)
+		mustCall(t, http.MethodPost, "/v1/auth/email-codes", "",
+			&v1.SendEmailCodeRequest{Email: emails[i], Purpose: v1.CodePurpose_CODE_PURPOSE_REGISTER}, nil)
+	}
+	start := make(chan struct{})
+	errs := make([]string, n)
+	var wg sync.WaitGroup
+	for i, email := range emails {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			status, e := call(t, http.MethodPost, "/v1/auth/register", "", &v1.RegisterRequest{
+				Email: email, Code: fixedCode, Password: password, Nickname: "小克",
+				Device: device("e2e-web-"+localPart(email), v1.Platform_PLATFORM_WEB),
+			}, nil)
+			if e != nil {
+				errs[i] = fmt.Sprintf("status %d, %+v", status, e)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	for i, e := range errs {
+		if e != "" {
+			t.Errorf("register #%d: %s", i, e)
+		}
+	}
 }
 
 func TestAccountFlow(t *testing.T) {

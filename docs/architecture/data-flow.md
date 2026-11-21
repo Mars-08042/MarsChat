@@ -1,8 +1,8 @@
 # 数据流
 
-> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
+> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
 >
-> 文件上传与下载见第 8 节，音视频通话信令见第 9 节。
+> 文件上传与下载见第 8 节，音视频通话信令见第 9 节，链路追踪（Trace 上下文如何跨 WebSocket、gRPC 和 Kafka 传递）见第 10 节。
 
 ## 1. 服务与通道
 
@@ -195,7 +195,7 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 
 - **写入**：业务事务内插入 `outbox_events`，与业务数据同时提交或回滚，不在事务里调用 Kafka。
 - **发布**：每个服务同时只有一个实例发布（Redis 租约 `outbox:lease:{服务名}`），保证同一个键的事件按写入顺序进入 Kafka。事务提交后立即唤醒发布器：本实例就是持有者时直接唤醒，否则经 Redis 频道 `outbox:wake:{服务名}` 唤醒持有者；轮询（500 毫秒）只是兜底。Kafka 不可用时退避重试（1 秒起，最长 30 秒），事件留在表中只会延迟、不会丢；发布后、标记前崩溃会重复发布。
-- **记录格式**：键为 `event_key`，值为事件的 protobuf 编码，记录头 `event_type`（proto 全名）、`event_id`（`{服务名}:{outbox id}`）、`source`。
+- **记录格式**：键为 `event_key`，值为事件的 protobuf 编码，记录头 `event_type`（proto 全名）、`event_id`（`{服务名}:{outbox id}`）、`source`，事件写入时有 Trace 上下文的还带 `traceparent`（见第 10 节）。
 - **消费**：关闭自动提交，按分区顺序处理后只提交已处理的位点。未注册的事件类型跳过。失败分两类：
   - **处理不了**（处理器返回 `Permanent`、解码失败、panic）：记 ERROR，把原始的键、值和头写入 `marschat.dlq`，追加头 `x-dlq-group`、`x-dlq-topic`、`x-dlq-partition`、`x-dlq-offset`、`x-dlq-error`，然后提交位点。写入失败时不提交，退避重试写入，记录不会凭空消失。
   - **临时失败**（其他错误）：退避重试（100 毫秒起，最长 5 秒）。不要求顺序的消费者（目前只有 `marschat-social-cache`）原地尝试 3 次仍失败，就把记录转入自己的重试 topic（头 `x-retry-not-before` 为 10 秒后、`x-retry-from` 为原位置）并提交原位点，主分区不被阻塞；重试消费者（消费组加 `-retry` 后缀，同样的处理器）等到时间后处理，临时失败原地无限重试，只阻塞重试 topic。要求顺序的消费者（`marschat-message`）原地无限重试，连续失败 10 次后改记 ERROR（每条记录每分钟最多一次）。
@@ -330,3 +330,28 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 ### 9.5 尚未实现
 
 群通话；STUN/TURN 服务器与临时凭据下发（ICE 服务器为空时只能在可以直接互通的网络中建立连接，随前端重构部署 coturn）；通话记录写入聊天记录；断线重连后恢复通话。
+
+## 10. 链路追踪
+
+一条消息从发送到推送是一条 Trace（容器模式下在 Jaeger 中查看；没有配置 `telemetry.otlp_endpoint` 时不导出）：
+
+```
+access    ws.SendMessage              服务端 Span：user_id、conn_id、request_id、client_msg_id、conversation_id、seq
+└ access → message  SendMessage       gRPC 客户端 Span
+  └ message  SendMessage              gRPC 服务端 Span
+    ├ message → social  CheckSendPermission
+    ├ message → media  GetFiles       只有图片、文件消息
+    └ message  publish marschat.message.events    生产者 Span，起点为事件写入 Outbox 的时刻
+      └ delivery  consume marschat.message.events  消费者 Span：conversation_id、seq、queue_ms
+        └ delivery → access  Push     每个在线的 access 实例一个客户端 Span
+          └ access  Push              gRPC 服务端 Span
+```
+
+- **传递方式**：
+  - HTTP、gRPC：Kratos tracing 中间件按 W3C Trace Context 传递（HTTP 头、gRPC 元数据中的 `traceparent`）。
+  - WebSocket 上行帧：帧里不带 Trace 上下文，access 为每个 `SendMessage`、`Call` 帧开启新的根 Span。
+  - Outbox 与 Kafka：`outbox.Add` 在业务事务中把当前 Span 的上下文写入 `outbox_events.trace_parent`（没有 Span 时为空字符串）；发布器读出后开启生产者 Span，把它的上下文写入 Kafka 记录头 `traceparent`；消费者读出记录头，开启消费者 Span，处理器在它的 context 中执行。转入重试队列、死信队列的记录复制原记录的头，重试消费者的 Span 仍在同一条 Trace 下。
+- **时间的含义**：生产者 Span 从事件写入时刻开始、到 Kafka 确认结束，长度就是“在 Outbox 中等待 + 发送到 Kafka”；消费者 Span 的 `marschat.queue_ms` 是记录在 Kafka 中等待的时间；消费者 Span 覆盖全部原地重试，每次失败作为 Span 事件记录。
+- **采样**：在 Trace 的根（WebSocket 帧，或者第一个收到请求的 HTTP、gRPC 服务端）决定，下游跟随上游，一条 Trace 要么完整、要么不导出。
+- 同一批发布的多条事件各有自己的生产者 Span。一个事件被多个消费组消费时（例如 social 事件同时被 delivery、message、social 自己消费），每个消费组各有一个消费者 Span，挂在同一个生产者 Span 下。
+- 日志中的 `trace_id` 与 Jaeger 中的一致，可以从一条错误日志找到整条链路。

@@ -1,6 +1,6 @@
 # 数据模型
 
-> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
+> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
 
 ## 1. 数据库与账号
 
@@ -29,7 +29,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 - 时间列为 `DATETIME(3)`，按 UTC 读写；应用写入前把时间截断到毫秒，与列精度一致。
 - 状态类列直接存 proto 枚举的数值，0 保留给 `UNSPECIFIED`。
 
-### 2.1 account（`marschat_account`，迁移 `000001_init`、`000002_email`）
+### 2.1 account（`marschat_account`，迁移 `000001_init`、`000002_email`、`000003_outbox_trace_parent`）
 
 **users**
 
@@ -62,7 +62,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `revoked_at` / `revoke_reason` | `DATETIME(3) NULL` / `TINYINT` | 原因 0 未吊销、1 退出、2 被踢、3 封禁、4 同设备重新登录、5 刷新令牌重放 |
 | `active_device` | 虚拟生成列 `IF(revoked_at IS NULL, device_id, NULL)` | 只用于唯一索引 |
 
-**outbox_events**：结构见 [pkg/outbox](../../pkg/outbox/outbox.go)，各服务同构。account 写入的事件为 `SessionRevoked`、`UserBanned`（topic `marschat.account.events`，分区键为用户 ID），由 Outbox 发布器发布到 Kafka，见 [data-flow.md](data-flow.md#6-事件与-outbox)。
+**outbox_events**：结构见 [pkg/outbox](../../pkg/outbox/outbox.go)，各服务同构。account 写入的事件为 `SessionRevoked`、`UserBanned`（topic `marschat.account.events`，分区键为用户 ID），由 Outbox 发布器发布到 Kafka，见 [data-flow.md](data-flow.md#6-事件与-outbox)。步骤 8 新增列 `trace_parent VARCHAR(64) NOT NULL DEFAULT ''`（位于 `payload` 之后）：写入事件时的 W3C `traceparent`（55 个字符），没有 Trace 上下文时为空字符串；发布时转成 Kafka 记录头，见 [data-flow.md](data-flow.md#10-链路追踪)。只追加列、带默认值，旧版本的服务不写它也能正常运行，回滚迁移只是丢掉这一列。
 
 索引与查询（`EXPLAIN` 于 2026-11-18 在 MySQL 9.7.4 上核对，`uk_email` 于 2026-11-20 核对）：
 
@@ -70,14 +70,14 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 |---|---|---|
 | `users.uk_email` | 登录、发码前判断是否注册：`WHERE email = ?` | 常量查找；同时兜底并发注册（唯一键冲突转成 `EMAIL_ALREADY_REGISTERED`） |
 | `users.PRIMARY` | 资料回源、批量资料 `WHERE id IN (...)`、登录与封禁的行锁、布隆过滤器重建 `WHERE id > ? ORDER BY id LIMIT 1000` | 重建扫描为覆盖索引范围扫描 |
-| `sessions.uk_user_active_device (user_id, active_device)` | 同设备登录时吊销旧会话：`WHERE user_id = ? AND active_device = ? FOR UPDATE` | 已吊销会话这一列为 NULL，不占唯一约束，所以同一设备最多一个有效会话，历史全部保留 |
+| `sessions.uk_user_active_device (user_id, active_device)` | 同设备登录时吊销旧会话：`WHERE user_id = ? AND active_device = ? FOR UPDATE` | 已吊销会话这一列为 NULL，不占唯一约束，所以同一设备最多一个有效会话，历史全部保留。查不到行时这条查询加的是间隙锁，注册不执行它（新用户没有会话），否则并发注册会在索引末尾的间隙上死锁，见 [lessons](../lessons/innodb-gap-lock-register-deadlock.md) |
 | `sessions.idx_user_revoked (user_id, revoked_at)` | 设备列表、封禁时吊销全部会话：`WHERE user_id = ? AND revoked_at IS NULL` | 数据量很小时优化器可能改用 `uk_user_active_device` 的 `user_id` 前缀，两者都在候选索引中 |
 | `sessions.PRIMARY` | 刷新：按令牌里的会话 ID 查找；轮换 `UPDATE ... WHERE id = ? AND refresh_hash = ? AND revoked_at IS NULL` | 条件更新保证并发刷新只有一个成功 |
 | `outbox_events.idx_unpublished (published_at, id)` | 发布器取未发布事件 `WHERE published_at IS NULL ORDER BY id`；清理已发布超过 7 天的记录 | 各服务同构，`EXPLAIN` 见 2.3 |
 
 事务边界见 [account 设计 3.6](../design/account-service.md#36-事务与事件)。登录事务先 `SELECT ... FOR UPDATE` 锁住用户行，与封禁互斥。
 
-### 2.2 social（`marschat_social`，迁移 `000001_init`）
+### 2.2 social（`marschat_social`，迁移 `000001_init`、`000002_outbox_trace_parent`）
 
 **friendships**：一段好友关系存两行（A→B 与 B→A），在同一事务中插入（`INSERT IGNORE`）和删除。
 
@@ -144,7 +144,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 单聊发言权限是 2 次主键查询（拉黑、好友），群聊发言权限读群资料缓存和成员列表缓存。事务边界与并发控制见 [social 设计 3.4、3.9](../design/social-service.md#34-群)。
 
-### 2.3 message（`marschat_message`，迁移 `000001_init`）
+### 2.3 message（`marschat_message`，迁移 `000001_init`、`000002_outbox_trace_parent`）
 
 读扩散：消息按会话只存一份，会话内 seq 连续递增，每个成员只记录自己的已读位置（[ADR-0006](adr/0006-message-sync-model.md)）。主键与索引都以会话 ID 开头，将来可以按会话分片。
 

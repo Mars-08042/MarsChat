@@ -1,6 +1,6 @@
 # MarsChat 架构总览
 
-> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），只作参考。后端正在 `dev` 分支按 [后端重构计划](docs/plans/active/backend-refactor.md) 重写，目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)（其中的文件存储已被 [ADR-0007](docs/architecture/adr/0007-object-storage.md) 替代）和 [目标架构图](docs/images/proposed-distributed-architecture.svg)，当前代码见 [system.md](docs/architecture/system.md)（通话信令由 access 处理，见 [call-signaling.md](docs/design/call-signaling.md)）；本文将在重构中重写。
+> **重构说明（2026-11-18）**：本文描述的是已移除的旧基线（截至提交 `6624cea`），只作参考。后端正在 `dev` 分支按 [后端重构计划](docs/plans/active/backend-refactor.md) 重写，目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)（其中的文件存储已被 [ADR-0007](docs/architecture/adr/0007-object-storage.md) 替代）和 [目标架构图](docs/images/proposed-distributed-architecture.svg)，当前代码见 [system.md](docs/architecture/system.md)（通话信令由 access 处理，见 [call-signaling.md](docs/design/call-signaling.md)；监控、链路追踪与压测见 [observability.md](docs/design/observability.md)）；本文将在重构中重写。
 
 ![系统架构](docs/images/architecture.svg)
 

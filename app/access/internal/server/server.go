@@ -20,12 +20,13 @@ import (
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 	"github.com/Mars-08042/MarsChat/pkg/conf"
 	"github.com/Mars-08042/MarsChat/pkg/middleware/accesslog"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 // ProviderSet 是 server 层的依赖提供者。
 var ProviderSet = wire.NewSet(NewGRPCServer, NewHTTPServer)
 
-// NewHTTPServer 创建 HTTP 服务器：WebSocket 入口 /ws，以及存活探针 /healthz 和就绪探针 /readyz。
+// NewHTTPServer 创建 HTTP 服务器：WebSocket 入口 /ws，以及存活探针 /healthz、就绪探针 /readyz 和指标端点 /metrics。
 // 没有 proto 定义的 HTTP 接口，所以不挂中间件；WebSocket 不经过 Kratos 的中间件和请求超时。
 func NewHTTPServer(c *conf.Server, d *data.Data, hub *biz.Hub, logger *slog.Logger) *http.Server {
 	var opts []http.ServerOption
@@ -38,14 +39,20 @@ func NewHTTPServer(c *conf.Server, d *data.Data, hub *biz.Hub, logger *slog.Logg
 	srv := http.NewServer(opts...)
 	srv.HandleFunc("/healthz", bootstrap.LivenessHandler)
 	srv.Handle("/readyz", bootstrap.ReadinessHandler(logger, d.ReadinessChecks()...))
+	// 指标端点同探针一样不经过中间件；网关只转发 /v1/... 与 /ws，外部访问不到
+	srv.Handle("/metrics", telemetry.MetricsHandler())
 	srv.Handle("/ws", NewWebSocketHandler(hub))
 	return srv
 }
 
 // NewGRPCServer 创建 gRPC 服务器，只提供内部接口（Push、Kick），不需要登录（服务间认证见 TD-26）。
-func NewGRPCServer(c *conf.Server, internal *service.InternalService, logger *slog.Logger) *grpc.Server {
+func NewGRPCServer(c *conf.Server, internal *service.InternalService, logger *slog.Logger) (*grpc.Server, error) {
+	mws, err := telemetry.ServerMiddlewares()
+	if err != nil {
+		return nil, err
+	}
 	opts := []grpc.ServerOption{
-		grpc.Middleware(accesslog.Server(logger), validate.ProtoValidate()),
+		grpc.Middleware(append(mws, accesslog.Server(logger), validate.ProtoValidate())...),
 	}
 	if addr := c.GetGrpc().GetAddr(); addr != "" {
 		opts = append(opts, grpc.Address(addr))
@@ -55,7 +62,7 @@ func NewGRPCServer(c *conf.Server, internal *service.InternalService, logger *sl
 	}
 	srv := grpc.NewServer(opts...)
 	v1.RegisterAccessInternalServiceServer(srv, internal)
-	return srv
+	return srv, nil
 }
 
 // drainer 是 biz.Hub 中 DrainingGRPCServer 用到的部分。

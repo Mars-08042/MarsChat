@@ -11,6 +11,9 @@ import (
 
 	kerrors "github.com/go-kratos/kratos/v3/errors"
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
 	v1 "github.com/Mars-08042/MarsChat/api/access/v1"
@@ -69,14 +72,16 @@ func (c *Conn) serve() {
 		c.writeLoop()
 		close(writerDone)
 	}()
-	reason := c.readLoop()
+	reason, label := c.readLoop()
 	close(c.quit)
 	<-writerDone
 
 	id := c.id.Load()
 	if ci := c.closed.Load(); ci != nil {
 		reason = ci.text + " (" + strconv.Itoa(ci.code) + ")"
+		label = serverCloseLabel(ci.code)
 	}
+	countClose(label)
 	if id == 0 {
 		c.hub.logger.Debug("unauthenticated websocket closed", slog.String("reason", reason))
 		return
@@ -96,8 +101,8 @@ func (c *Conn) serve() {
 	)
 }
 
-// readLoop 读取并处理上行帧，返回连接结束的原因。认证前的读期限为认证超时，认证后每收到一帧就顺延一个心跳超时。
-func (c *Conn) readLoop() string {
+// readLoop 读取并处理上行帧，返回连接结束的原因和它的指标标签。认证前的读期限为认证超时，认证后每收到一帧就顺延一个心跳超时。
+func (c *Conn) readLoop() (string, string) {
 	deadline := time.Now().Add(c.hub.opts.authTimeout)
 	for {
 		_ = c.ws.SetReadDeadline(deadline)
@@ -127,24 +132,24 @@ func (c *Conn) readLoop() string {
 	}
 }
 
-func (c *Conn) onReadError(err error) string {
+func (c *Conn) onReadError(err error) (string, string) {
 	var ce *websocket.CloseError
 	var ne net.Error
 	switch {
 	case errors.As(err, &ce):
-		return "peer closed (" + strconv.Itoa(ce.Code) + ")"
+		return "peer closed (" + strconv.Itoa(ce.Code) + ")", peerCloseLabel(ce.Code)
 	case errors.Is(err, websocket.ErrReadLimit):
 		// gorilla 已经回复了 1009
-		return "frame too large"
+		return "frame too large", closeTooLarge
 	case errors.As(err, &ne) && ne.Timeout():
 		if c.id.Load() == 0 && c.closed.CompareAndSwap(nil, &closeInfo{CloseUnauthenticated, "authentication timeout"}) {
 			_ = c.ws.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(CloseUnauthenticated, "authentication timeout"), time.Now().Add(time.Second))
 		}
 		// 心跳超时：对端多半已经失联，不再发关闭帧，直接断开
-		return "heartbeat timeout"
+		return "heartbeat timeout", closeHeartbeatTimeout
 	default:
-		return "read error: " + err.Error()
+		return "read error: " + err.Error(), closeReadError
 	}
 }
 
@@ -160,6 +165,7 @@ func (c *Conn) allowFrame() bool {
 }
 
 func (c *Conn) handleAuth(f *v1.ClientFrame, decodeErr error) {
+	countFrame("auth")
 	a := f.GetAuth()
 	if decodeErr != nil || a == nil {
 		c.closeWith(errorFrame(f.GetRequestId(), ErrInvalidFrame("first frame must be auth")), CloseUnauthenticated, "unauthenticated")
@@ -193,19 +199,29 @@ func (c *Conn) handleAuth(f *v1.ClientFrame, decodeErr error) {
 func (c *Conn) handle(f *v1.ClientFrame, decodeErr error) {
 	rid := f.GetRequestId()
 	if decodeErr != nil {
+		countFrame("invalid")
 		c.push(errorFrame(rid, ErrInvalidFrame("cannot decode frame")))
 		return
 	}
 	switch b := f.GetBody().(type) {
 	case *v1.ClientFrame_Ping:
+		countFrame("ping")
 		c.heartbeat(rid)
 	case *v1.ClientFrame_SendMessage:
-		c.sendMessage(rid, b.SendMessage)
+		countFrame("send_message")
+		ctx, span := c.startFrameSpan("ws.SendMessage", rid)
+		c.sendMessage(ctx, rid, b.SendMessage)
+		span.End()
 	case *v1.ClientFrame_Call:
-		c.hub.calls.handle(c, rid, b.Call)
+		countFrame("call")
+		ctx, span := c.startFrameSpan("ws.Call", rid)
+		c.hub.calls.handle(ctx, c, rid, b.Call)
+		span.End()
 	case *v1.ClientFrame_Auth:
+		countFrame("auth")
 		c.push(errorFrame(rid, ErrInvalidFrame("already authenticated")))
 	default:
+		countFrame("empty")
 		c.push(errorFrame(rid, ErrInvalidFrame("empty frame")))
 	}
 }
@@ -238,15 +254,23 @@ func (c *Conn) registerRoute(ctx context.Context) {
 }
 
 // sendMessage 同步调用 message：读协程等待结果后才读下一帧，同一连接内的确认与发送顺序一致。
-func (c *Conn) sendMessage(rid uint64, m *messagev1.OutgoingMessage) {
-	res, err := c.hub.sender.Send(context.Background(), c.principal, c.id.Load(), m)
+// ctx 带着帧的 Span，确认之后补上 (conversation_id, seq)，Jaeger 中可以按它们查到这条消息的整条链路。
+func (c *Conn) sendMessage(ctx context.Context, rid uint64, m *messagev1.OutgoingMessage) {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("marschat.client_msg_id", m.GetClientMsgId()))
+	res, err := c.hub.sender.Send(ctx, c.principal, c.id.Load(), m)
 	if err != nil {
-		if e := kerrors.FromError(err); e.Code >= 500 {
-			c.hub.logger.Warn("send message failed", slog.Int64("conn_id", c.id.Load()), slog.Any("error", err))
+		e := kerrors.FromError(err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, e.Reason)
+		if e.Code >= 500 {
+			c.hub.logger.WarnContext(ctx, "send message failed", slog.Int64("conn_id", c.id.Load()),
+				slog.String("client_msg_id", m.GetClientMsgId()), slog.Any("error", err))
 		}
 		c.push(errorFrame(rid, err))
 		return
 	}
+	span.SetAttributes(attribute.Int64("marschat.conversation_id", res.GetConversationId()), attribute.Int64("marschat.seq", res.GetSeq()))
 	c.push(&v1.ServerFrame{RequestId: rid, Body: &v1.ServerFrame_SendAck{SendAck: res}})
 }
 

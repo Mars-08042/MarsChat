@@ -22,6 +22,9 @@ const (
 	HeaderEventID = "event_id"
 	// HeaderSource 是产生事件的服务名
 	HeaderSource = "source"
+	// HeaderTraceParent 是 W3C Trace Context 的 traceparent，消费者以它为父 Span，异步段接在同一条 Trace 上。
+	// 写入 Outbox 时没有 Span 的事件不带这个头
+	HeaderTraceParent = "traceparent"
 
 	// 写入死信队列时追加的头：消费组、原记录的位置和失败原因
 	HeaderDLQGroup     = "x-dlq-group"

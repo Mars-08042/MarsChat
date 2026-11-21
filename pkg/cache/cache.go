@@ -4,6 +4,11 @@
 //   - 雪崩：TTL 加随机抖动；Redis 不可用时直接回源，不让缓存故障变成整体故障。
 //
 // 写操作由调用方先更新数据库，再调用 Delete 删除缓存。
+//
+// 指标（标签 cache 为 Options.Name）：
+//   - marschat_cache_requests_total{result}：hit 命中、null_hit 命中空值标记、miss 未命中、error Redis 不可用；
+//   - marschat_cache_loads_total{result}：实际调用回源函数的次数，ok、not_found、error。
+//     与 miss 对比可以看出 singleflight 和重建锁合并了多少回源；GetMany 一批算一次。
 package cache
 
 import (
@@ -17,7 +22,16 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
+)
+
+var (
+	requestsCounter = telemetry.Int64Counter("marschat_cache_requests", "缓存读取次数，按结果区分")
+	loadsCounter    = telemetry.Int64Counter("marschat_cache_loads", "缓存未命中后实际回源的次数")
 )
 
 // ErrNotFound 由回源函数返回，表示数据不存在；Cache 会为它写入空值标记。
@@ -49,6 +63,8 @@ return 0`)
 
 // Options 是缓存参数。
 type Options struct {
+	// Name 是缓存名，作为指标标签 cache，例如 account_user
+	Name    string
 	TTL     time.Duration
 	NullTTL time.Duration
 	// RebuildLock 开启跨实例重建锁：未命中时先抢 {key}:lock，抢到的实例回源并回填；
@@ -63,11 +79,28 @@ type Cache[T any] struct {
 	opts   Options
 	sf     singleflight.Group
 	logger *slog.Logger
+	m      cacheMetrics
+}
+
+// cacheMetrics 预先构造各结果的标签，记录时不再分配。
+type cacheMetrics struct {
+	hit, nullHit, miss, err       metric.AddOption
+	loadOK, loadNotFound, loadErr metric.AddOption
+}
+
+func newCacheMetrics(name string) cacheMetrics {
+	opt := func(result string) metric.AddOption {
+		return metric.WithAttributeSet(attribute.NewSet(attribute.String("cache", name), attribute.String("result", result)))
+	}
+	return cacheMetrics{
+		hit: opt("hit"), nullHit: opt("null_hit"), miss: opt("miss"), err: opt("error"),
+		loadOK: opt("ok"), loadNotFound: opt("not_found"), loadErr: opt("error"),
+	}
 }
 
 // New 创建缓存。
 func New[T any](rdb redis.UniversalClient, opts Options, logger *slog.Logger) *Cache[T] {
-	return &Cache[T]{rdb: rdb, opts: opts, logger: logger}
+	return &Cache[T]{rdb: rdb, opts: opts, logger: logger, m: newCacheMetrics(opts.Name)}
 }
 
 // Get 读取 key，未命中时调用 load 回源并回填。load 返回 ErrNotFound 时写入空值标记并返回 ErrNotFound。
@@ -79,8 +112,10 @@ func (c *Cache[T]) Get(ctx context.Context, key string, load func(ctx context.Co
 		v, found, decErr := c.decode(data)
 		if decErr == nil {
 			if !found {
+				requestsCounter.Add(ctx, 1, c.m.nullHit)
 				return zero, ErrNotFound
 			}
+			requestsCounter.Add(ctx, 1, c.m.hit)
 			return v, nil
 		}
 		// 编码格式变化等导致的脏数据：当作未命中，回源后覆盖
@@ -88,9 +123,11 @@ func (c *Cache[T]) Get(ctx context.Context, key string, load func(ctx context.Co
 	case errors.Is(err, redis.Nil):
 	default:
 		// Redis 不可用：降级为直接回源，仍经过 singleflight 保护数据库，且不回填
+		requestsCounter.Add(ctx, 1, c.m.err)
 		c.logger.Warn("cache get failed, falling back to loader", slog.String("key", key), slog.Any("error", err))
 		return c.load(ctx, key, load, false)
 	}
+	requestsCounter.Add(ctx, 1, c.m.miss)
 	return c.load(ctx, key, load, true)
 }
 
@@ -117,7 +154,13 @@ func (c *Cache[T]) load(ctx context.Context, key string, load func(ctx context.C
 			}
 		}
 		v, err := load(lctx)
-		if err != nil && !errors.Is(err, ErrNotFound) {
+		switch {
+		case err == nil:
+			loadsCounter.Add(lctx, 1, c.m.loadOK)
+		case errors.Is(err, ErrNotFound):
+			loadsCounter.Add(lctx, 1, c.m.loadNotFound)
+		default:
+			loadsCounter.Add(lctx, 1, c.m.loadErr)
 			return nil, err
 		}
 		if fill {
@@ -182,10 +225,12 @@ func (c *Cache[T]) GetMany(ctx context.Context, keys []string, loadMissing func(
 	fill := true
 	vals, err := c.rdb.MGet(ctx, keys...).Result()
 	if err != nil {
+		requestsCounter.Add(ctx, int64(len(keys)), c.m.err)
 		c.logger.Warn("cache mget failed, falling back to loader", slog.Int("keys", len(keys)), slog.Any("error", err))
 		fill = false
 	} else {
 		missing = missing[:0:0]
+		var hits, nullHits int64
 		for i, raw := range vals {
 			s, ok := raw.(string)
 			if !ok {
@@ -199,8 +244,14 @@ func (c *Cache[T]) GetMany(ctx context.Context, keys []string, loadMissing func(
 			}
 			if found {
 				out[keys[i]] = v
+				hits++
+			} else {
+				nullHits++
 			}
 		}
+		requestsCounter.Add(ctx, hits, c.m.hit)
+		requestsCounter.Add(ctx, nullHits, c.m.nullHit)
+		requestsCounter.Add(ctx, int64(len(missing)), c.m.miss)
 	}
 	if len(missing) == 0 {
 		return out, nil
@@ -208,8 +259,10 @@ func (c *Cache[T]) GetMany(ctx context.Context, keys []string, loadMissing func(
 
 	loaded, err := loadMissing(ctx, missing)
 	if err != nil {
+		loadsCounter.Add(ctx, 1, c.m.loadErr)
 		return nil, err
 	}
+	loadsCounter.Add(ctx, 1, c.m.loadOK)
 	if fill {
 		pipe := c.rdb.Pipeline()
 		for _, k := range missing {

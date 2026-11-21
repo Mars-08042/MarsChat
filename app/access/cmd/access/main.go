@@ -17,6 +17,7 @@ import (
 	"github.com/Mars-08042/MarsChat/app/access/internal/data"
 	"github.com/Mars-08042/MarsChat/app/access/internal/server"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 var (
@@ -73,6 +74,13 @@ func run() error {
 		slog.String("service.name", Name),
 		slog.String("service.version", Version),
 	)
+	shutdownTelemetry, err := telemetry.Setup(bc.GetTelemetry(),
+		telemetry.Info{Name: Name, Version: Version, InstanceID: bootstrap.InstanceID(Name)}, logger)
+	if err != nil {
+		return err
+	}
+	// 在 cleanup 之后执行，停机期间产生的 Span 也能导出
+	defer shutdownTelemetry()
 
 	// 只有 policy 段热更新，其余配置修改后需要重启
 	policy := biz.NewPolicyHolder(bc.GetPolicy())

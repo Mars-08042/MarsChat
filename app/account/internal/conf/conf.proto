@@ -23,6 +23,8 @@ message Bootstrap {
   Cache cache = 11 [(buf.validate.field).required = true];
   marschat.conf.Kafka kafka = 12 [(buf.validate.field).required = true];
   marschat.conf.Outbox outbox = 13 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 14;
 }
 
 // Token 是签发令牌的配置，修改后需要重启。

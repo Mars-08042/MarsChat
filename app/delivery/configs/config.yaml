@@ -2,7 +2,10 @@
 # 默认值对应本地开发环境（compose.yaml），密码只从环境变量读取。
 # 时长按 protobuf Duration 的 JSON 格式书写，单位只能是秒，例如 0.5s、3600s；500ms、1h 会解析失败。
 server:
-  # 没有业务接口，gRPC 端口只用于注册到 Consul 和健康检查
+  # 没有业务接口：HTTP 提供健康检查与 /metrics，并作为 Consul 中登记的地址；gRPC 只有健康检查
+  http:
+    addr: ${DELIVERY_HTTP_ADDR:127.0.0.1:18040}
+    timeout: 3s
   grpc:
     addr: ${DELIVERY_GRPC_ADDR:127.0.0.1:19040}
     timeout: 3s
@@ -40,3 +43,10 @@ push:
 policy:
   # access 实例推送失败（不可达或超时）后跳过它的时长，冷却结束后重新拨号
   push_cooldown: 5s
+
+# 指标与链路追踪，修改后需要重启。指标始终在 HTTP 端口的 /metrics 上暴露（Prometheus 抓取）；
+# Trace 只在设置了 OTLP 地址时导出，容器模式下为 jaeger:4317，宿主机运行时可设为 127.0.0.1:14317。
+telemetry:
+  otlp_endpoint: ${OTLP_ENDPOINT:}
+  # 采样比例 0～1；上游已采样的请求跟随上游的决定。压测时调低，避免 Jaeger 内存上涨
+  sample_ratio: ${TRACE_SAMPLE_RATIO:1}

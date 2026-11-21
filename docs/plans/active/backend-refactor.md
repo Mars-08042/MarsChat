@@ -35,8 +35,9 @@
 | Alertmanager | 9093 | 19093 | 8 |
 | Grafana | 3000 | 13000 | 8 |
 | Jaeger（UI / OTLP gRPC / OTLP HTTP） | 16686 / 4317 / 4318 | 26686 / 14317 / 14318 | 8 |
+| k6（压测，只在压测时运行，固定 IP `172.30.0.20`） | — | — | 8 |
 
-应用服务按 HTTP `18xx0`、gRPC `19xx0` 编排（2026-11-18 确认）：access 18000（WebSocket）/ 19100（内部 gRPC，2026-11-19 确认；19000 原本留给 MinIO，2026-11-20 改用本地目录与阿里云 OSS 后不再部署 MinIO，见 ADR-0007）、account 18010 / 19010、social 18020 / 19020、message 18030 / 19030、delivery 19040（仅 gRPC）、media 18050 / 19050。
+应用服务按 HTTP `18xx0`、gRPC `19xx0` 编排（2026-11-18 确认）：access 18000（WebSocket）/ 19100（内部 gRPC，2026-11-19 确认；19000 原本留给 MinIO，2026-11-20 改用本地目录与阿里云 OSS 后不再部署 MinIO，见 ADR-0007）、account 18010 / 19010、social 18020 / 19020、message 18030 / 19030、delivery 18040 / 19040（HTTP 只有探针与 `/metrics`，步骤 8 新增）、media 18050 / 19050。
 
 2026-11-18 检查：上述端口中只有 19093 被占用，占用者是旧的 `marschat-kafka-1`，步骤 0 删除后释放。
 
@@ -183,9 +184,11 @@
 
 ### 8. 可观测与压测
 
-- [ ] Prometheus、Grafana、Alertmanager；指标包括连接数、消息端到端延迟、推送失败数、Kafka 积压、缓存命中率。
-- [ ] OpenTelemetry + Jaeger，消息 ID 贯穿日志与 Trace；开启 MySQL 慢查询日志。
-- [ ] 用 k6（Docker 镜像运行）压测 WebSocket 收发和热点读接口，记录在线连接数、P99 延迟和缓存防护效果。
+设计：[observability.md](../../design/observability.md)（已采纳，实施中的调整见其第 10 节）。
+
+- [x] Prometheus、Grafana、Alertmanager；指标包括连接数、消息端到端延迟、推送失败数、Kafka 积压、缓存命中率。（2026-11-21：Prometheus 经 Consul 发现全部实例；8 条告警规则带 promtool 单元测试；`InstanceDown`、`KafkaConsumerLag` 实际触发并恢复各一次）
+- [x] OpenTelemetry + Jaeger，消息 ID 贯穿日志与 Trace；开启 MySQL 慢查询日志。（2026-11-21：消息没有单独的 ID，用 `(conversation_id, seq)` 和发送方的 `client_msg_id` 作为 Span 属性；Trace 经 Outbox 列 `trace_parent` 和 Kafka 记录头跨越异步段，一条消息从 access 到 delivery 再到 access 是一条 Trace）
+- [x] 用 k6（Docker 镜像运行）压测 WebSocket 收发和热点读接口，记录在线连接数、P99 延迟和缓存防护效果。（2026-11-21：结果见[压测结果](#压测结果)）
 
 ### 9. 收尾
 
@@ -272,9 +275,18 @@
 
 步骤 6 第 1～5 段完成（2026-11-21），第 6 段（OSS 手动验证）等开发者提供 Bucket 与 AccessKey。实测数据：经网关上传 20 MiB 约 0.6 秒、下载约 0.14 秒（本地存储）；media 空闲约 18 MiB，并发上传 1590 万像素 16 位 PNG 时峰值 335 MiB（限制 384 MiB）。新增 TD-37（上传中途进程退出留下孤儿对象）、TD-38（缩略图不处理 JPEG 的 EXIF 方向）。验收时发现并修复 TD-39：Redis 停机约 20 秒后，节点号租约的下一轮续期可能晚于本地截止时间，留下短暂的发号失败窗口；`pkg/idgen` 改为续期失败后每秒重试。验证（2026-11-21，缩略图内存调整与 TD-39 修复之后）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（30 个包）通过；宿主机模式 `make e2e` 通过，六个服务日志无 ERROR；重建镜像后 `make cluster-test` 15 项通过（含 7 项故障实验）。修复前第一次运行时，`TestFaultStopRedisLong` 在准备阶段遇到上述窗口而失败，这也是发现 TD-39 的经过。第 1～5 段提交为 `f1ade90`。
 
-步骤 7 完成（2026-11-21，coturn 按计划推迟）：设计 [call-signaling.md](../../design/call-signaling.md) 已采纳（第 8 节的 7 个问题均按推荐方案确认），实施中的调整记在其第 9 节，主要一项是“先回复 `CallAck`，之后的失败一律经 `CallEnded` 通知”。验证：`buf lint`、`make gen` 两次结果一致、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（30 个包）通过；宿主机模式 `make e2e` 通过（新增通话 3 项），六个服务日志无 ERROR；重建镜像后 `make cluster-test` 17 项通过，新增跨实例通话（offer 转发 0.5 毫秒）和通话中杀掉接听方 access 的故障实验（主叫下一次发信令 1 毫秒内收到 `DISCONNECTED`，忙线标记释放）。媒体能否连通要等前端重构后用浏览器验证。
+步骤 7 完成（2026-11-21，coturn 按计划推迟），提交 `66ea720`。设计 [call-signaling.md](../../design/call-signaling.md) 已采纳（第 8 节的 7 个问题均按推荐方案确认），实施中的调整记在其第 9 节，主要一项是“先回复 `CallAck`，之后的失败一律经 `CallEnded` 通知”。验证：`buf lint`、`make gen` 两次结果一致、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（30 个包）通过；宿主机模式 `make e2e` 通过（新增通话 3 项），六个服务日志无 ERROR；重建镜像后 `make cluster-test` 17 项通过，新增跨实例通话（offer 转发 0.5 毫秒）和通话中杀掉接听方 access 的故障实验（主叫下一次发信令 1 毫秒内收到 `DISCONNECTED`，忙线标记释放）。媒体能否连通要等前端重构后用浏览器验证。
 
-下一步：步骤 8（可观测与压测）。开始前先写设计文档，重点是指标的选取、OpenTelemetry 的接入方式和压测场景；监控组件的内存占用要在 Docker Desktop 上实测。
+步骤 8 完成（2026-11-21）。设计 [observability.md](../../design/observability.md) 已采纳（第 9 节的 8 个问题均按推荐方案确认），实施中的调整记在其第 10 节。按第 8 节分六段实施：
+
+- [x] 1. 监控组件与指标基础：`pkg/telemetry`、配置段 `telemetry`、Kratos 指标中间件、各服务 `/metrics`、delivery 的 HTTP 端口 18040、Compose `monitoring` profile（全部 9 个应用实例在 Prometheus 中 `up`，监控组件空闲合计约 390 MiB）
+- [x] 2. 业务指标、面板与告警：access、delivery、`pkg/kafka`、`pkg/outbox`、`pkg/cache`、`pkg/bloom`、`pkg/ratelimit` 的指标，kadm 积压，Grafana 总览面板（29 个面板，PromQL 全部能执行），8 条告警规则与 promtool 单元测试
+- [x] 3. 链路追踪：OTLP 导出、tracing 中间件、WebSocket 帧的 Span、Outbox 迁移与 `traceparent` 传播、消费者 Span、日志带 `trace_id`（Jaeger 中一条消息跨 access、message、social、media、delivery 五个服务）
+- [x] 4. MySQL 慢查询日志与集群验证（`SELECT SLEEP(0.3)` 写入慢查询日志；杀掉 access 实例触发 `InstanceDown`，重启后恢复）
+- [x] 5. 压测：k6 脚本与 `make load-*`，三档 WebSocket 收发、热点读、击穿、穿透、积压告警实验，结果见[压测结果](#压测结果)。压测中发现并修复两个问题：并发注册死锁（TD-40）、连接池上限之和超过 MySQL 最大连接数（TD-41）；新发现 TD-42（delivery 全部停止后没有告警）、TD-43（并发登录仍可能在会话索引的间隙上死锁）
+- [x] 6. 文档：system、deployment、data-model、data-flow、ADR-0005、tech-debt、设计第 10 节、lessons
+
+验证（2026-11-21，全部修改之后）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（31 个包）、`make rules-test`（8 条规则）通过；宿主机模式 `make e2e` 通过，新增 `TestConcurrentRegister`（恢复旧的注册路径时 8 个并发注册有 2 个死锁，用例能发现问题）和 `TestMetricsEndpoints`；容器模式 `make cluster-test` 17 项通过（含 7 项故障实验）。验证结束后容器模式已按 `.env` 恢复（account 为 smtp 发送方，采样比例 1）。
 
 核对代码时新发现 TD-34（节点号租约丢失后不会重新获取），列入本步骤修复。Compose 全栈内存已初步评估：Docker Desktop 虚拟机 3.8 GiB，现有占用约 2.1 GiB（Kafka 1.06 GiB），加上多实例与 APISIX 估计约 2.0 GiB（Kafka 堆限制为 512 MiB 后），第一阶段实测。
 
@@ -303,6 +315,51 @@
 - 60 秒实验的预期写得不准：设计写的是“发号失败，写操作返回错误”，但 message 只有新建单聊会话时才发号，已有会话里发消息不受影响。实验改为分别验证这两类写操作。
 - 新增 TD-35（发号失败返回 500 并记 ERROR）、TD-36（go-redis 内部日志是纯文本，故障期间每次拨号失败一行）。两项已在 2026-11-20 的邮箱验证码任务中解决。
 
+## 压测结果
+
+2026-11-21，容器模式。环境基线：
+
+- Docker Desktop（Hyper-V 后端），虚拟机 24 个 CPU、3.8 GiB 内存；MySQL 9.7.4、Redis 8.8.4、Kafka 4.4.0（单节点）、APISIX 3.20.0；服务为步骤 8 的工作区代码（版本号 `66ea720-dirty`）。
+- access、message、delivery 各 2 个实例，account、social、media、APISIX 各 1 个；应用容器内存限制 256 MiB（media 384 MiB），APISIX 512 MiB，k6 768 MiB。
+- k6 2.4.0 经网关压测，`make load-up`：account 用 `log` 发送方，Trace 采样比例 0.05（对比实验除外）。
+- 原始摘要在 `tmp/load/out/`（被 Git 忽略）：k6 的 `ws_chat_<连接数>.json`、`hot_read_*.json`，容器 CPU、内存与 Prometheus 指标的 `stats_<场景>.json`。
+
+**准备数据**：经网关注册 1000 个用户（每批 40 个并发）、两两加好友、建一个 31 人的热点群，共 30.7 秒，注册约 35 个每秒（bcrypt cost 12，account 单实例）。第一次运行时 4 个并发注册有 3 个死锁，见“遇到的问题”。
+
+**WebSocket 收发**（每个连接每秒给好友发 1 条单聊消息，全部连接建立后持续 60 秒；延迟只统计稳态窗口）：
+
+| 连接数 | 发送确认 P50 / P99 / 最大 | 推送 P50 / P99 / 最大 | 发送 / 确认 / 推送 | 服务端投递 P99 | Outbox 发布延迟 P99 | 峰值 CPU：message 单实例、MySQL | 峰值内存：access 单实例、APISIX、k6 |
+|---|---|---|---|---|---|---|---|
+| 200 | 10 / 21 / 192 ms | 13 / 28 / 211 ms | 13043 / 13043 / 13043 | 27 ms | 25 ms | 29%、41% | 46、57、66 MiB |
+| 500 | 12 / 107 / 208 ms | 18 / 124 / 230 ms | 32533 / 32533 / 32533 | 186 ms | 169 ms | 58%、95% | 65、66、100 MiB |
+| 1000（MySQL 最大连接数 151） | 13 / 275 / 588 ms | 20 / 811 / 1220 ms | 65006 / 64843 / 64843，163 个错误帧 | 732 ms | 584 ms | 149%、270% | 86、71、185 MiB |
+| 1000（最大连接数 300，最终配置） | 17 / 206 / 364 ms | 30 / 301 / 524 ms | 64988 / 64988 / 64988 | 249 ms | 239 ms | 109%、203% | 110、95、188 MiB |
+
+- 全部档位没有意外断线，在线连接数（`marschat_ws_connections` 之和）达到目标值，Kafka 积压最大 60 条。
+- **瓶颈在写路径**：推送延迟的 P99 几乎都花在 Outbox 发布延迟上（写库事务提交到发布器发出），1000 个连接时 MySQL 约占 2 个 CPU、message 每个实例约 1 个 CPU；access、delivery、APISIX 的 CPU 都在 60% 以下。
+- **1000 个连接的第一次运行有 0.25% 的发送失败**：原因是 MySQL `Error 1040: Too many connections`，各服务连接池上限之和为 230，超过默认的 151，峰值实际用到 152 条。先尝试把连接池缩小到合计 120（message 每实例 30），结果更差：message 拿不到连接的请求排队到超时，access 的熔断器打开，2.7 万次发送失败（`CIRCUITBREAKER` 2.3 万次、`UPSTREAM_UNAVAILABLE` 4 千次），确认 P99 19 秒。最终恢复原来的连接池，把 MySQL 最大连接数调到 300，峰值用到 158 条，没有错误（TD-41）。
+- **内存**：access 每 500 条连接增加约 65 MiB（每条约 130 KiB，主要是读写缓冲和发送队列）；k6 每 1000 条连接约 190 MiB，没有成为上限；MySQL 峰值 563 MiB。
+- **采样比例的影响**（500 个连接，最大连接数 300）：采样 0.05 时确认 / 推送 P99 为 146 / 201 ms，关闭时为 125 / 159 ms，服务端投递 P99 分别为 241、236 ms。差异在两次运行之间的正常波动范围内（同一配置先后两次的 P99 相差约 40 ms），压测用 0.05 不会明显扭曲结果。采样 1.0 在每秒几百条消息时会超出 Jaeger 内存存储的容量，没有测。
+
+**热点读**（固定 500 次每秒、60 秒，调用方为热点群的 31 个成员）：
+
+| 接口 | P99 | 缓存 |
+|---|---|---|
+| 用户资料 `GET /v1/users/{id}` | 1.27 ms | `account_user` 全部命中 |
+| 群资料 `GET /v1/groups/{id}` | 1.67 ms | `social_group` 命中；成员资格检查直接查 MySQL |
+| 群成员 `GET /v1/groups/{id}/members` | 2.84 ms | 分页列表直接查 MySQL，补全资料走 `account_user` 缓存 |
+| 会话列表 `GET /v1/conversations` | 4.05 ms | 直接查 MySQL |
+
+30001 个请求全部成功。MySQL 约 1000 次查询每秒、CPU 17%，主要来自成员资格检查、成员列表和会话列表；social CPU 29%、account 18%。群资料和成员列表在这个规模下不需要更多缓存，读量再大时成员资格检查是第一个要考虑缓存的地方。
+
+**击穿**：热点读进行到第 31 秒时删除热点群的缓存键（`make load-bust`）。之后 15 秒内 `social_group` 只有 2 次未命中、1 次回源（singleflight 合并了本实例的并发回源），群资料 P99 仍为 1.67 ms、最大 6 ms。social 只有一个实例，跨实例重建锁没有参与；开启重建锁的群成员缓存只在群消息与投递中使用，这个场景不读它。
+
+**穿透**（不存在的用户 ID 和群 ID，每个 ID 只用一次，500 次每秒、30 秒）：15001 个请求全部返回 404，P99 1.5 ms；布隆过滤器拒绝 7501 + 7500 次。实验窗口（约 42 秒）内 MySQL 的 `Com_select` 增加 268，与空闲时的约 7 次每秒（后台轮询）相当，穿透请求没有到达数据库。每个 ID 仍会写一个 60 秒的空值标记，500 次每秒的随机 ID 约占 3 万个键。
+
+**积压告警**：停止两个 message 实例后发 2000 个好友申请，消费组 `marschat-message` 在 `marschat.social.events` 上积压 2000 条。`KafkaConsumerLag` 13:03:42 进入 pending，13:08:42 触发并到达 Alertmanager（持续 5 分钟的条件）；启动 message 后 16 秒内积压归零、告警结束。积压由 delivery 统计，所以不能用停止 delivery 的方式实验（TD-42）。
+
+结论：这台机器上 1000 个在线连接、约每秒 1000 条消息时，推送 P99 约 300 ms、没有错误，瓶颈是 MySQL 和 message 的写路径。结果只作为对比基线，不代表生产容量。
+
 ## 遇到的问题
 
 - 2026-11-18：`docker compose up` 创建 MySQL 容器时一直卡住。原因是本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录（`deploy/mysql/init`）前要在 File sharing 中授权，未授权时 CLI 会等待弹窗确认。Redis、Kafka、Consul 只用命名卷，不受影响。在 Docker Desktop 中授权共享后 MySQL 正常初始化；建议把项目根目录加入 File sharing，已写入 [deployment.md](../../deployment.md#首次配置) 和 [lessons/docker-desktop-bind-mount-hang.md](../../lessons/docker-desktop-bind-mount-hang.md)。
@@ -315,4 +372,7 @@
 - 2026-11-19：补 TD-27 的布隆过滤器集成测试时发现，`BF.EXISTS` 在 go-redis v9 默认的 RESP3 下返回布尔值，原代码按整数读取，读取失败后放行，account 的用户 ID 过滤器从步骤 2 起没有拦截过任何 ID。已改用 `Cmd.Bool()` 并在解析失败时记 WARN，见 [lessons/redis-resp3-reply-types.md](../../lessons/redis-resp3-reply-types.md)。
 
 - 2026-11-20：Redis 故障实验中，停掉 Redis 约 3 秒后发消息开始失败，而设计预期 20 秒内照常成功。容器停止后服务名从 Docker DNS 中消失，每次解析约 1 秒才失败；go-redis v9.23 默认单次拨号重试 5 次、命令重试 3 次，一条命令就用完了调用方的截止时间，限流的“失败放行”来不及生效。`pkg/bootstrap.NewRedis` 加拨号保护并关闭单次拨号内的重试，见 [lessons/redis-dial-stall-docker-dns.md](../../lessons/redis-dial-stall-docker-dns.md)。
-- Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、监控组件加多实例服务；2026-11-20 起不再部署 MinIO）在 Docker Desktop 上的内存占用：步骤 5 的全部容器实测约 1.2～1.3 GiB（见 [ADR-0005](../../architecture/adr/0005-distributed-architecture.md#代价与风险)），步骤 6 加入 media 后空闲时合计约 1.2 GiB（2026-11-21，media 约 18 MiB），监控组件在步骤 8 引入时再测。
+- Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、监控组件加多实例服务；2026-11-20 起不再部署 MinIO）在 Docker Desktop 上的内存占用：步骤 5 的全部容器实测约 1.2～1.3 GiB（见 [ADR-0005](../../architecture/adr/0005-distributed-architecture.md#代价与风险)），步骤 6 加入 media 后空闲时合计约 1.2 GiB（2026-11-21，media 约 18 MiB）。步骤 8 实测（2026-11-21）：监控组件空闲约 390 MiB，跑完集群测试与压测后约 510 MiB（Jaeger 随保存的 Trace 增长到约 170 MiB）；接入遥测后应用服务各增加约 15～25 MiB（例如 access 约 21 → 38 MiB、account 约 19 → 45 MiB）；MarsChat 全部容器（含监控组件）空闲时合计约 1.6 GiB，1000 条连接压测时各容器峰值之和约 2.8 GiB（含 k6，峰值不一定同时出现），离 3.8 GiB 的虚拟机上限约有 1 GiB 余量。
+- 2026-11-21：压测准备数据时并发注册死锁（`Error 1213`）。注册事务中吊销设备旧会话的 `SELECT ... FOR UPDATE` 查不到行，锁住了会话唯一索引末尾的间隙，新用户都落在这个间隙。注册改为不做这次查询（TD-40），见 [lessons/innodb-gap-lock-register-deadlock.md](../../lessons/innodb-gap-lock-register-deadlock.md)。
+- 2026-11-21：网关按客户端 IP 限流（WebSocket 每个 IP 最多 50 条连接），k6 在单个容器里只有一个来源地址，200 个连接以上会被网关拒绝，设计没有考虑到。k6 改用固定 IP，网关只对它信任 `X-Forwarded-For`（`real-ip` 全局规则），每个虚拟客户端带不同的地址，限流按虚拟客户端生效；准备数据也因此改在 k6 中完成（网关对 `/v1/auth/*` 每个 IP 每分钟只放 60 次，从宿主机注册 1000 个用户要半小时以上）。见设计第 10 节。
+- 2026-11-21：1000 个连接时 MySQL 报 `Error 1040: Too many connections`，各服务连接池上限之和超过最大连接数（TD-41）。缩小连接池反而让请求排队超时、触发熔断，最终调大 MySQL 最大连接数，见[压测结果](#压测结果)。

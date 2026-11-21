@@ -20,6 +20,7 @@ import (
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 	"github.com/Mars-08042/MarsChat/pkg/middleware/retry"
 	"github.com/Mars-08042/MarsChat/pkg/route"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 // ProviderSet 是 data 层的依赖提供者。
@@ -63,14 +64,19 @@ type groupMembers struct{ c socialv1.SocialInternalServiceClient }
 // ListAllGroupMembers 只读，连接级失败时重试一次；按接口熔断，重试在外层。
 func NewGroupMembers(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (biz.GroupMembers, func(), error) {
 	c := bc.GetSocial()
+	// 链路追踪与请求指标放在重试、熔断之前，按整次调用统计
+	mws, err := telemetry.ClientMiddlewares()
+	if err != nil {
+		return nil, nil, err
+	}
 	conn, err := kgrpc.NewClient(context.Background(),
 		kgrpc.WithEndpoint(c.GetEndpoint()),
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
-		kgrpc.WithMiddleware(
+		kgrpc.WithMiddleware(append(mws,
 			retry.Client(socialv1.SocialInternalService_ListAllGroupMembers_FullMethodName),
 			circuitbreaker.Client(),
-		),
+		)...),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create social client %s: %w", c.GetEndpoint(), err)
@@ -101,8 +107,12 @@ func (g *groupMembers) List(ctx context.Context, groupID int64) ([]biz.GroupMemb
 
 // NewPusher 创建 access 客户端缓存（pkg/accessclient）：按路由中的地址直连 access 实例，
 // 实例不可达时摘除连接并冷却 policy.push_cooldown（TD-31）。
-func NewPusher(c *conf.Push, policy *biz.PolicyHolder, logger *slog.Logger) (biz.Pusher, func()) {
+func NewPusher(c *conf.Push, policy *biz.PolicyHolder, logger *slog.Logger) (biz.Pusher, func(), error) {
+	mws, err := telemetry.ClientMiddlewares()
+	if err != nil {
+		return nil, nil, err
+	}
 	cl := accessclient.New(c.GetTimeout().AsDuration(),
-		func() time.Duration { return policy.Load().GetPushCooldown().AsDuration() }, logger)
-	return cl, cl.Close
+		func() time.Duration { return policy.Load().GetPushCooldown().AsDuration() }, logger, mws...)
+	return cl, cl.Close, nil
 }

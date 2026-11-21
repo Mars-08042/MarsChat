@@ -6,6 +6,18 @@
 # Docker 网络的网关地址，限流对本机流量相当于全局限流，初始值按测试流量留了余量。
 # 超限返回 429，响应体为 APISIX 的 {"error_msg": ...}，与服务的 Kratos 错误格式不同，客户端按状态码处理。
 
+# 压测时 k6 容器（固定 IP 172.30.0.20，见 compose.yaml）相当于客户端前面的一层代理：只对它信任
+# X-Forwarded-For，用其中最后一个地址作为 remote_addr。k6 给每个虚拟客户端分配不同的地址，
+# 下面各路由的按 IP 限流就按虚拟客户端生效，而不是把单个容器的全部流量当成一个客户端。
+# 其他来源带的 X-Forwarded-For 不改变 remote_addr，限流行为与没有这条规则时相同。
+global_rules:
+  - id: real-ip
+    plugins:
+      real-ip:
+        source: http_x_forwarded_for
+        trusted_addresses:
+          - 172.30.0.20
+
 upstreams:
   # HTTP 上游：连接失败或请求还没发到上游时换一个节点重试一次；
   # 非幂等方法（POST、PATCH）的请求一旦发出就不再重试，不会被重复执行

@@ -1,0 +1,12 @@
+# Grafana 面板来源（compose profile monitoring）：deploy/grafana/dashboards 下的 JSON 文件，只读挂载。
+# 在界面中修改的面板不会写回文件，需要导出 JSON 后覆盖仓库中的文件。
+apiVersion: 1
+
+providers:
+  - name: marschat
+    folder: MarsChat
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

@@ -90,6 +90,7 @@ func NewUserRepo(d *Data, c *conf.Cache, logger *slog.Logger) biz.UserRepo {
 	r := &userRepo{
 		d: d,
 		cache: cache.New[cachedUser](d.rdb, cache.Options{
+			Name:    "account_user",
 			TTL:     c.GetUserTtl().AsDuration(),
 			NullTTL: c.GetNullTtl().AsDuration(),
 		}, logger),

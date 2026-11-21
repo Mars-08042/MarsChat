@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kratos/kratos/v3/middleware"
 	kgrpc "github.com/go-kratos/kratos/v3/transport/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,6 +34,7 @@ type Client struct {
 	timeout  time.Duration
 	cooldown func() time.Duration
 	logger   *slog.Logger
+	mws      []middleware.Middleware
 	now      func() time.Time
 
 	mu      sync.Mutex
@@ -41,11 +43,13 @@ type Client struct {
 }
 
 // New 创建客户端缓存。timeout 是单次调用超时；cooldown 每次进入冷却时调用，便于热更新，返回 0 表示只摘除连接、不冷却。
-func New(timeout time.Duration, cooldown func() time.Duration, logger *slog.Logger) *Client {
+// mws 是每条连接的客户端中间件，例如链路追踪与请求指标。
+func New(timeout time.Duration, cooldown func() time.Duration, logger *slog.Logger, mws ...middleware.Middleware) *Client {
 	return &Client{
 		timeout:  timeout,
 		cooldown: cooldown,
 		logger:   logger,
+		mws:      mws,
 		now:      time.Now,
 		conns:    make(map[string]*grpc.ClientConn),
 		cooling:  make(map[string]time.Time),
@@ -77,7 +81,11 @@ func (c *Client) client(addr string) (accessv1.AccessInternalServiceClient, erro
 	if !ok {
 		// NewClient 不建立连接，持锁调用不会阻塞
 		var err error
-		conn, err = kgrpc.NewClient(context.Background(), kgrpc.WithEndpoint(addr), kgrpc.WithTimeout(c.timeout))
+		conn, err = kgrpc.NewClient(context.Background(),
+			kgrpc.WithEndpoint(addr),
+			kgrpc.WithTimeout(c.timeout),
+			kgrpc.WithMiddleware(c.mws...),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("create access client %s: %w", addr, err)
 		}

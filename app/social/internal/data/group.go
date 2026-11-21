@@ -93,6 +93,7 @@ func NewGroupRepo(d *Data, c *conf.Cache, logger *slog.Logger) biz.GroupRepo {
 	r := &groupRepo{
 		d: d,
 		cache: cache.New[cachedGroup](d.rdb, cache.Options{
+			Name:    "social_group",
 			TTL:     c.GetGroupTtl().AsDuration(),
 			NullTTL: c.GetNullTtl().AsDuration(),
 		}, logger),
@@ -310,6 +311,7 @@ func NewMemberRepo(d *Data, c *conf.Cache, logger *slog.Logger) biz.MemberRepo {
 	return &memberRepo{
 		d: d,
 		cache: cache.New[[]cachedMember](d.rdb, cache.Options{
+			Name:        "social_group_members",
 			TTL:         c.GetMembersTtl().AsDuration(),
 			NullTTL:     c.GetNullTtl().AsDuration(),
 			RebuildLock: true,

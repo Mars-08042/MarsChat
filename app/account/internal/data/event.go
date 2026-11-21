@@ -23,5 +23,5 @@ func (r *eventRepo) Add(ctx context.Context, topic, key string, msg proto.Messag
 	if !inTx(ctx) {
 		return errors.New("outbox event must be written inside a transaction")
 	}
-	return outbox.Add(r.d.DB(ctx), topic, key, msg, now)
+	return outbox.Add(ctx, r.d.DB(ctx), topic, key, msg, now)
 }

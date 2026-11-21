@@ -40,6 +40,10 @@ x-app-env: &app-env
   MARSCHAT_KAFKA_BROKERS: kafka:29092
   MARSCHAT_JWT_PUBLIC_KEY: ${MARSCHAT_JWT_PUBLIC_KEY:?请执行 make keys 生成 JWT 密钥}
   MARSCHAT_LOG_FORMAT: json
+  # Trace 发往 Jaeger（profile monitoring）。Jaeger 没有启动时导出失败、Span 丢弃，每分钟最多一条 warn 日志；
+  # 压测时在命令环境中调低 MARSCHAT_TRACE_SAMPLE_RATIO
+  MARSCHAT_OTLP_ENDPOINT: jaeger:4317
+  MARSCHAT_TRACE_SAMPLE_RATIO: ${MARSCHAT_TRACE_SAMPLE_RATIO:-1}
 
 services:
   mysql:
@@ -54,6 +58,16 @@ services:
       MARSCHAT_SOCIAL_DB_PASSWORD: ${MARSCHAT_SOCIAL_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_SOCIAL_DB_PASSWORD}
       MARSCHAT_MESSAGE_DB_PASSWORD: ${MARSCHAT_MESSAGE_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MESSAGE_DB_PASSWORD}
       MARSCHAT_MEDIA_DB_PASSWORD: ${MARSCHAT_MEDIA_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MEDIA_DB_PASSWORD}
+    # 慢查询日志：超过 200 毫秒（与 GORM 的慢 SQL 告警阈值一致）的语句写入数据卷中的 mysql-slow.log，
+    # make mysql-slow 查看。不记录未走索引的快查询，小表全表扫描会刷屏。修改参数需要重建容器，数据卷保留。
+    # 最大连接数：所有服务共用这个实例，容器模式下各实例连接池上限之和为 230
+    # （account 50、social 50、message 50 × 2、media 30），默认的 151 不够，留出余量给迁移和排查用的连接。
+    command:
+      - --slow-query-log=ON
+      - --long-query-time=0.2
+      - --slow-query-log-file=/var/lib/mysql/mysql-slow.log
+      - --log-queries-not-using-indexes=OFF
+      - --max-connections=300
     volumes:
       - mysql-data:/var/lib/mysql
       - ./deploy/mysql/init:/docker-entrypoint-initdb.d:ro
@@ -261,6 +275,7 @@ services:
       - ./app/delivery/configs:/app/configs:ro
     environment:
       <<: *app-env
+      MARSCHAT_DELIVERY_HTTP_ADDR: 0.0.0.0:18040
       MARSCHAT_DELIVERY_GRPC_ADDR: 0.0.0.0:19040
 
   access:
@@ -333,8 +348,131 @@ services:
       - ./deploy/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
       - ./deploy/apisix/certs:/certs:ro
 
+  # 以下为监控组件（profile monitoring，make monitoring-up），只在容器模式下工作：宿主机运行的服务监听
+  # 127.0.0.1，容器里的 Prometheus 访问不到。配置见 deploy/prometheus、alertmanager、grafana、jaeger。
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    mem_limit: 256m
+    depends_on:
+      consul:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:19090:9090"
+    # 保留 3 天、上限 1 GiB；--web.enable-lifecycle 允许 POST /-/reload 重新加载配置与告警规则
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+      - --storage.tsdb.retention.size=1GB
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  alertmanager:
+    image: prom/alertmanager:v0.35.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    mem_limit: 64m
+    ports:
+      - "127.0.0.1:19093:9093"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./deploy/alertmanager:/etc/alertmanager:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 内存存储，重启后 Trace 丢失；GOMEMLIMIT 让 GC 在接近上限前回收
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - "127.0.0.1:26686:16686"
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:14318:4318"
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    environment:
+      GOMEMLIMIT: 200MiB
+    volumes:
+      - ./deploy/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 匿名只读（Viewer），管理员 admin 的密码由 make keys 写入 .env；数据源与面板来自 provisioning，不持久化。
+  # 关闭更新检查、使用统计、新闻与插件预装，不访问外网。
+  grafana:
+    image: grafana/grafana:13.3.1
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    # 实测空闲约 236 MiB（2026-11-21），256m 太紧
+    mem_limit: 384m
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:13000:3000"
+    environment:
+      GOMEMLIMIT: 320MiB
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${MARSCHAT_GRAFANA_ADMIN_PASSWORD:-}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    # 只挂载用到的两个子目录，保留镜像中其余的空 provisioning 目录，否则 Grafana 启动时报目录不存在
+    volumes:
+      - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./deploy/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # 压测（profile loadtest），只在压测时用 docker compose run --rm 运行，见 Makefile 的 load-* 命令。
+  # 经网关访问各服务；脚本在 test/load/k6，准备的数据和结果摘要写入 tmp/load（被 Git 忽略）。
+  # 固定 IP 172.30.0.20：网关只对这个地址信任 X-Forwarded-For（apisix.yaml 的 global_rules），
+  # 每个虚拟客户端带不同的来源地址，网关与 account 的按 IP 限流按虚拟客户端生效。
+  k6:
+    image: grafana/k6:2.4.0
+    profiles: ["loadtest"]
+    mem_limit: 768m
+    networks:
+      default:
+        ipv4_address: 172.30.0.20
+    working_dir: /scripts
+    environment:
+      # 不向 k6 官方上报匿名使用统计
+      K6_NO_USAGE_REPORT: "true"
+    volumes:
+      - ./test/load/k6:/scripts:ro
+      - ./tmp/load:/load
+
 volumes:
   mysql-data:
   redis-data:
   kafka-data:
   consul-data:
+  prometheus-data:

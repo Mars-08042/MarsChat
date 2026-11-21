@@ -146,13 +146,13 @@ func NewCalls(c *conf.Call, ws *conf.WebSocket, repo CallRepo, perm CallPermissi
 	}
 }
 
-// handle 处理一个通话请求，回复 CallAck 或 Error。
-func (k *Calls) handle(c *Conn, rid uint64, req *v1.CallRequest) {
+// handle 处理一个通话请求，回复 CallAck 或 Error。ctx 带着帧的 Span，对 social 和其他 access 实例的调用接在它下面。
+func (k *Calls) handle(ctx context.Context, c *Conn, rid uint64, req *v1.CallRequest) {
 	if err := protovalidate.Validate(req); err != nil {
 		c.push(errorFrame(rid, ErrInvalidFrame(err.Error())))
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), callOpTimeout)
+	ctx, cancel := context.WithTimeout(ctx, callOpTimeout)
 	defer cancel()
 	switch a := req.GetAction().(type) {
 	case *v1.CallRequest_Invite:
@@ -212,7 +212,8 @@ func (k *Calls) invite(ctx context.Context, c *Conn, rid uint64, in *v1.CallInvi
 	// 先回复再推来电：被叫接听得再快，主叫也是先拿到 call_id，再收到 CallAccepted
 	c.push(callAckFrame(rid, call.ID))
 	k.startRingTimer(call)
-	k.logger.Info("call invited", slog.Int64("call_id", call.ID), slog.Int64("caller_id", caller),
+	countCallEvent("invited", v1.CallEndReason_CALL_END_REASON_UNSPECIFIED)
+	k.logger.InfoContext(ctx, "call invited", slog.Int64("call_id", call.ID), slog.Int64("caller_id", caller),
 		slog.Int64("callee_id", callee), slog.String("media", call.Media.String()))
 
 	incoming := callEventFrame(&v1.CallEvent{Event: &v1.CallEvent_Incoming{Incoming: &v1.CallIncoming{
@@ -260,7 +261,8 @@ func (k *Calls) accept(ctx context.Context, c *Conn, rid uint64, id int64) {
 	// 先回复再通知主叫：主叫收到 CallAccepted 后才会发 offer，接听连接因此先拿到 CallAck
 	c.push(callAckFrame(rid, id))
 	k.stopRingTimer(id)
-	k.logger.Info("call accepted", slog.Int64("call_id", id), slog.Duration("ringing", now.Sub(call.CreatedAt)))
+	countCallEvent("accepted", v1.CallEndReason_CALL_END_REASON_UNSPECIFIED)
+	k.logger.InfoContext(ctx, "call accepted", slog.Int64("call_id", id), slog.Duration("ringing", now.Sub(call.CreatedAt)))
 
 	// 先让被叫的其他设备停止响铃：后面通知主叫失败时，通话按通话中结束，只会通知接听连接
 	if entries, err := k.listConns(ctx, call.CalleeID); err == nil {
@@ -428,6 +430,7 @@ func (k *Calls) notifyEnded(ctx context.Context, call *Call, reason v1.CallEndRe
 }
 
 func (k *Calls) logEnded(call *Call, reason v1.CallEndReason) {
+	countCallEvent("ended", reason)
 	now := time.Now()
 	attrs := []any{slog.Int64("call_id", call.ID), slog.Int64("caller_id", call.CallerID),
 		slog.Int64("callee_id", call.CalleeID), slog.String("reason", reason.String())}

@@ -1,11 +1,12 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
 - 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)；access 同时处理一对一通话信令（状态在 Redis，access 之间直连转发），设计见 [call-signaling.md](../design/call-signaling.md)；media 提供文件上传、下载地址和给 message 用的内部文件查询，文件存储可切换（默认仓库下的本地目录 `data/media/`，可选阿里云 OSS，[ADR-0007](adr/0007-object-storage.md)），设计见 [media-service.md](../design/media-service.md)。
 - 服务有两种运行方式：日常开发运行在宿主机，监听 `127.0.0.1`；容器模式（compose profile `apps`）中 access、message、delivery 各两个实例（media 一个，本地存储挂载仓库的 `data/media`），客户端经 APISIX 网关（Standalone 模式，上游经 Consul 发现）访问。MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。设计见 [gateway-multi-instance.md](../design/gateway-multi-instance.md)。
+- 可观测组件在 compose profile `monitoring` 中：Prometheus（经 Consul 发现抓取各实例）、Alertmanager、Grafana、Jaeger，只配合容器模式使用；压测工具 k6 在 profile `loadtest` 中按需运行。设计见 [observability.md](../design/observability.md)。
 - 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
 ## 2. 仓库结构
@@ -39,10 +40,15 @@ pkg/kafka/               Kafka 生产者、消费者（按事件类型分发、�
 pkg/route/               在线路由的 Redis 结构（access 写入，delivery 与 access 的通话信令读取）
 pkg/accessclient/        按在线路由中的地址直连 access 实例的客户端缓存（不可达时摘除并冷却），delivery 与 access 共用
 pkg/clientip/            按可信代理解析客户端 IP
+pkg/telemetry/           OpenTelemetry 初始化（Prometheus 指标导出、OTLP Trace 导出）、Kratos 指标与链路中间件、带 trace_id 的日志 Handler；
+                         telemetrytest 供单元测试读取指标
 tools/jwtkey/            生成开发用 JWT 密钥与 media 下载地址签名密钥（make keys）
 scripts/                 运维脚本（make grant-admin）
-deploy/                  依赖组件的初始化脚本
+deploy/                  依赖组件的初始化脚本与配置：MySQL 初始化、APISIX、Prometheus 与告警规则、Alertmanager、Grafana、Jaeger
 test/e2e/                依赖 compose 环境的端到端测试（构建标签 e2e）
+test/cluster/            容器模式的集群测试与故障实验（构建标签 cluster）
+test/testkit/            e2e 与集群测试共用的调用、注册、WebSocket 与 Redis 读取函数
+test/load/k6/            k6 压测脚本（make load-*）
 data/media/              media 本地存储的文件（运行时创建，被 Git 忽略）
 ```
 
@@ -68,7 +74,7 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
 以 account 为例（[main.go](../../app/account/cmd/account/main.go)），social 相同：
 
 1. 读取 `-conf` 指定的配置目录（默认 `app/account/configs`），解析到 `conf.Bootstrap` 并按 protovalidate 规则校验，不合法时启动失败。配置对象保持打开，用于热更新。
-2. 按 `log` 配置创建 `slog` 日志器，设为 Kratos 默认日志器。
+2. 按 `log` 配置创建 `slog` 日志器，设为 Kratos 默认日志器；再按 `telemetry` 段初始化 OpenTelemetry（见 5.11），停机时最后关闭，导出剩余的 Span。
 3. 用 `policy` 段创建 `biz.PolicyHolder`，并监听配置文件的 `policy` 段（见 5.1）。
 4. `wireApp` 创建：Consul 注册中心、Redis 客户端（ping 一次）、MySQL 连接池（`gorm.Open` 立即 ping）、snowflake 生成器（抢占节点号租约）、各 repo 与用例、gRPC 与 HTTP 服务器。令牌密钥不合法、公钥与私钥不匹配、`revocation_ttl` 小于访问令牌有效期、固定验证码配在非 `log` 发送方上时都会启动失败。任一依赖不可用时退出，退出码为 1。布隆过滤器（account 的用户 ID、social 的群 ID）未就绪时在后台重建，不阻塞启动。social 的 account 客户端是惰性连接，account 不可用不影响 social 启动。
 5. `app.Run()` 启动服务器并注册到 Consul；收到 SIGINT/SIGTERM 后先从 Consul 注销，再停止服务器，最后按创建的逆序释放节点号租约、关闭 MySQL、Redis。
@@ -82,7 +88,7 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
   2. Kratos 并发停止各服务器：HTTP 服务器关闭监听（`http.Server.Shutdown` 不管已劫持的 WebSocket 连接）；Hub 拒绝新连接，把现有连接以 1001 分批关闭，分布在 `websocket.drain_window`（默认 5 秒）内，连接关闭时删除路由；gRPC 服务器由 `server.DrainingGRPCServer` 包装，等 Hub 排空后才停止，排空期间发往剩余连接的推送仍然有效；
   3. 每个服务器的停机超时为 15 秒（`kratos.StopTimeout`），超时后强制断开剩余连接。Compose 中 access 的 `stop_grace_period` 为 20 秒。
   4. 连接关闭时结束它参与的通话；Hub 停止前取消本实例的振铃定时器，此时仍在振铃的通话按 Redis TTL 过期。
-- delivery 只有 gRPC 服务器（健康检查与注册）和消费者；`policy` 段（推送冷却期）热更新。
+- delivery 有 HTTP 服务器（探针与 `/metrics`，步骤 8 新增）、gRPC 服务器（健康检查）、消费者，以及统计 Kafka 积压的 `kafka.LagMonitor`（见 5.11）；`policy` 段（推送冷却期）热更新。
 - media 不连 Kafka、没有 Outbox。启动时按 `storage.provider` 创建文件存储：`local` 创建目录并试写一个临时文件，目录不可写或签名密钥少于 32 个字符时启动失败；`oss` 只检查配置是否完整，不访问网络。HTTP 服务器超时为 300 秒（Kratos 对所有路由使用同一个超时，要覆盖 100 MB 上传）。
 
 ## 5. 横切约定
@@ -100,6 +106,7 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
 - 统一用标准库 `log/slog`，由 `bootstrap.NewLogger` 创建，输出到 stdout，格式 `text` 或 `json`，每条日志带 `service.name`、`service.version`。
 - GORM 日志接入同一个日志器（`component=gorm`），只记录慢查询（超过 `mysql.slow_threshold`）和错误，查不到记录不算错误；SQL 只打印占位符，不打印参数。
 - 访问日志由 `pkg/middleware/accesslog` 输出（`msg="server request"`），只记操作名、状态码、原因和耗时，**不记录请求体**：登录、注册请求里有密码、验证码和刷新令牌。503（依赖故障，例如节点号租约失效、下游服务不可用、熔断打开）记 WARN：它可预期、可恢复，根因由依赖侧的日志记录（拨号保护、`idgen` 续期失败等）；其他 5xx 记 ERROR，其余记 INFO。不使用 Kratos 自带的 `logging` 和 `recovery` 中间件，它们会打印请求体，见 [lessons/kratos-v3-server-defaults.md](../lessons/kratos-v3-server-defaults.md)。
+- 日志 Handler 外面包了一层 `telemetry.LogHandler`：context 中有有效的 Span 时追加 `trace_id`、`span_id`，可以从日志找到 Jaeger 中对应的 Trace。记日志时要用 `InfoContext`、`WarnContext`、`ErrorContext` 并传入请求的 context，否则拿不到它们。
 - 日志中的邮箱用 `biz.MaskEmail` 脱敏为 `u***@example.com`（保留首字符和域名）。
 - go-redis 的内部日志（默认用标准库 `log` 写纯文本到 stderr）由 `bootstrap.NewRedis` 通过 `redis.SetLogger` 转到 `slog`（`msg="go-redis internal log"`，原文在 `detail`）。go-redis 不给级别，按内容分级：连接池拨号失败记 DEBUG（拨号保护已在故障开始和恢复时各记一条），内部恢复的 panic 记 ERROR，其他记 WARN。
 
@@ -107,7 +114,7 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
 
 - 注册中心是 Consul，服务名为 `marschat-<服务>`。实例 ID 为 `<服务名>-<主机名>-<进程号>`：Consul 要求同一 agent 上的实例 ID 唯一，本地多个服务共用一台主机，只用主机名会互相覆盖。
 - 实例注册时登记 HTTP 和 gRPC 两个端点，带 TTL 心跳检查（宿主机运行时每 10 秒上报，20 秒未上报变为 critical，critical 持续 10 分钟后注销）。发现方只拿到检查通过的实例。
-- `kratos.Server` 中 HTTP 服务器排在第一个（delivery 只有 gRPC）：Kratos 把第一个端点登记为 Consul 服务的 `Address:Port`，网关的 Consul 发现按它转发 HTTP；各端点同时按协议写进 `TaggedAddresses`，Kratos 的 gRPC 客户端从中取 `grpc` 端点，不受顺序影响。
+- `kratos.Server` 中 HTTP 服务器排在第一个（包括步骤 8 起有 HTTP 服务器的 delivery）：Kratos 把第一个端点登记为 Consul 服务的 `Address:Port`，网关的 Consul 发现按它转发 HTTP；各端点同时按协议写进 `TaggedAddresses`，Kratos 的 gRPC 客户端从中取 `grpc` 端点，不受顺序影响。
 - `registry.consul.tcp_check_interval` 控制 Consul 主动 TCP 探测服务端口的间隔，同时是 TTL 心跳间隔。宿主机运行时为 `0s`（不探测）：服务监听 `127.0.0.1`，容器里的 Consul 探测不到。容器模式为 3 秒，实例被杀后几秒内从发现结果中消失。原来的布尔字段 `health_check` 无法用 `${XXX:默认值}` 占位符覆盖（替换结果是字符串，protojson 不接受字符串形式的布尔值），所以改成时长字段。
 - 服务间调用用 Kratos gRPC 客户端，地址写成 `discovery:///marschat-<服务>`，负载均衡为加权轮询（wrr）。目前的调用：
 
@@ -125,10 +132,10 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
 
   共同点：
   - 超时同时是服务发现首次解析的等待上限，并覆盖包括重试在内的整次调用。
-  - 经 Consul 的调用都挂两个客户端中间件，重试在外、熔断在内：
+  - 经 Consul 的调用都挂客户端中间件，从外到内为链路追踪、指标（见 5.11）、重试、熔断：
     - 重试（`pkg/middleware/retry`）：只对客户端列出的幂等方法（上表全部经 Consul 的接口；`SendMessage` 按 `client_msg_id` 幂等），只在 503 且不带错误原因（gRPC `Unavailable`，即连接级失败）时重试一次，间隔 20～50 毫秒，剩余截止时间不足 150 毫秒时不重试。业务错误、超时、下游返回的 `DEPENDENCY_UNAVAILABLE`、`CIRCUITBREAKER`、`no_available_node` 都不重试。Kratos 的 gRPC 负载均衡只在 READY 的连接中选择，实例退出后重试通常落到其他实例。
     - 熔断（Kratos `middleware/circuitbreaker`）：Google SRE 自适应限流，按接口统计，把 500、503、504 计为失败；打开时直接返回 `503 CIRCUITBREAKER`，请求不发出。
-  - 直连 access 的调用（`pkg/accessclient`）不重试、不熔断：熔断按接口统计，一个 access 实例宕机会让发往所有实例的推送一起被熔断。调用返回 `Unavailable` 或 `DeadlineExceeded` 时，关闭并移出该地址的连接，地址进入冷却期（delivery 为 `policy.push_cooldown`，access 为 `call.forward_cooldown`，默认都是 5 秒），冷却期内发往它的调用直接跳过（记 DEBUG），冷却结束后重新拨号。不监听 Consul 中 access 的变化，因为正在排空的实例已经注销，但还在给剩余连接推送。
+  - 直连 access 的调用（`pkg/accessclient`）只挂链路追踪和指标，不重试、不熔断：熔断按接口统计，一个 access 实例宕机会让发往所有实例的推送一起被熔断。调用返回 `Unavailable` 或 `DeadlineExceeded` 时，关闭并移出该地址的连接，地址进入冷却期（delivery 为 `policy.push_cooldown`，access 为 `call.forward_cooldown`，默认都是 5 秒），冷却期内发往它的调用直接跳过（记 DEBUG），冷却结束后重新拨号。不监听 Consul 中 access 的变化，因为正在排空的实例已经注销，但还在给剩余连接推送。
   - 连接惰性建立（`grpc.NewClient`），被调用方暂时不可用不影响调用方启动；就绪探针也不检查它，被调用方故障时调用方降级运行，而不是被摘掉流量。
   - 失败时 data 层统一包装成 `biz.ErrUnavailable`，由 biz 决定是返回 `503 DEPENDENCY_UNAVAILABLE`（写操作需要的校验）还是降级（列表资料补全留空并记 WARN）。
 - Kratos v3.0.0 的 gRPC 负载均衡器在包初始化时就读取了全局选择器，而默认选择器设置得更晚，经服务发现调用会空指针 panic。`pkg/balancer` 在更早的初始化阶段设置选择器，`pkg/bootstrap` 匿名导入了它；不使用 bootstrap 的程序（如 e2e 测试）要自己匿名导入 `pkg/balancer`。原因与验证见 [lessons/kratos-grpc-selector-nil.md](../lessons/kratos-grpc-selector-nil.md)。
@@ -137,9 +144,11 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
 
 HTTP 与 gRPC 共用同一条中间件链，由 [bootstrap.ServerMiddlewares](../../pkg/bootstrap/middleware.go) 组装，各服务只提供“哪些操作需要登录”的判断函数（account 用公开接口白名单，social 的对外接口全部需要登录）。从外到内：
 
-1. `accesslog`：访问日志、panic 恢复；非 Kratos 错误（数据库、Redis 等）记日志后换成 `500 INTERNAL`，不把内部信息返回给客户端。
-2. 令牌校验 `pkg/auth.Server`，用 Kratos `selector` 只作用于需要登录的接口。公开接口用白名单列出，新增的接口默认需要登录。
-3. 参数校验：Kratos validate contrib，按 proto 中的 protovalidate 规则校验，失败返回 `400 VALIDATOR`。先鉴权后校验，未登录的请求拿不到参数规则信息。
+1. 链路追踪（Kratos contrib/otel 的 `tracing.Server`）：从请求头恢复上游的 Trace 上下文并开启服务端 Span。放在最外层，后面的中间件和访问日志都能拿到 trace_id。
+2. 指标（`metrics.Server`）：按操作统计请求数（带状态码与错误原因）和耗时。
+3. `accesslog`：访问日志、panic 恢复；非 Kratos 错误（数据库、Redis 等）记日志后换成 `500 INTERNAL`，不把内部信息返回给客户端。
+4. 令牌校验 `pkg/auth.Server`，用 Kratos `selector` 只作用于需要登录的接口。公开接口用白名单列出，新增的接口默认需要登录。
+5. 参数校验：Kratos validate contrib，按 proto 中的 protovalidate 规则校验，失败返回 `400 VALIDATOR`。先鉴权后校验，未登录的请求拿不到参数规则信息。
 
 访问令牌：
 
@@ -161,7 +170,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 | 探针 | 位置 | 行为 |
 |---|---|---|
 | 存活 | HTTP `GET /healthz` | 进程能处理请求就返回 200，不检查依赖，依赖故障时重启进程没有意义 |
-| 就绪 | HTTP `GET /readyz` | 检查本服务的存储（account、social、message、media 为 MySQL 与 Redis，access 只有 Redis；media 不检查文件存储，OSS 暂时不可达时下载地址照常签发），全部可用返回 200，否则返回 503 和失败的依赖名；错误详情只写日志。被调用的其他服务和 Kafka 不在其中：它们故障时服务降级运行，不应被摘掉流量。delivery 没有 HTTP 服务器，只有 gRPC 健康检查 |
+| 就绪 | HTTP `GET /readyz` | 检查本服务的存储（account、social、message、media 为 MySQL 与 Redis，access 只有 Redis；media 不检查文件存储，OSS 暂时不可达时下载地址照常签发），全部可用返回 200，否则返回 503 和失败的依赖名；错误详情只写日志。delivery 检查 Redis（在线路由）。被调用的其他服务和 Kafka 不在其中：它们故障时服务降级运行，不应被摘掉流量 |
 | gRPC | `grpc.health.v1.Health` | Kratos 默认注册，服务启动后为 SERVING，停止时为 NOT_SERVING |
 
 ### 5.6 代码生成
@@ -216,16 +225,37 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - 依赖 compose 环境和已启动服务的测试放在 `test/e2e`，带 `e2e` 构建标签，用 `make e2e` 运行；它会加载 `.env`，测试用其中的密码直接连 Redis、MySQL 做准备工作（清理本机 IP 的限流计数、设置管理员）。
 - 容器模式的集群测试与故障实验放在 `test/cluster`，带 `cluster` 构建标签，用 `make cluster-test` 运行，客户端只经网关访问。两组测试共用 `test/testkit` 中的 HTTP 调用、注册、WebSocket 收发和 Redis 读取函数，区别只在地址。
 - 故障实验（`test/cluster/fault_test.go`）在持续收发时用 `docker kill`、`restart`、`pause`、`stop` 注入故障，只操作 `marschat-` 前缀的容器，结束时（包括失败）恢复容器并等待其在 Consul 中恢复 passing 或健康检查通过。测试客户端（`session_test.go`）按客户端约定处理断线：随机等待 0～2 秒后经网关重连，从本地连续的最大 seq 补拉，按 seq 去重。每个实验最后检查历史消息恰好是 1..N、`client_msg_id` 不重复，接收方经推送和补拉拿到的 seq 连续。实验结果记在[重构计划](../plans/active/backend-refactor.md#故障实验结果)；`go test -short` 跳过这些实验。
+- 指标与 Trace 的单元测试：`pkg/telemetry/telemetrytest` 把全局 MeterProvider 换成 ManualReader（每个测试二进制只设置一次，用例按增量比较），Span 用 SDK 的内存导出器读取。
+- 压测脚本在 `test/load/k6`（k6，经网关），用 `make load-*` 运行，做法见 [deployment.md](../deployment.md#压测)，结果记在重构计划。
+
+### 5.11 可观测性
+
+设计、指标全表与告警规则见 [observability.md](../design/observability.md)。
+
+- **初始化**：`telemetry.Setup` 按 `telemetry` 配置段创建 MeterProvider 和 TracerProvider，资源属性为 `service.name`、`service.version`、`service.instance.id`（与 Consul 中的实例 ID 相同）。传播格式固定为 W3C Trace Context。导出失败（例如 Jaeger 没有启动）不影响请求，SDK 的错误每分钟最多记一条 WARN（`msg="telemetry error"`，带被抑制的次数）。
+- **指标**：OpenTelemetry 指标经 Prometheus 导出器注册到进程内的默认注册表，与 Go 运行时、进程指标一起由各服务 HTTP 端口的 `/metrics` 暴露，不经网关。名称按 Prometheus 规范转换（加单位和 `_total` 后缀）。
+  - 接口：Kratos 指标中间件的 `server_requests_code_total`、`server_requests_seconds`（服务端）和 `client_requests_*`（gRPC 客户端），直方图桶为 `telemetry.LatencyBuckets`（1 毫秒～10 秒）。
+  - 业务：`marschat_` 前缀，包括 WebSocket 连接数、关闭原因与上行帧（access）、通话事件（access）、推送结果与消息投递延迟（delivery）、Kafka 消费结果与处理耗时（`pkg/kafka`）、Outbox 发布结果与延迟（`pkg/outbox`）、缓存命中与回源（`pkg/cache`，按 `Options.Name` 区分）、布隆过滤器判定（`pkg/bloom`）、限流结果（`pkg/ratelimit`）。
+  - Kafka 积压：delivery 的 `kafka.LagMonitor` 用 kadm 每 15 秒查询一次全部 `marschat-` 消费组，`marschat_kafka_consumer_lag` 读取缓存的结果。查询失败时清空缓存（指标消失，而不是报告旧值），只在状态变化时记日志。两个 delivery 实例报告相同的值，面板和告警按 `max` 聚合；delivery 全部停止时指标随之消失（TD-42）。
+- **链路追踪**：
+  - 只在配置了 `telemetry.otlp_endpoint` 时导出（OTLP gRPC，批量发送），容器模式为 `jaeger:4317`。采样为 `ParentBased(TraceIDRatioBased(sample_ratio))`，默认 1，压测时调低。
+  - HTTP、gRPC 的服务端与客户端由 Kratos tracing 中间件开启 Span。access 为每个 `SendMessage`、`Call` 上行帧开启服务端 Span（`ws.SendMessage`、`ws.Call`），带用户、连接与请求 ID。
+  - 跨 Kafka：`outbox.Add` 把 context 中的 Trace 上下文写入 `outbox_events.trace_parent`；发布器为每条事件开启 `publish <topic>` 生产者 Span（起点为事件写入时刻，覆盖在 Outbox 中等待的时间）并注入 Kafka 记录头 `traceparent`；消费者从记录头恢复，开启覆盖全部原地重试的 `consume <topic>` 消费者 Span，转入重试队列和死信队列的记录保留这个头。流转见 [data-flow.md](data-flow.md#10-链路追踪)。
+  - 消息相关的 Span 带 `marschat.conversation_id`、`marschat.seq`（二者唯一标识一条消息），发送路径还带 `marschat.client_msg_id`，可以在 Jaeger 中按它们检索。
+- **告警**：规则在 `deploy/prometheus/rules.yml`（实例不可达、5xx 比例、P99、Kafka 积压、死信、推送失败率、Outbox 发布延迟、消息投递延迟），单元测试在 `rules_test.yml`（`make rules-test`）。告警只在 Alertmanager 和 Grafana 中查看，不发外部通知。
+- **面板**：Grafana 预置“MarsChat 总览”（`deploy/grafana/dashboards/`）。Trace 在 Jaeger UI 中查看：Grafana 13 的 Jaeger 数据源与 Jaeger 2.23 的查询接口不兼容，没有配置。
 
 ## 6. 关键技术组件
 
 | 组件 | 版本 | 用途 |
 |---|---|---|
 | Go | 1.27.3 | 后端语言 |
-| Kratos | v3.0.0；contrib（registry/consul、middleware/jwt、middleware/validate）v3 伪版本 `v3.0.0-20261026152050-dd0fb7df1e32` | 微服务框架、Consul 注册发现、JWT 与参数校验中间件 |
+| Kratos | v3.0.0；contrib（registry/consul、middleware/jwt、middleware/validate、otel）v3 伪版本 `v3.0.0-20261026152050-dd0fb7df1e32` | 微服务框架、Consul 注册发现、JWT 与参数校验中间件、指标与链路追踪中间件 |
+| OpenTelemetry Go | v1.47.0（API、SDK、OTLP gRPC Trace 导出器）；Prometheus 导出器 v0.69.0 | 指标与链路追踪 |
+| prometheus/client_golang | v1.25.0 | `/metrics` 处理函数与默认注册表 |
 | golang-jwt | v5.3.1 | JWT 解析与签名 |
 | protovalidate | v1.2.0 | 接口参数与配置校验 |
-| franz-go | v1.22.3 | Kafka 客户端（幂等生产者、消费组手动提交） |
+| franz-go | v1.22.3；kadm v1.20.0 | Kafka 客户端（幂等生产者、消费组手动提交）；kadm 查询消费组积压 |
 | gorilla/websocket | v1.5.3 | WebSocket（access） |
 | golang.org/x/crypto | v0.59.0 | bcrypt |
 | golang.org/x/sync | v0.25.0 | singleflight |

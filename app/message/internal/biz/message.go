@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/Mars-08042/MarsChat/api/message/v1"
@@ -77,6 +79,7 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 	if known != nil {
 		m, err := uc.msgs.FindByClientID(ctx, known.ID, in.SenderID, in.ClientMsgID)
 		if err == nil {
+			annotate(ctx, m, true)
 			return m, nil
 		}
 		if !errors.Is(err, ErrNotFound) {
@@ -86,7 +89,8 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 
 	if err := uc.perm.CheckSend(ctx, in.SenderID, in.PeerType, in.PeerID); err != nil {
 		if errors.Is(err, ErrUnavailable) {
-			uc.logger.Warn("check send permission failed", slog.Int64("sender_id", in.SenderID), slog.Any("error", err))
+			uc.logger.WarnContext(ctx, "check send permission failed", slog.Int64("sender_id", in.SenderID),
+				slog.String("client_msg_id", in.ClientMsgID), slog.Any("error", err))
 			return nil, ErrDependencyUnavailable()
 		}
 		return nil, err
@@ -138,12 +142,29 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 	})
 	if errors.Is(err, ErrDuplicate) {
 		// 同一条消息的另一次发送已经提交（客户端重发与首次请求并发），返回首次的结果
-		return uc.msgs.FindByClientID(ctx, convID, in.SenderID, in.ClientMsgID)
+		m, err := uc.msgs.FindByClientID(ctx, convID, in.SenderID, in.ClientMsgID)
+		if err == nil {
+			annotate(ctx, m, true)
+		}
+		return m, err
 	}
 	if err != nil {
 		return nil, err
 	}
+	annotate(ctx, created, false)
 	return created, nil
+}
+
+// annotate 把消息标识写在当前 Span（Kratos tracing 中间件为 SendMessage 开的服务端 Span）上。
+// 消息由 (conversation_id, seq) 唯一标识，Jaeger 中按这两个标签能查到发送、投递的整条链路。
+func annotate(ctx context.Context, m *Message, replay bool) {
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.Int64("marschat.conversation_id", m.ConversationID),
+		attribute.Int64("marschat.seq", m.Seq),
+		attribute.String("marschat.client_msg_id", m.ClientMsgID),
+		// true 表示重发命中幂等，返回的是首次写入的消息
+		attribute.Bool("marschat.idempotent_replay", replay),
+	)
 }
 
 // resolveContent 核实图片、文件消息引用的文件，并用 media 的记录重建内容：名称、大小、类型和尺寸都不信任客户端。
@@ -167,7 +188,7 @@ func (uc *MessageUsecase) resolveContent(ctx context.Context, senderID int64, c 
 	files, err := uc.files.GetFiles(ctx, []int64{fileID})
 	if err != nil {
 		if errors.Is(err, ErrUnavailable) {
-			uc.logger.Warn("get file from media failed", slog.Int64("sender_id", senderID), slog.Int64("file_id", fileID), slog.Any("error", err))
+			uc.logger.WarnContext(ctx, "get file from media failed", slog.Int64("sender_id", senderID), slog.Int64("file_id", fileID), slog.Any("error", err))
 			return nil, ErrDependencyUnavailable()
 		}
 		return nil, err
@@ -237,7 +258,7 @@ func (uc *MessageUsecase) checkRate(ctx context.Context, userID int64) error {
 	key := "message:rl:send:" + strconv.FormatInt(userID, 10)
 	res, err := uc.limiter.Allow(ctx, key, int(l.GetLimit()), l.GetWindow().AsDuration())
 	if err != nil {
-		uc.logger.Warn("rate limiter unavailable", slog.String("limit", "send_message"), slog.Any("error", err))
+		uc.logger.WarnContext(ctx, "rate limiter unavailable", slog.String("limit", "send_message"), slog.Any("error", err))
 		return nil
 	}
 	if !res.Allowed {

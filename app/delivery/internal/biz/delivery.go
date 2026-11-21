@@ -5,15 +5,44 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	accessv1 "github.com/Mars-08042/MarsChat/api/access/v1"
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
 	messagev1 "github.com/Mars-08042/MarsChat/api/message/v1"
 	"github.com/Mars-08042/MarsChat/pkg/route"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 // maxConnsPerCall 与 access.v1.PushRequest、KickRequest 的 connection_ids 上限一致。
 const maxConnsPerCall = 1000
+
+// 推送类型，作为指标标签 kind
+const (
+	kindMessage      = "message"
+	kindRead         = "read"
+	kindNotification = "notification"
+	kindKick         = "kick"
+)
+
+// 指标：
+//   - marschat_push_total{kind, result}：按对 access 实例的调用计数，一条事件推给几个实例就计几次；
+//     result 为 ok、failed（实例不可达或超时）、cooling（实例在冷却期，跳过）；
+//     offline 按事件计数，表示接收方都没有在线连接，不需要调用；
+//   - marschat_message_delivery_seconds{conversation_type}：消息从写库（created_at）到推送进入 access 发送队列的时长，
+//     覆盖 Outbox、Kafka 和 delivery 三段，每个成功的实例调用记一次。
+var (
+	pushCounter     = telemetry.Int64Counter("marschat_push", "delivery 对 access 实例的推送调用次数，按结果区分")
+	deliveryLatency = telemetry.SecondsHistogram("marschat_message_delivery_seconds", "消息从写库到推送进入 access 的时长")
+)
+
+func countPush(ctx context.Context, kind, result string) {
+	pushCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", kind), attribute.String("result", result)))
+}
 
 // DeliveryUsecase 处理需要推送给在线连接的事件。所有方法都不返回错误，失败只记日志。
 type DeliveryUsecase struct {
@@ -33,6 +62,12 @@ func NewDeliveryUsecase(routes RouteRepo, dedupe Deduper, members GroupMembers, 
 // 发送者的其他设备、其他标签页也会收到，用于多端同步。
 func (uc *DeliveryUsecase) OnMessageCreated(ctx context.Context, eventID string, ev *messagev1.MessageCreated) {
 	m := ev.GetMessage()
+	// 消息由 (conversation_id, seq) 唯一标识，写在消费 Span 上，Jaeger 中可以按它们查到整条链路
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.Int64("marschat.conversation_id", m.GetConversationId()),
+		attribute.Int64("marschat.seq", m.GetSeq()),
+		attribute.String("marschat.conversation_type", m.GetConversationType().String()),
+	)
 	if !uc.firstSeen(ctx, eventID) {
 		return
 	}
@@ -43,7 +78,7 @@ func (uc *DeliveryUsecase) OnMessageCreated(ctx context.Context, eventID string,
 	case messagev1.ConversationType_CONVERSATION_TYPE_GROUP:
 		members, err := uc.members.List(ctx, m.GetConversationId())
 		if err != nil {
-			uc.logger.Warn("list group members failed, push skipped",
+			uc.logger.WarnContext(ctx, "list group members failed, push skipped",
 				slog.Int64("group_id", m.GetConversationId()), slog.Int64("seq", m.GetSeq()), slog.Any("error", err))
 			return
 		}
@@ -53,7 +88,13 @@ func (uc *DeliveryUsecase) OnMessageCreated(ctx context.Context, eventID string,
 		return
 	}
 	frame := &accessv1.ServerFrame{Body: &accessv1.ServerFrame_Message{Message: m}}
-	uc.push(ctx, recipients, frame, ev.GetOriginConnectionId())
+	createdAt := m.GetCreatedAt().AsTime()
+	latency := metric.WithAttributes(attribute.String("conversation_type", m.GetConversationType().String()))
+	uc.push(ctx, kindMessage, recipients, frame, ev.GetOriginConnectionId(), func() {
+		if !createdAt.IsZero() {
+			deliveryLatency.Record(ctx, time.Since(createdAt).Seconds(), latency)
+		}
+	})
 }
 
 // OnReadPositionUpdated 把已读位置推给本人的全部连接（多端同步未读数），单聊还推给对方（已读回执）。
@@ -67,7 +108,7 @@ func (uc *DeliveryUsecase) OnReadPositionUpdated(ctx context.Context, eventID st
 		recipients = append(recipients, peer)
 	}
 	frame := &accessv1.ServerFrame{Body: &accessv1.ServerFrame_Read{Read: ev.GetPosition()}}
-	uc.push(ctx, recipients, frame, 0)
+	uc.push(ctx, kindRead, recipients, frame, 0, nil)
 }
 
 // OnSocialEvent 把 social 事件作为通知推给相关用户（设计 3.7），n.EventId 为事件 ID。
@@ -85,7 +126,7 @@ func (uc *DeliveryUsecase) OnSocialEvent(ctx context.Context, n *accessv1.Notifi
 	if len(recipients) == 0 {
 		return
 	}
-	uc.push(ctx, recipients, &accessv1.ServerFrame{Body: &accessv1.ServerFrame_Notification{Notification: n}}, 0)
+	uc.push(ctx, kindNotification, recipients, &accessv1.ServerFrame{Body: &accessv1.ServerFrame_Notification{Notification: n}}, 0, nil)
 }
 
 // notificationRecipients 返回通知的接收用户，已去重。
@@ -198,18 +239,29 @@ func (uc *DeliveryUsecase) lookup(ctx context.Context, userIDs []int64, keep fun
 	return byAddr
 }
 
-// push 按实例并发推送，一个实例故障不拖慢其他实例。
-func (uc *DeliveryUsecase) push(ctx context.Context, userIDs []int64, frame *accessv1.ServerFrame, exclude int64) {
+// push 按实例并发推送，一个实例故障不拖慢其他实例。onDelivered 在每次成功的实例调用之后执行，可以为 nil。
+func (uc *DeliveryUsecase) push(ctx context.Context, kind string, userIDs []int64, frame *accessv1.ServerFrame, exclude int64, onDelivered func()) {
 	byAddr := uc.lookup(ctx, userIDs, func(e route.Entry) bool { return e.ConnID != exclude })
+	if len(byAddr) == 0 {
+		countPush(ctx, kind, "offline")
+		return
+	}
 	uc.each(byAddr, func(addr string, ids []int64) {
 		if _, err := uc.pusher.Push(ctx, addr, ids, frame); err != nil {
 			// 路由最多残留一个心跳超时（access 崩溃时），期间推送失败属于预期。
 			// 冷却期内的跳过只记 DEBUG：第一次失败已经记过 WARN，实例宕机时每条事件都会走到这里
 			if errors.Is(err, ErrInstanceCoolingDown) {
-				uc.logger.Debug("push skipped", slog.String("addr", addr), slog.Int("conns", len(ids)))
+				countPush(ctx, kind, "cooling")
+				uc.logger.DebugContext(ctx, "push skipped", slog.String("addr", addr), slog.Int("conns", len(ids)))
 				return
 			}
-			uc.logger.Warn("push failed", slog.String("addr", addr), slog.Int("conns", len(ids)), slog.Any("error", err))
+			countPush(ctx, kind, "failed")
+			uc.logger.WarnContext(ctx, "push failed", slog.String("addr", addr), slog.Int("conns", len(ids)), slog.Any("error", err))
+			return
+		}
+		countPush(ctx, kind, "ok")
+		if onDelivered != nil {
+			onDelivered()
 		}
 	})
 }
@@ -219,10 +271,16 @@ func (uc *DeliveryUsecase) kick(ctx context.Context, userID int64, reason accoun
 	uc.each(byAddr, func(addr string, ids []int64) {
 		n, err := uc.pusher.Kick(ctx, addr, ids, reason)
 		if err != nil {
+			if errors.Is(err, ErrInstanceCoolingDown) {
+				countPush(ctx, kindKick, "cooling")
+			} else {
+				countPush(ctx, kindKick, "failed")
+			}
 			// 心跳复查吊销名单兜底，最迟一个心跳周期后断开
-			uc.logger.Warn("kick failed", slog.String("addr", addr), slog.Int64("user_id", userID), slog.Any("error", err))
+			uc.logger.WarnContext(ctx, "kick failed", slog.String("addr", addr), slog.Int64("user_id", userID), slog.Any("error", err))
 			return
 		}
+		countPush(ctx, kindKick, "ok")
 		uc.logger.Info("connections kicked", slog.String("addr", addr), slog.Int64("user_id", userID),
 			slog.Int("kicked", n), slog.String("reason", reason.String()))
 	})

@@ -25,6 +25,8 @@ message Bootstrap {
   Policy policy = 11 [(buf.validate.field).required = true];
   // 发送图片和文件消息时核实文件
   Upstream media = 12 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 13;
 }
 
 // Upstream 是调用其他服务的配置，修改后需要重启。

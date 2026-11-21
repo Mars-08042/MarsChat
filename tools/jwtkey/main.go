@@ -3,6 +3,7 @@
 //	MARSCHAT_JWT_PRIVATE_KEY  Ed25519 私钥种子（32 字节）的 base64，只有 account 使用
 //	MARSCHAT_JWT_PUBLIC_KEY   公钥的 base64，所有服务用来校验访问令牌
 //	MARSCHAT_MEDIA_URL_SECRET 32 字节随机数的 base64，media 本地存储用来签名下载地址
+//	MARSCHAT_GRAFANA_ADMIN_PASSWORD 24 字节随机数的 base64url，Grafana 管理员密码（make monitoring-up 使用）
 //
 // 每组密钥单独判断：.env 中已有的不做任何修改，避免覆盖后已签发的令牌或下载地址全部失效。
 // 不打印密钥内容。
@@ -22,6 +23,7 @@ import (
 var (
 	existingJWT       = regexp.MustCompile(`(?m)^MARSCHAT_JWT_(PRIVATE|PUBLIC)_KEY=`)
 	existingURLSecret = regexp.MustCompile(`(?m)^MARSCHAT_MEDIA_URL_SECRET=.+`)
+	existingGrafana   = regexp.MustCompile(`(?m)^MARSCHAT_GRAFANA_ADMIN_PASSWORD=.+`)
 )
 
 func main() {
@@ -59,6 +61,15 @@ func run(path string) error {
 		_, _ = rand.Read(secret) // crypto/rand.Read 不会返回错误
 		fmt.Fprintf(&buf, "MARSCHAT_MEDIA_URL_SECRET=%s\n", base64.StdEncoding.EncodeToString(secret))
 		added = append(added, "media URL secret")
+	}
+	if existingGrafana.Match(content) {
+		fmt.Printf("%s already contains MARSCHAT_GRAFANA_ADMIN_PASSWORD, kept\n", path)
+	} else {
+		pw := make([]byte, 24)
+		_, _ = rand.Read(pw)
+		// base64url 不含 + / =，写进 .env 和 Compose 插值都不需要转义
+		fmt.Fprintf(&buf, "MARSCHAT_GRAFANA_ADMIN_PASSWORD=%s\n", base64.RawURLEncoding.EncodeToString(pw))
+		added = append(added, "Grafana admin password")
 	}
 	if buf.Len() == 0 {
 		return nil

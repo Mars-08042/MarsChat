@@ -110,6 +110,7 @@ func (h *Hub) Serve(ws *websocket.Conn) {
 	delete(h.all, c)
 	if id := c.id.Load(); id != 0 {
 		delete(h.byID, id)
+		wsConnections.Add(context.Background(), -1)
 	}
 	h.mu.Unlock()
 }
@@ -124,6 +125,7 @@ func (h *Hub) bind(c *Conn) int64 {
 		if _, ok := h.byID[id]; !ok {
 			c.id.Store(id)
 			h.byID[id] = c
+			wsConnections.Add(context.Background(), 1)
 			return id
 		}
 	}

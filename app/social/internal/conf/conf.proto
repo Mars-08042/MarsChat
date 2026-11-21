@@ -21,6 +21,8 @@ message Bootstrap {
   Policy policy = 9 [(buf.validate.field).required = true];
   marschat.conf.Kafka kafka = 10 [(buf.validate.field).required = true];
   marschat.conf.Outbox outbox = 11 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 12;
 }
 
 // Account 是调用 account 服务的配置，修改后需要重启。

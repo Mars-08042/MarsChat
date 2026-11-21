@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Mars-08042/MarsChat/pkg/conf"
@@ -96,6 +100,9 @@ type ConsumerConfig struct {
 //
 // 失败处理：Permanent 错误、解码失败和 panic 的记录写入死信队列（TopicDLQ）后提交位点；
 // 写入失败时不提交，原地重试写入，记录不会凭空消失。临时错误见 ConsumerConfig.RetryTopic。
+//
+// 链路追踪：每条记录开一个消费 Span（consume <topic>），以记录头 traceparent 中的上游 Span 为父，
+// 覆盖该记录的所有尝试；处理器收到的 ctx 带着它。指标见 trace.go。
 type Consumer struct {
 	cl       *kgo.Client
 	group    string
@@ -341,11 +348,32 @@ func (c *Consumer) process(ctx context.Context, r *kgo.Record) bool {
 	if c.delayed && !c.waitUntilDue(ctx, r) {
 		return false
 	}
+	// sctx 只多了 Span，取消与停机仍由 ctx 决定
+	sctx, span := tracer().Start(ExtractTrace(ctx, r), "consume "+r.Topic,
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.destination.name", r.Topic),
+			attribute.String("messaging.consumer.group.name", c.group),
+			attribute.Int64("messaging.kafka.partition", int64(r.Partition)),
+			attribute.Int64("messaging.kafka.offset", r.Offset),
+			attribute.String("marschat.event_id", e.ID),
+			attribute.String("marschat.event_type", e.Type),
+			// 从写入 Kafka 到开始处理的时间，重试消费者包含重试延迟
+			attribute.Int64("marschat.queue_ms", c.now().Sub(r.Timestamp).Milliseconds()),
+		))
+	defer span.End()
+	count := func(result string) {
+		consumedCounter.Add(sctx, 1, metric.WithAttributes(
+			attribute.String("group", c.group), attribute.String("topic", r.Topic), attribute.String("result", result)))
+	}
+
 	backoff := c.retryMin
 	var lastEscalated time.Time
 	for attempt := 1; ; attempt++ {
-		err := c.call(ctx, h, e)
+		err := c.call(sctx, h, e)
 		if err == nil {
+			count("ok")
 			return true
 		}
 		attrs := []any{
@@ -353,18 +381,24 @@ func (c *Consumer) process(ctx context.Context, r *kgo.Record) bool {
 			slog.String("topic", e.Topic), slog.Int64("partition", int64(e.Partition)),
 			slog.Int64("offset", e.Offset), slog.Int("attempt", attempt), slog.Any("error", err),
 		}
+		span.RecordError(err, trace.WithAttributes(attribute.Int("attempt", attempt)))
 		var perm *permanentError
 		if errors.As(err, &perm) {
-			c.logger.Error("kafka event failed permanently, moving to dead letter topic", attrs...)
-			return c.writeUntilDone(ctx, c.deadLetter(r, err), "dead letter")
+			count("dlq")
+			span.SetStatus(codes.Error, "moved to dead letter topic")
+			c.logger.ErrorContext(sctx, "kafka event failed permanently, moving to dead letter topic", attrs...)
+			return c.writeUntilDone(sctx, c.deadLetter(r, err), "dead letter")
 		}
 		if ctx.Err() != nil {
 			return false
 		}
+		count("error")
 		if c.retryTopic != "" && attempt >= c.retryAttempts {
-			werr := c.writeOnce(ctx, c.retryRecord(r))
+			werr := c.writeOnce(sctx, c.retryRecord(r))
 			if werr == nil {
-				c.logger.Warn("kafka event moved to retry topic", append(attrs, slog.String("retry_topic", c.retryTopic))...)
+				count("retry")
+				span.SetStatus(codes.Error, "moved to retry topic")
+				c.logger.WarnContext(sctx, "kafka event moved to retry topic", append(attrs, slog.String("retry_topic", c.retryTopic))...)
 				return true
 			}
 			if ctx.Err() != nil {
@@ -375,9 +409,9 @@ func (c *Consumer) process(ctx context.Context, r *kgo.Record) bool {
 		}
 		switch {
 		case attempt < escalateAfter:
-			c.logger.Warn("handle kafka event failed, retrying", append(attrs, slog.Duration("backoff", backoff))...)
+			c.logger.WarnContext(sctx, "handle kafka event failed, retrying", append(attrs, slog.Duration("backoff", backoff))...)
 		case attempt == escalateAfter || c.now().Sub(lastEscalated) >= escalatedLogEvery:
-			c.logger.Error("kafka event keeps failing, partition blocked", attrs...)
+			c.logger.ErrorContext(sctx, "kafka event keeps failing, partition blocked", attrs...)
 			lastEscalated = c.now()
 		}
 		if !c.sleep(ctx, backoff) {
@@ -396,6 +430,11 @@ func (c *Consumer) call(ctx context.Context, h Handler, e *Event) (err error) {
 	}()
 	hctx, cancel := context.WithTimeout(ctx, handleTimeout)
 	defer cancel()
+	start := c.now()
+	defer func() {
+		handleDuration.Record(ctx, c.now().Sub(start).Seconds(), metric.WithAttributes(
+			attribute.String("group", c.group), attribute.String("topic", e.Topic)))
+	}()
 	return h(hctx, e)
 }
 

@@ -11,10 +11,24 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 
 	"github.com/Mars-08042/MarsChat/pkg/conf"
 	"github.com/Mars-08042/MarsChat/pkg/kafka"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
+)
+
+// 指标，标签 source 为服务名：
+//   - marschat_outbox_published_total{result}：ok 为发出并标记的事件数，error 为发布失败的批次中的事件数（重试会重复计数）；
+//   - marschat_outbox_publish_delay_seconds：事件从写入 Outbox 到发出的时长，Kafka 不可用、租约切换时会升高。
+var (
+	publishedCounter = telemetry.Int64Counter("marschat_outbox_published", "Outbox 事件发布数，按结果区分")
+	publishDelay     = telemetry.SecondsHistogram("marschat_outbox_publish_delay_seconds", "Outbox 事件从写入到发出的时长")
 )
 
 const (
@@ -106,6 +120,10 @@ type Publisher struct {
 	started atomic.Bool
 	done    chan struct{}
 	once    sync.Once
+
+	// 预先构造的指标标签
+	mOK, mErr metric.AddOption
+	mDelay    metric.RecordOption
 }
 
 // New 按配置创建 Kafka 生产者和发布器。source 是服务名，owner 是实例 ID；
@@ -132,7 +150,11 @@ func NewPublisher(db *gorm.DB, rdb redis.UniversalClient, cl *kgo.Client, opts O
 
 func newPublisher(s store, p producer, rdb redis.UniversalClient, opts Options, logger *slog.Logger) *Publisher {
 	ctx, cancel := context.WithCancel(context.Background())
+	source := attribute.String("source", opts.Source)
 	return &Publisher{
+		mOK:        metric.WithAttributeSet(attribute.NewSet(source, attribute.String("result", "ok"))),
+		mErr:       metric.WithAttributeSet(attribute.NewSet(source, attribute.String("result", "error"))),
+		mDelay:     metric.WithAttributeSet(attribute.NewSet(source)),
 		store:      s,
 		producer:   p,
 		rdb:        rdb,
@@ -319,8 +341,13 @@ func (p *Publisher) drain(ctx context.Context) {
 		err = p.producer.produce(pctx, events)
 		cancel()
 		if err != nil {
+			publishedCounter.Add(ctx, int64(len(events)), p.mErr)
 			p.fail("produce outbox events", err)
 			return
+		}
+		sent := p.now()
+		for _, e := range events {
+			publishDelay.Record(ctx, sent.Sub(e.CreatedAt).Seconds(), p.mDelay)
 		}
 		ids := make([]int64, len(events))
 		for i, e := range events {
@@ -331,6 +358,7 @@ func (p *Publisher) drain(ctx context.Context) {
 			p.fail("mark outbox events published", err)
 			return
 		}
+		publishedCounter.Add(ctx, int64(len(events)), p.mOK)
 		p.backoff = 0
 		if len(events) < p.opts.BatchSize {
 			return
@@ -398,10 +426,45 @@ type kafkaProducer struct {
 // produce 同步发送一批记录。franz-go 在同一分区内保持记录的提交顺序，幂等生产者保证重试不重复。
 func (k kafkaProducer) produce(ctx context.Context, events []Event) error {
 	recs := toRecords(k.source, events)
-	if err := k.cl.ProduceSync(ctx, recs...).FirstErr(); err != nil {
+	spans := startPublishSpans(k.source, events, recs)
+	err := k.cl.ProduceSync(ctx, recs...).FirstErr()
+	for _, sp := range spans {
+		if err != nil {
+			sp.RecordError(err)
+			sp.SetStatus(codes.Error, "produce failed")
+		}
+		sp.End()
+	}
+	if err != nil {
 		return fmt.Errorf("produce %d records: %w", len(recs), err)
 	}
 	return nil
+}
+
+// startPublishSpans 为带 TraceParent 的事件各开一个 producer Span（publish <topic>），起点是事件写入 Outbox 的时间，
+// 终点是发送完成：Trace 中能直接看到事件在 Outbox 里等了多久。Span 上下文写入记录头 traceparent，
+// 消费 Span 接在它下面。没有 TraceParent 的事件（写入时不在请求链路中）不开 Span，避免产生大量单节点 Trace。
+func startPublishSpans(source string, events []Event, recs []*kgo.Record) []trace.Span {
+	var spans []trace.Span
+	tracer := otel.Tracer(telemetry.ScopeName)
+	for i, e := range events {
+		if e.TraceParent == "" {
+			continue
+		}
+		ctx, sp := tracer.Start(kafka.ContextWithTraceParent(context.Background(), e.TraceParent), "publish "+e.Topic,
+			trace.WithSpanKind(trace.SpanKindProducer),
+			trace.WithTimestamp(e.CreatedAt),
+			trace.WithAttributes(
+				attribute.String("messaging.system", "kafka"),
+				attribute.String("messaging.destination.name", e.Topic),
+				attribute.String("marschat.event_id", kafka.Header(recs[i], kafka.HeaderEventID)),
+				attribute.String("marschat.event_type", e.EventType),
+				attribute.String("marschat.outbox_source", source),
+			))
+		kafka.InjectTrace(ctx, recs[i])
+		spans = append(spans, sp)
+	}
+	return spans
 }
 
 // toRecords 把事件转换成 Kafka 记录。

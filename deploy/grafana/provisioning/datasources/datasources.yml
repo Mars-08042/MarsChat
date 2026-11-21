@@ -1,0 +1,27 @@
+# Grafana 数据源（compose profile monitoring），启动时自动导入，界面中不可修改。
+# 没有 Jaeger 数据源：Grafana 13 自带的 Jaeger 插件仍调用 Jaeger 2.21 起删除的 /api/services、/api/traces，
+# 健康检查、服务列表和搜索都返回 404（grafana/grafana-jaeger-datasource#87）。Trace 在 Jaeger 界面
+# （127.0.0.1:26686）中查看，总览面板顶部有链接。插件支持 /api/v3 后再加回来。
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # 与抓取间隔一致，rate() 的窗口不小于它的 4 倍
+      timeInterval: 5s
+
+  # 纯前端插件，没有后端健康检查，/api/datasources/uid/alertmanager/health 返回 Plugin unavailable 属正常
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus

@@ -9,11 +9,13 @@ import (
 	"github.com/go-kratos/kratos/contrib/registry/consul/v3"
 	"github.com/go-kratos/kratos/v3"
 	"github.com/go-kratos/kratos/v3/transport/grpc"
+	"github.com/go-kratos/kratos/v3/transport/http"
 
 	"github.com/Mars-08042/MarsChat/app/delivery/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/delivery/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 	"github.com/Mars-08042/MarsChat/pkg/kafka"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 var (
@@ -29,14 +31,16 @@ func init() {
 	flag.StringVar(&flagconf, "conf", "app/delivery/configs", "配置目录或文件路径")
 }
 
-func newApp(logger *slog.Logger, r *consul.Registry, gs *grpc.Server, consumer *kafka.Consumer) *kratos.App {
+func newApp(logger *slog.Logger, r *consul.Registry, hs *http.Server, gs *grpc.Server, consumer *kafka.Consumer,
+	lag *kafka.LagMonitor) *kratos.App {
 	return kratos.New(
 		kratos.ID(bootstrap.InstanceID(Name)),
 		kratos.Name(Name),
 		kratos.Version(Version),
 		kratos.Logger(logger),
 		kratos.Registrar(r),
-		kratos.Server(gs, consumer),
+		// HTTP 服务器放在第一个：Kratos 把第一个端点登记为 Consul 服务的 Address:Port，Prometheus 按它抓取 /metrics
+		kratos.Server(hs, gs, consumer, lag),
 	)
 }
 
@@ -59,6 +63,13 @@ func run() error {
 		slog.String("service.name", Name),
 		slog.String("service.version", Version),
 	)
+	shutdownTelemetry, err := telemetry.Setup(bc.GetTelemetry(),
+		telemetry.Info{Name: Name, Version: Version, InstanceID: bootstrap.InstanceID(Name)}, logger)
+	if err != nil {
+		return err
+	}
+	// 在 cleanup 之后执行，停机期间产生的 Span 也能导出
+	defer shutdownTelemetry()
 
 	// 只有 policy 段热更新，其余配置修改后需要重启
 	policy := biz.NewPolicyHolder(bc.GetPolicy())

@@ -80,6 +80,75 @@ cluster-test: ## 集群测试与故障实验，需要先 make cluster-up；只�
 cluster-down: ## 停止并删除容器模式的服务与网关容器，依赖组件保持运行
 	docker compose --profile apps rm -sf $(APP_SERVICES)
 
+# 监控组件（profile monitoring）只能抓取容器模式的服务；Grafana 管理员密码由 make keys 写入 .env
+MONITORING_SERVICES := prometheus alertmanager jaeger grafana
+
+.PHONY: monitoring-up
+monitoring-up: ## 启动监控组件：Prometheus 19090、Alertmanager 19093、Grafana 13000、Jaeger 26686
+	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
+	@grep -q '^MARSCHAT_GRAFANA_ADMIN_PASSWORD=.' .env || { echo "missing MARSCHAT_GRAFANA_ADMIN_PASSWORD in .env: run make keys"; exit 1; }
+	docker compose --profile monitoring up -d --wait $(MONITORING_SERVICES)
+
+# MSYS_NO_PATHCONV 防止 Git Bash 把容器内的绝对路径改写成 Windows 路径
+.PHONY: rules-test
+rules-test: ## 校验 Prometheus 配置并运行告警规则的单元测试（用镜像中的 promtool）
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR)/deploy/prometheus:/etc/prometheus:ro" -w /etc/prometheus --entrypoint promtool prom/prometheus:v3.16.0 check config prometheus.yml
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR)/deploy/prometheus:/etc/prometheus:ro" -w /etc/prometheus --entrypoint promtool prom/prometheus:v3.16.0 test rules rules_test.yml
+
+.PHONY: monitoring-down
+monitoring-down: ## 停止并删除监控组件容器，保留 Prometheus 数据卷
+	docker compose --profile monitoring rm -sf $(MONITORING_SERVICES)
+
+.PHONY: mysql-slow
+mysql-slow: ## 查看 MySQL 慢查询日志的最后 50 行（超过 200 毫秒的语句，含参数值，只在本机查看）
+	docker compose exec mysql sh -c 'tail -n 50 /var/lib/mysql/mysql-slow.log'
+
+# 压测（profile loadtest）：k6 在 Compose 网络中经网关压测容器模式的服务，脚本见 test/load/k6，
+# 准备的数据和结果摘要写入 tmp/load。流程：load-up → load-seed → load-ws / load-read → load-restore。
+# load-up 把 account 临时切到 log 发送方（注册用固定验证码，不发真实邮件）并调低 Trace 采样比例，.env 不改；
+# load-restore 按 .env 重建应用容器，恢复原来的设置。
+K6 := MSYS_NO_PATHCONV=1 docker compose run --rm k6 run
+LOAD_USERS ?= 1000
+LOAD_SAMPLE_RATIO ?= 0.05
+CONNS ?= 200
+RATE ?= 300
+DURATION ?= 60
+MODE ?= hot
+
+.PHONY: load-up
+load-up: ## 压测前重建应用容器：account 用 log 发送方，Trace 采样比例 LOAD_SAMPLE_RATIO
+	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
+	MARSCHAT_MAIL_PROVIDER=log MARSCHAT_MAIL_FIXED_CODE=000000 MARSCHAT_TRACE_SAMPLE_RATIO=$(LOAD_SAMPLE_RATIO) docker compose --profile apps up -d --wait
+
+.PHONY: load-restore
+load-restore: ## 压测后按 .env 重建应用容器，恢复邮件发送方与采样比例
+	docker compose --profile apps up -d --wait
+
+# 注册前确认 account 使用 log 发送方，否则会向 @example.test 地址发送真实邮件
+.PHONY: load-seed
+load-seed: ## 压测准备数据：注册 LOAD_USERS 个用户、两两加好友、建热点群，写入 tmp/load/users.json
+	@ids=$$(docker compose ps -q account); test -n "$$ids" || { echo "account is not running: run make cluster-up"; exit 1; }; \
+	for c in $$ids; do docker inspect $$c --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q '^MARSCHAT_MAIL_PROVIDER=log$$' || { echo "account is not using the log mail provider: run make load-up"; exit 1; }; done
+	@mkdir -p tmp/load/out
+	$(K6) -q -e USERS=$(LOAD_USERS) /scripts/seed.js
+
+.PHONY: load-token
+load-token: ## 刷新压测用户的访问令牌（15 分钟有效，每轮压测前执行）
+	$(K6) -q -e MODE=refresh /scripts/seed.js
+
+.PHONY: load-ws
+load-ws: ## WebSocket 收发压测，例如 make load-ws CONNS=500 DURATION=60，摘要写入 tmp/load/out
+	$(K6) -e CONNS=$(CONNS) -e DURATION=$(DURATION) --summary-export /load/out/ws_chat_$(CONNS).json /scripts/ws_chat.js
+
+.PHONY: load-read
+load-read: ## 热点读压测，例如 make load-read RATE=500；MODE=penetration 为穿透实验
+	$(K6) -e MODE=$(MODE) -e RATE=$(RATE) -e DURATION=$(DURATION) --summary-export /load/out/hot_read_$(MODE)_$(RATE).json /scripts/hot_read.js
+
+.PHONY: load-bust
+load-bust: ## 击穿实验：在 load-read 运行期间删除热点群的资料与成员缓存键
+	@g=$$(sed -n 's/.*"hotGroupId":"\([0-9]*\)".*/\1/p' tmp/load/users.json); test -n "$$g" || { echo "no hot group in tmp/load/users.json: run make load-seed"; exit 1; }; \
+	docker compose exec -T redis sh -c 'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning DEL social:group:'"$$g"' social:group:members:'"$$g"
+
 .PHONY: up
 up: ## 启动依赖组件，等待健康检查通过后创建 Kafka topic
 	docker compose up -d --wait

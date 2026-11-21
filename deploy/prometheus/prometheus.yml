@@ -1,0 +1,44 @@
+# Prometheus 配置（compose profile monitoring）。修改后重启容器或调用 /-/reload。
+global:
+  # 压测时需要细粒度，数据只保留 3 天（见 compose 启动参数）
+  scrape_interval: 5s
+  scrape_timeout: 4s
+  evaluation_interval: 5s
+
+rule_files:
+  - /etc/prometheus/rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # 应用服务：经 Consul 发现所有 marschat-* 实例，抓取 HTTP 端口上的 /metrics。
+  # Kratos 把第一个端点（各服务都是 HTTP）登记为服务的 Address:Port。
+  - job_name: marschat
+    consul_sd_configs:
+      - server: consul:8500
+        # 默认 30 秒，多实例扩缩容后要等太久才纳入
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__meta_consul_service]
+        regex: marschat-.*
+        action: keep
+      # 默认地址是 Consul 节点地址（Consul 容器），服务地址才是各实例的容器 IP
+      - source_labels: [__meta_consul_service_address, __meta_consul_service_port]
+        regex: (.+);(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_consul_service]
+        regex: marschat-(.*)
+        target_label: service
+      - source_labels: [__meta_consul_service_id]
+        target_label: instance_id
+      # 不按健康状态过滤：被杀的实例在 Consul 中保持 critical（Kratos 默认 600 秒后注销），
+      # 留在目标中才能让 up == 0 触发 InstanceDown；正常停机的实例会先注销，不会告警。
+      # 健康状态也不作为标签：它一变，该实例的所有序列都会换一套标签。
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

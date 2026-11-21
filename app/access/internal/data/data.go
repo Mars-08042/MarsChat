@@ -27,6 +27,7 @@ import (
 	pkgconf "github.com/Mars-08042/MarsChat/pkg/conf"
 	"github.com/Mars-08042/MarsChat/pkg/middleware/retry"
 	"github.com/Mars-08042/MarsChat/pkg/route"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 // ProviderSet 是 data 层的依赖提供者。
@@ -126,14 +127,19 @@ type messageSender struct {
 // 按接口熔断，重试在外层。
 func NewMessageSender(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (biz.MessageSender, func(), error) {
 	c := bc.GetMessage()
+	// 链路追踪与请求指标放在重试、熔断之前，按整次调用统计
+	mws, err := telemetry.ClientMiddlewares()
+	if err != nil {
+		return nil, nil, err
+	}
 	conn, err := kgrpc.NewClient(context.Background(),
 		kgrpc.WithEndpoint(c.GetEndpoint()),
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
-		kgrpc.WithMiddleware(
+		kgrpc.WithMiddleware(append(mws,
 			retry.Client(messagev1.MessageInternalService_SendMessage_FullMethodName),
 			circuitbreaker.Client(),
-		),
+		)...),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create message client %s: %w", c.GetEndpoint(), err)
@@ -174,14 +180,19 @@ type callPermission struct {
 // CheckSendPermission 只读，连接级失败时重试一次；按接口熔断，重试在外层。
 func NewCallPermission(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (biz.CallPermission, func(), error) {
 	c := bc.GetSocial()
+	// 链路追踪与请求指标放在重试、熔断之前，按整次调用统计
+	mws, err := telemetry.ClientMiddlewares()
+	if err != nil {
+		return nil, nil, err
+	}
 	conn, err := kgrpc.NewClient(context.Background(),
 		kgrpc.WithEndpoint(c.GetEndpoint()),
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
-		kgrpc.WithMiddleware(
+		kgrpc.WithMiddleware(append(mws,
 			retry.Client(socialv1.SocialInternalService_CheckSendPermission_FullMethodName),
 			circuitbreaker.Client(),
-		),
+		)...),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create social client %s: %w", c.GetEndpoint(), err)
@@ -212,9 +223,13 @@ func (p *callPermission) CheckCall(ctx context.Context, callerID, calleeID int64
 }
 
 // NewForwarder 创建转发通话信令用的 access 直连客户端（pkg/accessclient），与 delivery 推送用的是同一套实现。
-func NewForwarder(bc *conf.Bootstrap, logger *slog.Logger) (biz.Forwarder, func()) {
+func NewForwarder(bc *conf.Bootstrap, logger *slog.Logger) (biz.Forwarder, func(), error) {
+	mws, err := telemetry.ClientMiddlewares()
+	if err != nil {
+		return nil, nil, err
+	}
 	c := bc.GetCall()
 	cooldown := c.GetForwardCooldown().AsDuration()
-	cl := accessclient.New(c.GetForwardTimeout().AsDuration(), func() time.Duration { return cooldown }, logger)
-	return cl, cl.Close
+	cl := accessclient.New(c.GetForwardTimeout().AsDuration(), func() time.Duration { return cooldown }, logger, mws...)
+	return cl, cl.Close, nil
 }

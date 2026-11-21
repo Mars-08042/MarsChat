@@ -1,4 +1,7 @@
 // Package ratelimit 实现基于 Redis 的滑动窗口限流，多个实例共享同一个计数。
+//
+// 指标 marschat_ratelimit_total{name, result}：name 取键名 <服务>:rl:<名字>:<对象> 中的名字，
+// 不含用户 ID 或 IP；result 为 allowed、rejected、error。
 package ratelimit
 
 import (
@@ -6,10 +9,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
+
+var decisionsCounter = telemetry.Int64Counter("marschat_ratelimit", "限流判断次数，按结果区分")
 
 // 滑动窗口日志：ZSET 中每个成员是一次请求，分数为请求时间（毫秒）。
 // 时间取 Redis 服务器的 TIME，避免多个实例之间的时钟差影响计数。
@@ -56,9 +66,30 @@ func (l *Limiter) Allow(ctx context.Context, key string, limit int, window time.
 	}
 	vals, err := slidingWindow.Run(ctx, l.rdb, []string{key}, window.Milliseconds(), limit, member).Int64Slice()
 	if err != nil {
+		record(ctx, key, "error")
 		return Result{}, fmt.Errorf("ratelimit %s: %w", key, err)
 	}
-	return Result{Allowed: vals[0] == 1, RetryAfter: time.Duration(vals[1]) * time.Millisecond}, nil
+	res := Result{Allowed: vals[0] == 1, RetryAfter: time.Duration(vals[1]) * time.Millisecond}
+	if res.Allowed {
+		record(ctx, key, "allowed")
+	} else {
+		record(ctx, key, "rejected")
+	}
+	return res, nil
+}
+
+func record(ctx context.Context, key, result string) {
+	decisionsCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("name", limitName(key)), attribute.String("result", result)))
+}
+
+// limitName 从 <服务>:rl:<名字>:<对象> 中取出名字作为指标标签；对象可能是 IPv6 地址，含冒号，所以只取第三段。
+// 不符合约定的键归为 other，避免把整个键（含用户 ID）放进标签。
+func limitName(key string) string {
+	parts := strings.SplitN(key, ":", 4)
+	if len(parts) < 4 || parts[1] != "rl" || parts[2] == "" {
+		return "other"
+	}
+	return parts[2]
 }
 
 // 同一毫秒内可能有多次请求，成员需要唯一

@@ -35,9 +35,11 @@ type Bootstrap struct {
 	Account  *Account               `protobuf:"bytes,7,opt,name=account,proto3" json:"account,omitempty"`
 	Cache    *Cache                 `protobuf:"bytes,8,opt,name=cache,proto3" json:"cache,omitempty"`
 	// 可热更新，见 Policy
-	Policy        *Policy      `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
-	Kafka         *conf.Kafka  `protobuf:"bytes,10,opt,name=kafka,proto3" json:"kafka,omitempty"`
-	Outbox        *conf.Outbox `protobuf:"bytes,11,opt,name=outbox,proto3" json:"outbox,omitempty"`
+	Policy *Policy      `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
+	Kafka  *conf.Kafka  `protobuf:"bytes,10,opt,name=kafka,proto3" json:"kafka,omitempty"`
+	Outbox *conf.Outbox `protobuf:"bytes,11,opt,name=outbox,proto3" json:"outbox,omitempty"`
+	// 指标与链路追踪
+	Telemetry     *conf.Telemetry `protobuf:"bytes,12,opt,name=telemetry,proto3" json:"telemetry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -145,6 +147,13 @@ func (x *Bootstrap) GetKafka() *conf.Kafka {
 func (x *Bootstrap) GetOutbox() *conf.Outbox {
 	if x != nil {
 		return x.Outbox
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetTelemetry() *conf.Telemetry {
+	if x != nil {
+		return x.Telemetry
 	}
 	return nil
 }
@@ -352,7 +361,7 @@ var File_social_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_social_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"\x1fsocial/internal/conf/conf.proto\x12\x14marschat.social.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xc3\x04\n" +
+	"\x1fsocial/internal/conf/conf.proto\x12\x14marschat.social.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xfb\x04\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -365,7 +374,8 @@ const file_social_internal_conf_conf_proto_rawDesc = "" +
 	"\x06policy\x18\t \x01(\v2\x1c.marschat.social.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x122\n" +
 	"\x05kafka\x18\n" +
 	" \x01(\v2\x14.marschat.conf.KafkaB\x06\xbaH\x03\xc8\x01\x01R\x05kafka\x125\n" +
-	"\x06outbox\x18\v \x01(\v2\x15.marschat.conf.OutboxB\x06\xbaH\x03\xc8\x01\x01R\x06outbox\"p\n" +
+	"\x06outbox\x18\v \x01(\v2\x15.marschat.conf.OutboxB\x06\xbaH\x03\xc8\x01\x01R\x06outbox\x126\n" +
+	"\ttelemetry\x18\f \x01(\v2\x18.marschat.conf.TelemetryR\ttelemetry\"p\n" +
 	"\aAccount\x12#\n" +
 	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
 	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"\xd8\x01\n" +
@@ -409,8 +419,9 @@ var file_social_internal_conf_conf_proto_goTypes = []any{
 	(*conf.Auth)(nil),           // 9: marschat.conf.Auth
 	(*conf.Kafka)(nil),          // 10: marschat.conf.Kafka
 	(*conf.Outbox)(nil),         // 11: marschat.conf.Outbox
-	(*durationpb.Duration)(nil), // 12: google.protobuf.Duration
-	(*conf.RateLimit)(nil),      // 13: marschat.conf.RateLimit
+	(*conf.Telemetry)(nil),      // 12: marschat.conf.Telemetry
+	(*durationpb.Duration)(nil), // 13: google.protobuf.Duration
+	(*conf.RateLimit)(nil),      // 14: marschat.conf.RateLimit
 }
 var file_social_internal_conf_conf_proto_depIdxs = []int32{
 	4,  // 0: marschat.social.conf.Bootstrap.server:type_name -> marschat.conf.Server
@@ -424,18 +435,19 @@ var file_social_internal_conf_conf_proto_depIdxs = []int32{
 	3,  // 8: marschat.social.conf.Bootstrap.policy:type_name -> marschat.social.conf.Policy
 	10, // 9: marschat.social.conf.Bootstrap.kafka:type_name -> marschat.conf.Kafka
 	11, // 10: marschat.social.conf.Bootstrap.outbox:type_name -> marschat.conf.Outbox
-	12, // 11: marschat.social.conf.Account.timeout:type_name -> google.protobuf.Duration
-	12, // 12: marschat.social.conf.Cache.group_ttl:type_name -> google.protobuf.Duration
-	12, // 13: marschat.social.conf.Cache.members_ttl:type_name -> google.protobuf.Duration
-	12, // 14: marschat.social.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
-	13, // 15: marschat.social.conf.Policy.friend_request:type_name -> marschat.conf.RateLimit
-	13, // 16: marschat.social.conf.Policy.group_create:type_name -> marschat.conf.RateLimit
-	13, // 17: marschat.social.conf.Policy.join_request:type_name -> marschat.conf.RateLimit
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	12, // 11: marschat.social.conf.Bootstrap.telemetry:type_name -> marschat.conf.Telemetry
+	13, // 12: marschat.social.conf.Account.timeout:type_name -> google.protobuf.Duration
+	13, // 13: marschat.social.conf.Cache.group_ttl:type_name -> google.protobuf.Duration
+	13, // 14: marschat.social.conf.Cache.members_ttl:type_name -> google.protobuf.Duration
+	13, // 15: marschat.social.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
+	14, // 16: marschat.social.conf.Policy.friend_request:type_name -> marschat.conf.RateLimit
+	14, // 17: marschat.social.conf.Policy.group_create:type_name -> marschat.conf.RateLimit
+	14, // 18: marschat.social.conf.Policy.join_request:type_name -> marschat.conf.RateLimit
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_social_internal_conf_conf_proto_init() }

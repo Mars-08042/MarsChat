@@ -5,6 +5,9 @@
 //   - 重建先清空过滤器再扫描全表，扫描期间并发加入的 ID 照常写入，不会丢失；
 //   - 就绪标记带 TTL，到期后重建一次，兜底 Redis 故障期间没能记下的漏加；
 //   - 多个实例用 Redis 锁保证同一时间只有一个在重建。
+//
+// 指标 marschat_bloom_checks_total{filter, result}：filter 为过滤器键名；result 为 reject（一定不存在，
+// 拦截了一次查库）、pass（可能存在）、bypass（过滤器不可用或未就绪，按可能存在放行）。
 package bloom
 
 import (
@@ -17,6 +20,10 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 const (
@@ -36,6 +43,8 @@ if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
 end
 return 0`)
+
+var checksCounter = telemetry.Int64Counter("marschat_bloom_checks", "布隆过滤器判断次数，按结果区分")
 
 // Options 是过滤器参数。
 type Options struct {
@@ -64,6 +73,9 @@ type Filter struct {
 	rebuilding atomic.Bool
 	mu         sync.Mutex
 	lastTry    time.Time
+
+	// 预先构造的指标标签
+	mPass, mReject, mBypass metric.AddOption
 }
 
 // New 创建过滤器，不访问 Redis。启动时调用 EnsureReady 检查是否需要重建。
@@ -74,6 +86,9 @@ func New(rdb redis.UniversalClient, opts Options, logger *slog.Logger) *Filter {
 	if opts.RebuildBackoff <= 0 {
 		opts.RebuildBackoff = defaultRebuildBackoff
 	}
+	opt := func(result string) metric.AddOption {
+		return metric.WithAttributeSet(attribute.NewSet(attribute.String("filter", opts.Key), attribute.String("result", result)))
+	}
 	return &Filter{
 		rdb:      rdb,
 		opts:     opts,
@@ -81,6 +96,9 @@ func New(rdb redis.UniversalClient, opts Options, logger *slog.Logger) *Filter {
 		dirtyKey: opts.Key + ":dirty",
 		lockKey:  opts.Key + ":rebuild",
 		logger:   logger.With(slog.String("component", "bloom"), slog.String("bloom_key", opts.Key)),
+		mPass:    opt("pass"),
+		mReject:  opt("reject"),
+		mBypass:  opt("bypass"),
 	}
 }
 
@@ -104,11 +122,13 @@ func (f *Filter) MightExist(ctx context.Context, id int64) bool {
 	has := pipe.Do(ctx, "BF.EXISTS", f.opts.Key, id)
 	if _, err := pipe.Exec(ctx); err != nil {
 		f.logger.Debug("bloom check failed", slog.Any("error", err))
+		checksCounter.Add(ctx, 1, f.mBypass)
 		return true
 	}
 	if ready.Val() == 0 || filter.Val() == 0 {
 		// 标记过期，或过滤器被淘汰而标记还在
 		f.rebuildAsync()
+		checksCounter.Add(ctx, 1, f.mBypass)
 		return true
 	}
 	// BF.EXISTS 在 RESP2 下返回整数、在 RESP3（go-redis v9 默认）下返回布尔值，Bool() 两种都能解析。
@@ -116,7 +136,13 @@ func (f *Filter) MightExist(ctx context.Context, id int64) bool {
 	v, err := has.Bool()
 	if err != nil {
 		f.logger.Warn("decode BF.EXISTS reply failed", slog.Any("error", err))
+		checksCounter.Add(ctx, 1, f.mBypass)
 		return true
+	}
+	if v {
+		checksCounter.Add(ctx, 1, f.mPass)
+	} else {
+		checksCounter.Add(ctx, 1, f.mReject)
 	}
 	return v
 }

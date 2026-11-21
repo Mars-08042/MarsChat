@@ -17,17 +17,23 @@ import (
 	"github.com/Mars-08042/MarsChat/app/message/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/message/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/middleware/retry"
+	"github.com/Mars-08042/MarsChat/pkg/telemetry"
 )
 
 // dial 创建经 Consul 发现的 gRPC 连接。连接是惰性的，依赖暂时不可用不影响启动；
 // 超时同时也是服务发现首次解析的等待上限，并覆盖重试在内的整次调用。
 // retryOps 是允许在连接级失败时重试一次的幂等方法；所有方法都按接口熔断，重试在外层。
 func dial(name string, c *conf.Upstream, r *consul.Registry, logger *slog.Logger, retryOps ...string) (*grpc.ClientConn, func(), error) {
+	// 链路追踪与请求指标放在重试、熔断之前，按整次调用统计
+	mws, err := telemetry.ClientMiddlewares()
+	if err != nil {
+		return nil, nil, err
+	}
 	conn, err := kgrpc.NewClient(context.Background(),
 		kgrpc.WithEndpoint(c.GetEndpoint()),
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
-		kgrpc.WithMiddleware(retry.Client(retryOps...), circuitbreaker.Client()),
+		kgrpc.WithMiddleware(append(mws, retry.Client(retryOps...), circuitbreaker.Client())...),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create %s client %s: %w", name, c.GetEndpoint(), err)

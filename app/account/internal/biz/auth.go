@@ -104,7 +104,7 @@ func (uc *AuthUsecase) Register(ctx context.Context, in RegisterInput) (*User, *
 			return err
 		}
 		var err error
-		pair, _, err = uc.startSession(ctx, u, in.Device, in.IP, now)
+		pair, err = uc.createSession(ctx, u, in.Device, in.IP, now)
 		return err
 	})
 	if err != nil {
@@ -215,13 +215,25 @@ func (uc *AuthUsecase) startSession(ctx context.Context, u *User, dev Device, ip
 			return nil, 0, err
 		}
 	}
-	sid, err := nextID(uc.ids)
+	pair, err := uc.createSession(ctx, u, dev, ip, now)
 	if err != nil {
 		return nil, 0, err
 	}
+	return pair, replaced, nil
+}
+
+// createSession 在事务中创建会话并签发令牌，不检查设备上的旧会话。
+// 注册时直接调用它：新用户不可能有会话，而吊销旧会话用的加锁查询查不到行时，InnoDB 会锁住
+// uk_user_active_device 中的间隙。新用户 ID 递增，并发注册都落在索引末尾的同一个间隙，
+// 各自持有间隙锁后再插入会话就互相等待，MySQL 报死锁（1213）。
+func (uc *AuthUsecase) createSession(ctx context.Context, u *User, dev Device, ip string, now time.Time) (*TokenPair, error) {
+	sid, err := nextID(uc.ids)
+	if err != nil {
+		return nil, err
+	}
 	secret, hash, err := newRefreshSecret()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	expires := now.Add(uc.tokens.refreshTTL)
 	s := &Session{
@@ -229,13 +241,9 @@ func (uc *AuthUsecase) startSession(ctx context.Context, u *User, dev Device, ip
 		LoginIP: ip, LastIP: ip, LastActiveAt: now, CreatedAt: now,
 	}
 	if err := uc.sessions.Create(ctx, s); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	pair, err := uc.tokens.issue(auth.Principal{UserID: u.ID, SessionID: sid, Role: u.Role}, secret, expires, now)
-	if err != nil {
-		return nil, 0, err
-	}
-	return pair, replaced, nil
+	return uc.tokens.issue(auth.Principal{UserID: u.ID, SessionID: sid, Role: u.Role}, secret, expires, now)
 }
 
 // Refresh 用刷新令牌换新的令牌对，并检测重放。

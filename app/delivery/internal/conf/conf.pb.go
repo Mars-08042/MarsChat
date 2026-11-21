@@ -26,7 +26,7 @@ const (
 
 type Bootstrap struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 只用 gRPC：没有业务接口，端口用于注册到 Consul 和健康检查
+	// 没有业务接口：HTTP 提供健康检查与 /metrics，并作为 Consul 中登记的地址；gRPC 只有 Kratos 内置的健康服务
 	Server   *conf.Server   `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
 	Registry *conf.Registry `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
 	Redis    *conf.Redis    `protobuf:"bytes,3,opt,name=redis,proto3" json:"redis,omitempty"`
@@ -36,7 +36,9 @@ type Bootstrap struct {
 	Social *Upstream `protobuf:"bytes,6,opt,name=social,proto3" json:"social,omitempty"`
 	Push   *Push     `protobuf:"bytes,7,opt,name=push,proto3" json:"push,omitempty"`
 	// 可热更新，见 Policy
-	Policy        *Policy `protobuf:"bytes,8,opt,name=policy,proto3" json:"policy,omitempty"`
+	Policy *Policy `protobuf:"bytes,8,opt,name=policy,proto3" json:"policy,omitempty"`
+	// 指标与链路追踪
+	Telemetry     *conf.Telemetry `protobuf:"bytes,9,opt,name=telemetry,proto3" json:"telemetry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -123,6 +125,13 @@ func (x *Bootstrap) GetPush() *Push {
 func (x *Bootstrap) GetPolicy() *Policy {
 	if x != nil {
 		return x.Policy
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetTelemetry() *conf.Telemetry {
+	if x != nil {
+		return x.Telemetry
 	}
 	return nil
 }
@@ -279,7 +288,7 @@ var File_delivery_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_delivery_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"!delivery/internal/conf/conf.proto\x12\x16marschat.delivery.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xb1\x03\n" +
+	"!delivery/internal/conf/conf.proto\x12\x16marschat.delivery.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xe9\x03\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -288,7 +297,8 @@ const file_delivery_internal_conf_conf_proto_rawDesc = "" +
 	"\x05kafka\x18\x05 \x01(\v2\x14.marschat.conf.KafkaB\x06\xbaH\x03\xc8\x01\x01R\x05kafka\x12@\n" +
 	"\x06social\x18\x06 \x01(\v2 .marschat.delivery.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\x06social\x128\n" +
 	"\x04push\x18\a \x01(\v2\x1c.marschat.delivery.conf.PushB\x06\xbaH\x03\xc8\x01\x01R\x04push\x12>\n" +
-	"\x06policy\x18\b \x01(\v2\x1e.marschat.delivery.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\"q\n" +
+	"\x06policy\x18\b \x01(\v2\x1e.marschat.delivery.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x126\n" +
+	"\ttelemetry\x18\t \x01(\v2\x18.marschat.conf.TelemetryR\ttelemetry\"q\n" +
 	"\bUpstream\x12#\n" +
 	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
 	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"Y\n" +
@@ -320,7 +330,8 @@ var file_delivery_internal_conf_conf_proto_goTypes = []any{
 	(*conf.Redis)(nil),          // 6: marschat.conf.Redis
 	(*conf.Log)(nil),            // 7: marschat.conf.Log
 	(*conf.Kafka)(nil),          // 8: marschat.conf.Kafka
-	(*durationpb.Duration)(nil), // 9: google.protobuf.Duration
+	(*conf.Telemetry)(nil),      // 9: marschat.conf.Telemetry
+	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
 }
 var file_delivery_internal_conf_conf_proto_depIdxs = []int32{
 	4,  // 0: marschat.delivery.conf.Bootstrap.server:type_name -> marschat.conf.Server
@@ -331,14 +342,15 @@ var file_delivery_internal_conf_conf_proto_depIdxs = []int32{
 	1,  // 5: marschat.delivery.conf.Bootstrap.social:type_name -> marschat.delivery.conf.Upstream
 	3,  // 6: marschat.delivery.conf.Bootstrap.push:type_name -> marschat.delivery.conf.Push
 	2,  // 7: marschat.delivery.conf.Bootstrap.policy:type_name -> marschat.delivery.conf.Policy
-	9,  // 8: marschat.delivery.conf.Upstream.timeout:type_name -> google.protobuf.Duration
-	9,  // 9: marschat.delivery.conf.Policy.push_cooldown:type_name -> google.protobuf.Duration
-	9,  // 10: marschat.delivery.conf.Push.timeout:type_name -> google.protobuf.Duration
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	9,  // 8: marschat.delivery.conf.Bootstrap.telemetry:type_name -> marschat.conf.Telemetry
+	10, // 9: marschat.delivery.conf.Upstream.timeout:type_name -> google.protobuf.Duration
+	10, // 10: marschat.delivery.conf.Policy.push_cooldown:type_name -> google.protobuf.Duration
+	10, // 11: marschat.delivery.conf.Push.timeout:type_name -> google.protobuf.Duration
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_delivery_internal_conf_conf_proto_init() }

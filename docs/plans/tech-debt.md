@@ -12,6 +12,13 @@
 
 ## 中
 
+### TD-42 delivery 全部停止后没有告警
+
+- 发现：2026-11-21，重构步骤 8 的积压告警实验
+- 位置：`pkg/kafka/lag.go` 的 `LagMonitor`（运行在 delivery 中）；`deploy/prometheus/rules.yml`
+- 现状：Kafka 积压由 delivery 用 kadm 统计。两个 delivery 实例都停止时，`marschat_kafka_consumer_lag` 随之消失，`KafkaConsumerLag` 不会触发，而这正是推送全部中断、积压最快增长的时候。`InstanceDown` 能覆盖前 10 分钟：被杀的实例在 Consul 中保持 critical，Prometheus 仍抓取并得到 `up == 0`；600 秒后实例注销，抓取目标消失，告警随之结束，之后没有任何告警。其他服务全部实例停止时同样如此。
+- 处理：加一条按服务检查的“没有存活实例”告警（例如对每个服务 `absent(up{job="marschat", service="delivery"} == 1)`，持续 1 分钟）；或者把积压统计移出 delivery（kafka-exporter，或其他常驻服务），让它不随消费者一起消失。
+
 ### TD-26 服务间 gRPC 调用没有认证
 
 - 发现：2026-11-18，重构步骤 2；步骤 3 新增 `SocialInternalService`；步骤 4 新增 `MessageInternalService`、`AccessInternalService`
@@ -41,6 +48,14 @@
 - 位置：`app/message/internal/biz/message.go` 的 `Send`
 - 现状：分配 seq 的事务锁会话行，按设计不会死锁（会话创建用 `ON DUPLICATE KEY UPDATE` 避免 `INSERT IGNORE` 的锁升级，存在性检查放在事务外）。但如果出现 MySQL 1213，错误不会被识别和重试，客户端收到 `500 INTERNAL`，需要用同一个 `client_msg_id` 重发。识别 1213 需要直接依赖 MySQL 驱动的错误类型，涉及 `go.mod`，暂未处理。并发 e2e 中没有出现过死锁。
 - 处理：压测（步骤 5）中观察到死锁时，在事务层对 1213 重试一次。
+- 2026-11-21 步骤 8 压测：1000 个连接、约每秒 1000 条单聊消息持续 60 秒，message 没有出现死锁。同类问题在 account 的注册中出现过（TD-40），登录还有残留风险（TD-43）。
+
+### TD-43 并发登录仍可能在会话唯一索引的间隙上死锁
+
+- 发现：2026-11-21，重构步骤 8 修复 TD-40 时分析
+- 位置：`app/account/internal/biz/auth.go` 的 `startSession`；`app/account/internal/data/session.go` 的 `RevokeActiveByDevice`
+- 现状：登录时用 `SELECT ... WHERE user_id = ? AND active_device = ? FOR UPDATE` 锁住该设备上的旧会话，查不到行时加的是间隙锁。两个用户的 ID 在索引中相邻、又同时用新设备登录时，两人要插入的键可能落在同一个间隙（前一个用户最后一条会话记录与后一个用户第一条会话记录之间），各自持有间隙锁后再插入就会死锁，其中一个返回 `500 INTERNAL`。注册已经不做这次查询（TD-40）；老用户都有会话记录，把索引分成各自的小间隙，并发登录撞上的概率很低，压测中没有出现。
+- 处理：与 TD-33 一起，在事务层识别 1213 并重试整个事务一次；或者登录改为先插入、靠唯一约束兜底（冲突时再吊销旧会话后重试）。
 
 ### TD-28 布隆过滤器加入失败的重试期间会把新 ID 判为不存在
 
@@ -64,6 +79,20 @@
 - 处理：读取 EXIF 方向（需要新的依赖或自己解析 APP1 段），解码后按方向旋转，再记录宽高。
 
 ## 已解决
+
+### TD-41 各服务连接池上限之和超过 MySQL 最大连接数
+
+- 发现：2026-11-21，重构步骤 8 压测 1000 个连接，0.25% 的发送失败，日志 `Error 1040: Too many connections`
+- 解决：2026-11-21，重构步骤 8
+- 原因：所有服务共用一个 MySQL，容器模式下各实例 `max_open_conns` 之和为 230（account 50、social 50、message 50 × 2、media 30），MySQL 默认最大连接数 151，峰值用到 152 条时新连接被拒绝。
+- 处理：先尝试把连接池缩小到合计 120，结果 message 每实例 30 条连接不够用，请求排队到超时，access 的熔断器打开，失败反而达到 2.7 万次。最终保留原来的连接池，MySQL 最大连接数调到 300（`compose.yaml` 的启动参数），再测峰值用到 158 条，没有错误。连接预算写进 [deployment.md](../deployment.md#容器模式)，增加实例或调大连接池时要同步核对。数据见[重构计划的压测结果](active/backend-refactor.md#压测结果)。
+
+### TD-40 并发注册在会话唯一索引的间隙上死锁
+
+- 发现：2026-11-21，重构步骤 8 压测准备数据，4 个并发注册有 3 个返回 `500 INTERNAL`（`Error 1213`）
+- 解决：2026-11-21，重构步骤 8
+- 原因：注册事务调用 `startSession`，先用 `SELECT ... FOR UPDATE` 锁住设备上的旧会话。新用户查不到行，InnoDB 加的是间隙锁；新用户 ID 递增，都落在 `uk_user_active_device` 末尾的同一个间隙，各自持有间隙锁后插入会话时互相等待。
+- 处理：`startSession` 拆出 `createSession`，注册直接调用它，不做加锁查询（新用户不可能有会话）。e2e 用例 `TestConcurrentRegister` 同时发 8 个注册请求；恢复旧代码时其中 2 个死锁，修复后全部成功。修复后 k6 并发注册 1000 个用户没有失败。登录仍有低概率的同类风险，见 TD-43。经过见 [lessons/innodb-gap-lock-register-deadlock.md](../lessons/innodb-gap-lock-register-deadlock.md)。
 
 ### TD-39 Redis 短暂停机后，节点号租约的下一轮续期可能晚于本地截止时间
 

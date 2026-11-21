@@ -19,6 +19,8 @@ message Bootstrap {
   Cache cache = 8 [(buf.validate.field).required = true];
   // 可热更新，见 Policy
   Policy policy = 9 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 10;
 }
 
 // Storage 选择文件存储后端，修改后需要重启。切换后端不迁移已有文件。

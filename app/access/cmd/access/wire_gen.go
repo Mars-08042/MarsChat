@@ -48,11 +48,24 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 		cleanup()
 		return nil, nil, err
 	}
-	forwarder, cleanup4 := data.NewForwarder(confBootstrap, logger)
+	forwarder, cleanup4, err := data.NewForwarder(confBootstrap, logger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	calls := biz.NewCalls(call, webSocket, callRepo, callPermission, routeRepo, forwarder, logger)
 	hub := biz.NewHub(webSocket, policyHolder, authenticator, routeRepo, messageSender, calls, logger)
 	internalService := service.NewInternalService(hub)
-	grpcServer := server.NewGRPCServer(confServer, internalService, logger)
+	grpcServer, err := server.NewGRPCServer(confServer, internalService, logger)
+	if err != nil {
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	dataData := data.NewData(client)
 	httpServer := server.NewHTTPServer(confServer, dataData, hub, logger)
 	app := newApp(logger, consulRegistry, grpcServer, httpServer, hub, routeRepo)

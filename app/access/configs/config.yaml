@@ -68,3 +68,10 @@ websocket:
 # 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
 policy:
   frames_per_second: 30
+
+# 指标与链路追踪，修改后需要重启。指标始终在 HTTP 端口的 /metrics 上暴露（Prometheus 抓取）；
+# Trace 只在设置了 OTLP 地址时导出，容器模式下为 jaeger:4317，宿主机运行时可设为 127.0.0.1:14317。
+telemetry:
+  otlp_endpoint: ${OTLP_ENDPOINT:}
+  # 采样比例 0～1；上游已采样的请求跟随上游的决定。压测时调低，避免 Jaeger 内存上涨
+  sample_ratio: ${TRACE_SAMPLE_RATIO:1}

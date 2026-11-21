@@ -41,8 +41,10 @@ type Bootstrap struct {
 	// 只有其他服务要经 NAT 等不同地址访问本实例时才需要填写。
 	AdvertiseAddr string `protobuf:"bytes,9,opt,name=advertise_addr,json=advertiseAddr,proto3" json:"advertise_addr,omitempty"`
 	// 呼叫前校验权限（好友且未拉黑）
-	Social        *Upstream `protobuf:"bytes,10,opt,name=social,proto3" json:"social,omitempty"`
-	Call          *Call     `protobuf:"bytes,11,opt,name=call,proto3" json:"call,omitempty"`
+	Social *Upstream `protobuf:"bytes,10,opt,name=social,proto3" json:"social,omitempty"`
+	Call   *Call     `protobuf:"bytes,11,opt,name=call,proto3" json:"call,omitempty"`
+	// 指标与链路追踪
+	Telemetry     *conf.Telemetry `protobuf:"bytes,12,opt,name=telemetry,proto3" json:"telemetry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -150,6 +152,13 @@ func (x *Bootstrap) GetSocial() *Upstream {
 func (x *Bootstrap) GetCall() *Call {
 	if x != nil {
 		return x.Call
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetTelemetry() *conf.Telemetry {
+	if x != nil {
+		return x.Telemetry
 	}
 	return nil
 }
@@ -425,7 +434,7 @@ var File_access_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"\x1faccess/internal/conf/conf.proto\x12\x14marschat.access.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xd8\x04\n" +
+	"\x1faccess/internal/conf/conf.proto\x12\x14marschat.access.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\x90\x05\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -438,7 +447,8 @@ const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\x0eadvertise_addr\x18\t \x01(\tR\radvertiseAddr\x12>\n" +
 	"\x06social\x18\n" +
 	" \x01(\v2\x1e.marschat.access.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\x06social\x126\n" +
-	"\x04call\x18\v \x01(\v2\x1a.marschat.access.conf.CallB\x06\xbaH\x03\xc8\x01\x01R\x04call\"q\n" +
+	"\x04call\x18\v \x01(\v2\x1a.marschat.access.conf.CallB\x06\xbaH\x03\xc8\x01\x01R\x04call\x126\n" +
+	"\ttelemetry\x18\f \x01(\v2\x18.marschat.conf.TelemetryR\ttelemetry\"q\n" +
 	"\bUpstream\x12#\n" +
 	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
 	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"\x98\x05\n" +
@@ -486,7 +496,8 @@ var file_access_internal_conf_conf_proto_goTypes = []any{
 	(*conf.Redis)(nil),          // 7: marschat.conf.Redis
 	(*conf.Log)(nil),            // 8: marschat.conf.Log
 	(*conf.Auth)(nil),           // 9: marschat.conf.Auth
-	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
+	(*conf.Telemetry)(nil),      // 10: marschat.conf.Telemetry
+	(*durationpb.Duration)(nil), // 11: google.protobuf.Duration
 }
 var file_access_internal_conf_conf_proto_depIdxs = []int32{
 	5,  // 0: marschat.access.conf.Bootstrap.server:type_name -> marschat.conf.Server
@@ -499,20 +510,21 @@ var file_access_internal_conf_conf_proto_depIdxs = []int32{
 	4,  // 7: marschat.access.conf.Bootstrap.policy:type_name -> marschat.access.conf.Policy
 	1,  // 8: marschat.access.conf.Bootstrap.social:type_name -> marschat.access.conf.Upstream
 	3,  // 9: marschat.access.conf.Bootstrap.call:type_name -> marschat.access.conf.Call
-	10, // 10: marschat.access.conf.Upstream.timeout:type_name -> google.protobuf.Duration
-	10, // 11: marschat.access.conf.WebSocket.auth_timeout:type_name -> google.protobuf.Duration
-	10, // 12: marschat.access.conf.WebSocket.heartbeat_interval:type_name -> google.protobuf.Duration
-	10, // 13: marschat.access.conf.WebSocket.heartbeat_timeout:type_name -> google.protobuf.Duration
-	10, // 14: marschat.access.conf.WebSocket.write_timeout:type_name -> google.protobuf.Duration
-	10, // 15: marschat.access.conf.WebSocket.drain_window:type_name -> google.protobuf.Duration
-	10, // 16: marschat.access.conf.Call.ring_timeout:type_name -> google.protobuf.Duration
-	10, // 17: marschat.access.conf.Call.forward_timeout:type_name -> google.protobuf.Duration
-	10, // 18: marschat.access.conf.Call.forward_cooldown:type_name -> google.protobuf.Duration
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	10, // 10: marschat.access.conf.Bootstrap.telemetry:type_name -> marschat.conf.Telemetry
+	11, // 11: marschat.access.conf.Upstream.timeout:type_name -> google.protobuf.Duration
+	11, // 12: marschat.access.conf.WebSocket.auth_timeout:type_name -> google.protobuf.Duration
+	11, // 13: marschat.access.conf.WebSocket.heartbeat_interval:type_name -> google.protobuf.Duration
+	11, // 14: marschat.access.conf.WebSocket.heartbeat_timeout:type_name -> google.protobuf.Duration
+	11, // 15: marschat.access.conf.WebSocket.write_timeout:type_name -> google.protobuf.Duration
+	11, // 16: marschat.access.conf.WebSocket.drain_window:type_name -> google.protobuf.Duration
+	11, // 17: marschat.access.conf.Call.ring_timeout:type_name -> google.protobuf.Duration
+	11, // 18: marschat.access.conf.Call.forward_timeout:type_name -> google.protobuf.Duration
+	11, // 19: marschat.access.conf.Call.forward_cooldown:type_name -> google.protobuf.Duration
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_access_internal_conf_conf_proto_init() }

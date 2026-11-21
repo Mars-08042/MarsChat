@@ -35,7 +35,9 @@ type Bootstrap struct {
 	Storage  *Storage               `protobuf:"bytes,7,opt,name=storage,proto3" json:"storage,omitempty"`
 	Cache    *Cache                 `protobuf:"bytes,8,opt,name=cache,proto3" json:"cache,omitempty"`
 	// 可热更新，见 Policy
-	Policy        *Policy `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
+	Policy *Policy `protobuf:"bytes,9,opt,name=policy,proto3" json:"policy,omitempty"`
+	// 指标与链路追踪
+	Telemetry     *conf.Telemetry `protobuf:"bytes,10,opt,name=telemetry,proto3" json:"telemetry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -129,6 +131,13 @@ func (x *Bootstrap) GetCache() *Cache {
 func (x *Bootstrap) GetPolicy() *Policy {
 	if x != nil {
 		return x.Policy
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetTelemetry() *conf.Telemetry {
+	if x != nil {
+		return x.Telemetry
 	}
 	return nil
 }
@@ -518,7 +527,7 @@ var File_media_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_media_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"\x1emedia/internal/conf/conf.proto\x12\x13marschat.media.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xd5\x03\n" +
+	"\x1emedia/internal/conf/conf.proto\x12\x13marschat.media.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\x8d\x04\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -528,7 +537,9 @@ const file_media_internal_conf_conf_proto_rawDesc = "" +
 	"\x04auth\x18\x06 \x01(\v2\x13.marschat.conf.AuthB\x06\xbaH\x03\xc8\x01\x01R\x04auth\x12>\n" +
 	"\astorage\x18\a \x01(\v2\x1c.marschat.media.conf.StorageB\x06\xbaH\x03\xc8\x01\x01R\astorage\x128\n" +
 	"\x05cache\x18\b \x01(\v2\x1a.marschat.media.conf.CacheB\x06\xbaH\x03\xc8\x01\x01R\x05cache\x12;\n" +
-	"\x06policy\x18\t \x01(\v2\x1b.marschat.media.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\"\x96\x01\n" +
+	"\x06policy\x18\t \x01(\v2\x1b.marschat.media.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x126\n" +
+	"\ttelemetry\x18\n" +
+	" \x01(\v2\x18.marschat.conf.TelemetryR\ttelemetry\"\x96\x01\n" +
 	"\aStorage\x12-\n" +
 	"\bprovider\x18\x01 \x01(\tB\x11\xbaH\x0er\fR\x05localR\x03ossR\bprovider\x120\n" +
 	"\x05local\x18\x02 \x01(\v2\x1a.marschat.media.conf.LocalR\x05local\x12*\n" +
@@ -587,8 +598,9 @@ var file_media_internal_conf_conf_proto_goTypes = []any{
 	(*conf.Redis)(nil),          // 9: marschat.conf.Redis
 	(*conf.Log)(nil),            // 10: marschat.conf.Log
 	(*conf.Auth)(nil),           // 11: marschat.conf.Auth
-	(*durationpb.Duration)(nil), // 12: google.protobuf.Duration
-	(*conf.RateLimit)(nil),      // 13: marschat.conf.RateLimit
+	(*conf.Telemetry)(nil),      // 12: marschat.conf.Telemetry
+	(*durationpb.Duration)(nil), // 13: google.protobuf.Duration
+	(*conf.RateLimit)(nil),      // 14: marschat.conf.RateLimit
 }
 var file_media_internal_conf_conf_proto_depIdxs = []int32{
 	6,  // 0: marschat.media.conf.Bootstrap.server:type_name -> marschat.conf.Server
@@ -600,17 +612,18 @@ var file_media_internal_conf_conf_proto_depIdxs = []int32{
 	1,  // 6: marschat.media.conf.Bootstrap.storage:type_name -> marschat.media.conf.Storage
 	4,  // 7: marschat.media.conf.Bootstrap.cache:type_name -> marschat.media.conf.Cache
 	5,  // 8: marschat.media.conf.Bootstrap.policy:type_name -> marschat.media.conf.Policy
-	2,  // 9: marschat.media.conf.Storage.local:type_name -> marschat.media.conf.Local
-	3,  // 10: marschat.media.conf.Storage.oss:type_name -> marschat.media.conf.Oss
-	12, // 11: marschat.media.conf.Cache.file_ttl:type_name -> google.protobuf.Duration
-	12, // 12: marschat.media.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
-	12, // 13: marschat.media.conf.Policy.download_url_ttl:type_name -> google.protobuf.Duration
-	13, // 14: marschat.media.conf.Policy.upload_limit:type_name -> marschat.conf.RateLimit
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	12, // 9: marschat.media.conf.Bootstrap.telemetry:type_name -> marschat.conf.Telemetry
+	2,  // 10: marschat.media.conf.Storage.local:type_name -> marschat.media.conf.Local
+	3,  // 11: marschat.media.conf.Storage.oss:type_name -> marschat.media.conf.Oss
+	13, // 12: marschat.media.conf.Cache.file_ttl:type_name -> google.protobuf.Duration
+	13, // 13: marschat.media.conf.Cache.null_ttl:type_name -> google.protobuf.Duration
+	13, // 14: marschat.media.conf.Policy.download_url_ttl:type_name -> google.protobuf.Duration
+	14, // 15: marschat.media.conf.Policy.upload_limit:type_name -> marschat.conf.RateLimit
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_media_internal_conf_conf_proto_init() }

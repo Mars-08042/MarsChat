@@ -95,6 +95,17 @@ message Kafka {
   }];
 }
 
+// Telemetry 是指标与链路追踪配置，修改后需要重启。指标始终在 HTTP 端口的 /metrics 上暴露，不受这里控制。
+message Telemetry {
+  // OTLP gRPC 地址，例如 jaeger:4317；为空时不导出 Trace（Span 上下文照常向下游传播）
+  string otlp_endpoint = 1;
+  // Trace 采样比例，0～1，不填时为 1。上游已经采样的请求跟随上游的决定
+  optional double sample_ratio = 2 [(buf.validate.field).double = {
+    gte: 0
+    lte: 1
+  }];
+}
+
 // Outbox 是 Outbox 发布器配置，修改后需要重启。
 message Outbox {
   // 没有收到进程内唤醒时的轮询间隔

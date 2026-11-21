@@ -26,6 +26,8 @@ message Bootstrap {
   // 呼叫前校验权限（好友且未拉黑）
   Upstream social = 10 [(buf.validate.field).required = true];
   Call call = 11 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 12;
 }
 
 // Upstream 是调用其他服务的配置，修改后需要重启。

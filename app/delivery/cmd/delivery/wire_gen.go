@@ -25,11 +25,12 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 	if err != nil {
 		return nil, nil, err
 	}
-	grpcServer := server.NewGRPCServer(confServer)
 	client, cleanup, err := bootstrap.NewRedis(redis, logger)
 	if err != nil {
 		return nil, nil, err
 	}
+	httpServer := server.NewHTTPServer(confServer, client, logger)
+	grpcServer := server.NewGRPCServer(confServer)
 	routeRepo := data.NewRouteRepo(client)
 	deduper := data.NewDeduper(client)
 	groupMembers, cleanup2, err := data.NewGroupMembers(confBootstrap, consulRegistry, logger)
@@ -37,7 +38,12 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 		cleanup()
 		return nil, nil, err
 	}
-	pusher, cleanup3 := data.NewPusher(push, policyHolder, logger)
+	pusher, cleanup3, err := data.NewPusher(push, policyHolder, logger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	deliveryUsecase := biz.NewDeliveryUsecase(routeRepo, deduper, groupMembers, pusher, logger)
 	consumer, cleanup4, err := server.NewEventConsumer(kafka, deliveryUsecase, logger)
 	if err != nil {
@@ -46,8 +52,17 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 		cleanup()
 		return nil, nil, err
 	}
-	app := newApp(logger, consulRegistry, grpcServer, consumer)
+	lagMonitor, cleanup5, err := server.NewLagMonitor(kafka, logger)
+	if err != nil {
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	app := newApp(logger, consulRegistry, httpServer, grpcServer, consumer, lagMonitor)
 	return app, func() {
+		cleanup5()
 		cleanup4()
 		cleanup3()
 		cleanup2()

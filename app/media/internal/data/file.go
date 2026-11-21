@@ -84,6 +84,7 @@ func NewFileRepo(d *Data, c *conf.Cache, logger *slog.Logger) biz.FileRepo {
 	return &fileRepo{
 		d: d,
 		cache: cache.New[cachedFile](d.rdb, cache.Options{
+			Name:    "media_file",
 			TTL:     c.GetFileTtl().AsDuration(),
 			NullTTL: c.GetNullTtl().AsDuration(),
 		}, logger),

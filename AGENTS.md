@@ -6,7 +6,7 @@
 
 - MarsChat：Web 即时通讯系统，正在 `dev` 分支重构。后端用 Kratos v3 重写为微服务（access、account、social、message、delivery、media），接口用 protobuf 定义；旧的 Gin 单体和 Vue 前端已移除，前端之后用 React + pnpm 重写。
 - 重构步骤与进度见 [docs/plans/active/backend-refactor.md](docs/plans/active/backend-refactor.md)，目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)、[ADR-0006](docs/architecture/adr/0006-message-sync-model.md) 和 [架构图](docs/images/proposed-distributed-architecture.svg)。
-- Go module 为 `github.com/Mars-08042/MarsChat`。依赖组件由 Compose 提供：MySQL、Redis、Kafka、Consul、APISIX，后续步骤引入监控组件。文件存储默认用仓库下的本地目录，可切换为阿里云 OSS（[ADR-0007](docs/architecture/adr/0007-object-storage.md)）。
+- Go module 为 `github.com/Mars-08042/MarsChat`。依赖组件由 Compose 提供：MySQL、Redis、Kafka、Consul、APISIX；监控组件（Prometheus、Alertmanager、Grafana、Jaeger）和压测工具 k6 在单独的 profile 中，见 [deployment.md](docs/deployment.md)。文件存储默认用仓库下的本地目录，可切换为阿里云 OSS（[ADR-0007](docs/architecture/adr/0007-object-storage.md)）。
 - 标有“重构说明”的文档描述的是已移除的旧基线，只作功能参考，不代表当前代码。
 
 ## 文档导航

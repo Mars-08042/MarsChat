@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
+> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
 
 ## 运行依赖
 
@@ -19,14 +19,14 @@
 
 | 组件 | 镜像 | 宿主机地址 | 说明 |
 |---|---|---|---|
-| MySQL | `mysql:9.7.4` | `127.0.0.1:13306` | 首次初始化时为每个服务建库建账号，见 [data-model.md](architecture/data-model.md#1-数据库与账号) |
+| MySQL | `mysql:9.7.4` | `127.0.0.1:13306` | 首次初始化时为每个服务建库建账号，见 [data-model.md](architecture/data-model.md#1-数据库与账号)。启动参数：慢查询日志（超过 200 毫秒，见“慢查询日志”）、最大连接数 300（见“容器模式”的连接预算）；修改参数需要重建容器（`docker compose up -d --wait mysql`），数据卷保留 |
 | Redis | `redis:8.8.4` | `127.0.0.1:16379` | 开启 AOF 持久化和密码；加载镜像自带的 RedisBloom 模块（用户、群 ID 布隆过滤器）。**最低 8.0**：在线路由用 `HSETEX` 设置 Hash 字段级 TTL |
 | Kafka | `apache/kafka:4.4.0` | `127.0.0.1:19092` | 单节点 KRaft；容器网络内地址为 `kafka:29092`；关闭自动建 topic，topic 由 `kafka-init` 显式创建；堆内存限制为 512 MiB（镜像默认 1 GiB，Docker Desktop 虚拟机只有 3.8 GiB） |
 | topic 初始化 | `apache/kafka:4.4.0` | — | `kafka-init` 一次性任务，带 profile，由 `make up` 在依赖组件健康后执行：`kafka-topics.sh --create --if-not-exists` 创建 `marschat.account.events`（3 分区）、`marschat.social.events`（6）、`marschat.message.events`（12）、重试队列 `marschat.social-cache.retry`（3）、死信队列 `marschat.dlq`（3，保留 14 天），以及 e2e 专用的 `marschat.e2e.events`、`marschat.e2e.retry`（各 3），副本数 1；重复执行不会报错，已有环境新增 topic 时执行一次 `docker compose run --rm kafka-init` |
 | Consul | `hashicorp/consul:2.1.0` | `127.0.0.1:18500` | 单节点 server，带 Web UI |
 | 迁移任务 | `migrate/migrate:v4.20.1` | — | `migrate-<服务>` 一次性任务，带 profile，`make up` 不启动，见“数据库迁移” |
 
-后续步骤引入的组件和全部应用端口见 [重构计划的端口表](plans/active/backend-refactor.md#端口)。
+监控组件（profile `monitoring`）见“监控”，压测工具 k6（profile `loadtest`）见“压测”；全部应用端口见 [重构计划的端口表](plans/active/backend-refactor.md#端口)。
 
 ## 首次配置
 
@@ -47,10 +47,11 @@ make keys    # 生成 JWT 密钥对和 media 下载地址签名密钥并追加�
 | `MARSCHAT_JWT_PRIVATE_KEY` | Ed25519 私钥种子（32 字节）的 base64，只有 account 使用。由 `make keys` 生成，更换后已签发的令牌全部失效 |
 | `MARSCHAT_JWT_PUBLIC_KEY` | 对应的公钥 base64，所有服务用来校验访问令牌；account 启动时检查它与私钥匹配 |
 | `MARSCHAT_MEDIA_URL_SECRET` | media 本地存储下载地址的 HMAC 签名密钥（32 字节随机数的 base64），由 `make keys` 生成。使用 OSS 时不需要，见“文件存储” |
+| `MARSCHAT_GRAFANA_ADMIN_PASSWORD` | Grafana 管理员 `admin` 的密码（24 字节随机数的 base64url），由 `make keys` 生成，只用于修改面板；查看面板不需要登录，见“监控” |
 
 MySQL 的建库脚本和 root 密码只在数据卷**首次初始化**时生效，之后修改 `.env` 不会改变已有账号的密码。需要重置时见“停止与重置”。
 
-**Docker Desktop 文件共享**：本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录前需要在 Settings → Resources → File sharing 中加入该目录，否则 Docker Desktop 会弹窗询问，确认前 `docker compose up` 会一直卡住。建议直接加入项目根目录，APISIX 的配置、media 的 `data/media` 目录和后续 Prometheus 的配置挂载都会用到。WSL 2 后端不需要这一步。排查过程见 [lessons/docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md)。
+**Docker Desktop 文件共享**：本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录前需要在 Settings → Resources → File sharing 中加入该目录，否则 Docker Desktop 会弹窗询问，确认前 `docker compose up` 会一直卡住。建议直接加入项目根目录，APISIX、Prometheus、Grafana、Jaeger 的配置，media 的 `data/media` 目录和压测的 `test/load`、`tmp/load` 都会挂载。WSL 2 后端不需要这一步。排查过程见 [lessons/docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md)。
 
 ## 启动依赖组件
 
@@ -75,6 +76,8 @@ make migrate-account ARGS="version"     # 查看当前版本
 ```
 
 迁移记录在各库的 `schema_migrations` 表。首次运行会拉取 `migrate/migrate` 镜像；迁移目录通过 bind mount 挂载，Docker Desktop 需要共享项目根目录（见“首次配置”）。
+
+**升级顺序**：先迁移，再换新版本的服务。例如步骤 8 给 account、social、message 的 `outbox_events` 加了 `trace_parent` 列，新版本的服务写入这一列，没迁移的库会让写事件的事务全部失败；反过来，迁移后旧版本的服务照常运行（新列有默认值）。
 
 ## 运行服务
 
@@ -151,7 +154,7 @@ make cluster-down       # 只删除应用服务和网关的容器，依赖组件
 | account | 1 | HTTP 18010、gRPC 19010 |
 | social | 1 | HTTP 18020、gRPC 19020 |
 | message | 2 | HTTP 18030、gRPC 19030 |
-| delivery | 2 | gRPC 19040 |
+| delivery | 2 | HTTP 18040（探针与 `/metrics`）、gRPC 19040 |
 | access | 2 | HTTP 18000（WebSocket）、gRPC 19100 |
 | media | 1 | HTTP 18050、gRPC 19050；挂载仓库的 `data/media`（本地存储） |
 | apisix（网关） | 1 | 9080、9443，发布到宿主机 `127.0.0.1:19080`、`127.0.0.1:19443`；固定 IP `172.30.0.10` |
@@ -161,7 +164,8 @@ make cluster-down       # 只删除应用服务和网关的容器，依赖组件
 - **镜像**：运行镜像为 `gcr.io/distroless/static-debian13:nonroot`，按 digest 锁定（见 [Dockerfile](../deploy/docker/Dockerfile)），没有 shell，不能 `docker exec` 进去排查；需要在网络内发请求时，临时起一个带 curl 的容器加入 `marschat_default` 网络。二进制默认按 amd64 编译，ARM 机器用 `make images IMAGE_ARCH=arm64`。
 - **注册与健康检查**：容器内开启 Consul 的 TCP 检查，间隔 3 秒（`MARSCHAT_CONSUL_TCP_CHECK_INTERVAL`），TTL 心跳超时 6 秒，实例被杀后几秒内从发现结果中消失。HTTP 端点排在第一个，Consul 中服务的 `Address:Port` 是 HTTP 端口，网关按它转发。
 - **资源**：每个应用容器限制 256 MiB 内存；media 解码图片占内存较多，限制为 384 MiB，并设置 `GOMEMLIMIT=320MiB`，让 GC 在接近上限前回收。2026-11-21 实测：media 空闲约 18 MiB，并发上传 1590 万像素的 16 位 PNG 时进程峰值 335 MiB（设计 [media-service.md](design/media-service.md) 第 10 节）；包括 media 在内，MarsChat 全部容器空闲时合计约 1.2 GiB。2026-11-19 实测：应用容器各 15～56 MiB，Kafka 512 MiB、MySQL 452 MiB，MarsChat 合计约 1.2 GiB。
-- **日志**：JSON 格式，`docker compose logs -f access` 查看；同一服务的多个实例日志会合并输出，容器名区分实例。
+- **数据库连接预算**：所有服务共用一个 MySQL，各实例连接池上限（`mysql.max_open_conns`）之和为 230：account 50、social 50、message 50 × 2、media 30。MySQL 最大连接数设为 300，留出余量给迁移和排查。增加实例或调大连接池时要同步核对：超过上限时 MySQL 直接拒绝连接（`Error 1040: Too many connections`），请求返回 500。2026-11-21 压测 1000 条连接时 MySQL 峰值用到 158 条，默认的 151 已经不够；把连接池缩小到合计 120 反而让 message 排队超时，触发 access 的熔断，见[重构计划的压测结果](plans/active/backend-refactor.md#压测结果)。
+- **日志**：JSON 格式，`docker compose logs -f access` 查看；同一服务的多个实例日志会合并输出，容器名区分实例。日志带 `trace_id`、`span_id` 时可以到 Jaeger 中查看整条链路，见“监控”。
 - **配置热更新**：配置目录挂载自宿主机，修改 `policy` 段后容器内同样自动生效（2026-11-19 验证，0.5 秒内出现 `config reloaded`）。
 - **故障实验**：`make cluster-test` 包含 7 项故障实验，全部运行约 4 分钟。实验会对 MarsChat 自己的容器执行 `docker kill`、`restart`、`pause`、`stop`（access、delivery、message、Kafka、Redis），结束时（包括失败）恢复并等待其在 Consul 中恢复 passing 或健康检查通过。实验期间不要同时使用这套环境。只跑集群测试时加 `-short`：`set -a && . ./.env && set +a && go test -tags cluster -short -v ./test/cluster/...`。实验结果见[重构计划](plans/active/backend-refactor.md#故障实验结果)。
 
@@ -171,8 +175,8 @@ APISIX `3.20.0`（镜像 `apache/apisix:3.20.0-debian`），Standalone 模式：
 
 | 文件 | 内容 | 生效方式 |
 |---|---|---|
-| `config.yaml` | 监听端口、Consul 发现、启用的插件、worker 数（2） | 重启容器 |
-| `apisix.yaml` | 路由、上游、证书、限流，文件以 `#END` 结尾 | **热更新**：保存后约 1 秒内生效，日志出现 `apisix.yaml reloaded` |
+| `config.yaml` | 监听端口、Consul 发现、启用的插件（`limit-req`、`limit-count`、`limit-conn`、`client-control`、`real-ip`）、worker 数（2） | 重启容器 |
+| `apisix.yaml` | 路由、上游、证书、限流、全局规则，文件以 `#END` 结尾 | **热更新**：保存后约 1 秒内生效，日志出现 `apisix.yaml reloaded` |
 | `certs/` | `make certs` 生成的自签证书（`localhost`、`127.0.0.1`），被 git 忽略 | 重启容器 |
 
 路由（未列出的路径由网关返回 404，`/healthz`、`/readyz` 不对外）：
@@ -188,6 +192,7 @@ APISIX `3.20.0`（镜像 `apache/apisix:3.20.0-debian`），Standalone 模式：
 - **服务发现**：按服务名取 Consul 中检查通过的实例，节点为服务的 `Address:Port`（HTTP 端口）。阻塞查询，实例变化约 1 秒内同步。HTTP 上游连接失败时换节点重试一次。2026-11-19 实测：杀掉一个 message 实例后连续请求没有失败，只有约 5 秒内的两个请求因 2 秒连接超时后重试而变慢；实例重启后约 2.5 秒重新接到流量。
 - **入口限流**（按客户端 IP，超限返回 429）：全部 HTTP 接口每秒 50 次、突发 100；`/v1/auth/*` 另加每分钟 60 次；`/ws` 每个 IP 最多 50 条并发连接、每秒 10 次握手。计数在网关进程内。
 - **客户端 IP**：经 Docker Desktop 端口转发访问时，本机所有请求的来源地址都是 compose 网络的网关 `172.30.0.128`，限流对本机流量相当于全局限流；account 看到的客户端 IP 也是它，集群测试清理的是这个 IP 的限流计数。
+- **压测来源**：全局规则 `real-ip` 只对 k6 容器的固定 IP `172.30.0.20` 信任 `X-Forwarded-For`，把其中最后一个地址作为 `remote_addr`；k6 给每个虚拟客户端分配 `198.18.0.0/15`（RFC 2544 基准测试网段）中的不同地址，网关和 account 的按 IP 限流按虚拟客户端生效。其他来源带的 `X-Forwarded-For` 不改变 `remote_addr`。这个地址在固定地址段中，不会被动态分配给其他容器。
 - **TLS**：`https://localhost:19443`、`wss://localhost:19443/ws`；用 IP 访问时按 `localhost` 匹配证书。证书经启动命令读入环境变量，由 `apisix.yaml` 用 `$env://` 引用。curl 需要指定证书：
 
 ```bash
@@ -196,6 +201,60 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 
 - **新增插件**：`config.yaml` 的插件列表要重启网关才生效（`docker compose --profile apps restart apisix`），而 `apisix.yaml` 是热更新的。在重启前就引用新插件的路由会被单独拒绝（错误日志 `unknown plugin`），其他路由不受影响；重启后正常。media 路由用到的 `client-control`（请求体上限）就是这样加入的。
 - **日志**：`docker compose logs -f apisix`，访问日志和错误日志都输出到容器的标准输出。
+
+## 监控
+
+监控组件在 profile `monitoring` 中，只能抓取容器模式的服务（宿主机运行的服务注册的是 `127.0.0.1`，容器访问不到；需要时直接 `curl http://127.0.0.1:<HTTP 端口>/metrics`）。设计见 [observability.md](design/observability.md)。
+
+```bash
+make cluster-up        # 先启动容器模式
+make monitoring-up     # 检查 .env 中有 Grafana 管理员密码，再启动并等待健康检查通过
+make monitoring-down   # 删除监控组件的容器，Prometheus 数据卷保留
+```
+
+| 组件 | 镜像 | 宿主机地址 | 内存限制 | 说明 |
+|---|---|---|---|---|
+| Prometheus | `prom/prometheus:v3.16.0` | <http://127.0.0.1:19090> | 256 MiB | 经 Consul 发现 `marschat-*` 服务的全部实例，每 5 秒抓取 HTTP 端口的 `/metrics`；数据保留 3 天或 1 GB，卷 `prometheus-data`；告警规则每 5 秒计算一次 |
+| Alertmanager | `prom/alertmanager:v0.35.0` | <http://127.0.0.1:19093> | 64 MiB | 接收告警，按告警名和服务分组，不发外部通知 |
+| Grafana | `grafana/grafana:13.3.1` | <http://127.0.0.1:13000> | 384 MiB（`GOMEMLIMIT=320MiB`） | 匿名只读；预置数据源 Prometheus、Alertmanager 和面板“MarsChat 总览”；管理员 `admin`，密码为 `.env` 中的 `MARSCHAT_GRAFANA_ADMIN_PASSWORD` |
+| Jaeger | `jaegertracing/jaeger:2.23.0` | UI <http://127.0.0.1:26686>；OTLP `127.0.0.1:14317`（gRPC）、`127.0.0.1:14318`（HTTP） | 256 MiB（`GOMEMLIMIT=200MiB`） | 内存存储，最多保留 20000 条 Trace，重启后丢失；容器网络内的服务发往 `jaeger:4317` |
+
+- **配置文件**：`deploy/prometheus/`（抓取配置、告警规则 `rules.yml` 及其单元测试 `rules_test.yml`）、`deploy/alertmanager/`、`deploy/grafana/`（数据源、面板）、`deploy/jaeger/`。Prometheus 开启了 `--web.enable-lifecycle`，改规则后 `curl -X POST http://127.0.0.1:19090/-/reload` 重新加载；Grafana 面板改 `deploy/grafana/dashboards/` 中的 JSON 后自动加载（文件来源默认每 10 秒扫描一次），界面上的修改不会写回文件。
+- **查看 Trace**：在 Jaeger UI 中按服务（`marschat-access` 等）和操作（`ws.SendMessage`、`consume marschat.message.events`）检索，或按标签 `marschat.conversation_id`、`marschat.seq`、`marschat.client_msg_id` 检索。Grafana 13 的 Jaeger 数据源调用的是 Jaeger 2.23 已移除的旧查询接口，所以没有配置，面板顶部的链接直接打开 Jaeger UI。
+- **告警**：规则见 [observability.md](design/observability.md) 第 3 节，触发中的告警在 Alertmanager 或面板的“触发中的告警”中查看。被杀的实例在 Consul 中保持 critical 600 秒后注销，`InstanceDown` 随之结束。
+- **实测内存**（2026-11-21）：空闲时 Prometheus 约 93 MiB、Alertmanager 约 21 MiB、Grafana 约 250 MiB、Jaeger 约 28 MiB；跑完集群测试和压测后 Prometheus 约 116 MiB、Jaeger 约 168 MiB（随保存的 Trace 增长），四个组件合计约 510 MiB。
+- **镜像大小**（解压后）：Grafana 2.02 GB、Prometheus 389 MB、Jaeger 180 MB、Alertmanager 133 MB、k6 111 MB。
+
+### 慢查询日志
+
+MySQL 把执行超过 200 毫秒的语句写入数据卷中的 `/var/lib/mysql/mysql-slow.log`，阈值与 GORM 慢 SQL 日志一致；不记录未走索引的快查询。日志带参数值，只在本机查看：
+
+```bash
+make mysql-slow
+```
+
+## 压测
+
+k6 在 profile `loadtest` 中，用 `docker compose run --rm k6` 按需运行，经网关（`http://apisix:9080`、`ws://apisix:9080/ws`）压测容器模式的服务。脚本在 [test/load/k6/](../test/load/k6/)，准备的数据（用户与令牌）写入 `tmp/load/users.json`，结果摘要写入 `tmp/load/out/`，都被 Git 忽略。k6 容器的固定 IP 与网关的 `real-ip` 规则见“网关”。
+
+```bash
+make cluster-up && make monitoring-up
+make load-up                     # account 临时切到 log 发送方（固定验证码，不发真实邮件），Trace 采样比例 0.05，.env 不改
+make load-seed                   # 注册 1000 个用户（LOAD_USERS），两两加好友，建一个 31 人的热点群；约 30 秒
+make load-ws CONNS=500           # WebSocket 收发：每个连接每秒给好友发 1 条消息，默认 60 秒（DURATION）
+make load-read RATE=500          # 热点读：用户资料、群资料、群成员、会话列表，固定到达率
+make load-read MODE=penetration  # 穿透：不存在的用户 ID、群 ID
+make load-bust                   # 击穿：在 load-read 运行期间删除热点群的缓存键
+make load-restore                # 按 .env 重建应用容器，恢复邮件发送方与采样比例
+```
+
+- **令牌**：访问令牌 15 分钟有效，每轮压测前执行 `make load-token`（用刷新令牌换新令牌，几秒完成）。
+- `make load-seed` 会先检查 account 使用 `log` 发送方，否则拒绝运行，避免向 `@example.test` 地址发送真实邮件。
+- `load-ws` 的统计只取全部连接建立后的稳态窗口：`ws_ack_ms` 是发出 `SendMessage` 到收到确认，`ws_push_ms` 是接收方收到推送的时刻减去正文中的发送时刻（收发双方在同一个 k6 进程中）。阈值失败时 k6 以 99 退出（make 随之报错），摘要照常写出。
+- 服务端的数据（连接数、投递延迟、Outbox 延迟、Kafka 积压、缓存命中与回源、各容器的 CPU 与内存）在 Grafana 总览面板中查看。
+- 积压告警实验：`docker compose stop message` 后运行 `MSYS_NO_PATHCONV=1 docker compose run --rm k6 run /scripts/lag_events.js`，产生 2000 条 social 事件，5 分钟后 `KafkaConsumerLag` 触发；`docker compose start message` 后积压消化、告警结束。
+- 压测会在数据库中留下用户、好友关系和消息（1000 个连接 60 秒约 6.5 万条），需要清理时见“停止与重置”。
+- 结果与环境基线见[重构计划](plans/active/backend-refactor.md#压测结果)。
 
 ## 服务配置
 
@@ -213,7 +272,7 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 | `MARSCHAT_MESSAGE_HTTP_ADDR` / `MARSCHAT_MESSAGE_GRPC_ADDR` | `127.0.0.1:18030` / `127.0.0.1:19030` | message 监听地址 |
 | `MARSCHAT_ACCESS_HTTP_ADDR` / `MARSCHAT_ACCESS_GRPC_ADDR` | `127.0.0.1:18000` / `127.0.0.1:19100` | access 监听地址（WebSocket / 内部 gRPC）。gRPC 不用 19000：它原本留给 MinIO，ADR-0007 后不再部署 MinIO，access 仍沿用 19100 |
 | `MARSCHAT_ACCESS_ADVERTISE_ADDR` | 空 | 写入在线路由的 access gRPC 地址，delivery 按它直连。留空时取注册到 Consul 的 gRPC 端点（宿主机为 `127.0.0.1:19100`，容器内为容器 IP），启动日志 `route address resolved` 中可以看到；只有经 NAT 等不同地址访问时才需要填写 |
-| `MARSCHAT_DELIVERY_GRPC_ADDR` | `127.0.0.1:19040` | delivery 监听地址 |
+| `MARSCHAT_DELIVERY_HTTP_ADDR` / `MARSCHAT_DELIVERY_GRPC_ADDR` | `127.0.0.1:18040` / `127.0.0.1:19040` | delivery 监听地址；HTTP 只有 `/healthz`、`/readyz`、`/metrics` |
 | `MARSCHAT_MEDIA_HTTP_ADDR` / `MARSCHAT_MEDIA_GRPC_ADDR` | `127.0.0.1:18050` / `127.0.0.1:19050` | media 监听地址 |
 | `MARSCHAT_KAFKA_BROKERS` | `127.0.0.1:19092` | Kafka 地址，逗号分隔，`make e2e` 也读取它 |
 | `MARSCHAT_MYSQL_ADDR` | `127.0.0.1:13306` | MySQL 地址 |
@@ -222,6 +281,8 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 | `MARSCHAT_CONSUL_TCP_CHECK_INTERVAL` | `0s` | Consul 主动 TCP 探测服务端口的间隔，同时是 TTL 心跳间隔（超时为 2 倍），只取整秒。`0s` 表示不做 TCP 探测、心跳间隔 10 秒；容器模式为 `3s` |
 | `MARSCHAT_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` |
 | `MARSCHAT_LOG_FORMAT` | `text` | `text` 或 `json` |
+| `MARSCHAT_OTLP_ENDPOINT` | 空 | Trace 的 OTLP gRPC 导出地址，空表示不导出（指标不受影响）；容器模式为 `jaeger:4317`，宿主机运行时可以设为 `127.0.0.1:14317` |
+| `MARSCHAT_TRACE_SAMPLE_RATIO` | `1` | Trace 采样比例（0～1），上游已经决定的请求跟随上游；compose 中可以在命令的环境里覆盖，压测时用 `0.05`（`make load-up`） |
 | `MARSCHAT_JWT_KEY_ID` | `dev-1` | 访问令牌头部的 `kid`，为轮换密钥预留 |
 | `MARSCHAT_TRUSTED_PROXY` | 空 | account 信任的代理（网关）IP 或 CIDR，只有直接连接方是它时才读取 `X-Forwarded-For`；容器模式为网关的固定 IP `172.30.0.10` |
 | `MARSCHAT_MAIL_PROVIDER` | `log` | 验证码邮件的发送方：`log` 只写日志，`smtp` 经 SMTP 真实发信，见“验证码邮件” |
@@ -286,10 +347,13 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 
 | 配置段 | 内容 | 生效方式 |
 |---|---|---|
-| `kafka` | Kafka 地址；`session_timeout` 同 social | 重启 |
+| `server.http` | 探针与 `/metrics`（步骤 8 新增），Consul 中登记的地址随之变为 HTTP 端点 | 重启 |
+| `kafka` | Kafka 地址；`session_timeout` 同 social；积压统计（`marschat_kafka_consumer_lag`）也用它，每 15 秒查询一次 | 重启 |
 | `social` | 地址、调用超时 1 秒 | 重启 |
 | `push` | 调用 access `Push`、`Kick` 的超时 2 秒 | 重启 |
 | `policy` | `push_cooldown`：access 实例不可达（`Unavailable` 或超时）后的冷却期 5 秒（0～60 秒），期间发往它的推送直接跳过，日志出现 `access instance unreachable, connection evicted`；0 表示只摘除连接、下一次立即重新拨号 | **热更新** |
+
+各服务都有 `telemetry` 段：`otlp_endpoint`（`${OTLP_ENDPOINT:}`）和 `sample_ratio`（`${TRACE_SAMPLE_RATIO:1}`），修改后重启。指标总是在 HTTP 端口的 `/metrics` 上暴露，与这一段无关。
 
 media 的主要配置段（默认值见 [config.yaml](../app/media/configs/config.yaml)）：
 
@@ -380,6 +444,10 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 | `make cluster-test` | 集群测试与故障实验，需要容器模式已启动；客户端只经网关访问，清理网关来源 IP 的限流计数。故障实验会停止、暂停、重启 MarsChat 的容器，见“容器模式” |
 | `make keys` | 生成 JWT 密钥对和 media 下载地址签名密钥写入 `.env`（已有的不覆盖） |
 | `make migrate-<服务>` | 数据库迁移，`ARGS` 传子命令 |
+| `make monitoring-up` / `make monitoring-down` | 启动监控组件 / 删除它们的容器（保留 Prometheus 数据卷），见“监控” |
+| `make rules-test` | 用 Prometheus 镜像中的 promtool 校验配置、运行告警规则的单元测试，不需要启动监控组件 |
+| `make mysql-slow` | 查看慢查询日志的最后 50 行 |
+| `make load-up`、`load-seed`、`load-token`、`load-ws`、`load-read`、`load-bust`、`load-restore` | 压测，见“压测” |
 | `make grant-admin EMAIL=…` | 设置管理员 |
 
 CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时执行：`buf lint`、`buf breaking`（PR 与基准分支比较，推送与上一次推送比较）、重新生成代码并检查与提交一致、`go mod tidy -diff`、`go vet`、`go build`、`go test -race`。e2e 需要 compose 环境，暂不在 CI 中运行。
