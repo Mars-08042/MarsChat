@@ -45,6 +45,11 @@ jobs:
             echo "没有可比较的基准提交（新分支的第一次推送），跳过"
             exit 0
           fi
+          # 基准是引入 proto 之前的版本（例如旧的单体）时没有可比较的契约，buf 会报 had no .proto files
+          if ! git ls-tree -r --name-only "$against" | grep -q '\.proto$'; then
+            echo "基准提交 $against 中没有 proto 文件，跳过"
+            exit 0
+          fi
           buf breaking --against ".git#ref=$against"
 
       # make gen 会生成前端的 TS 代码，要先装好 web/ 的依赖；pnpm 版本取自 web/package.json 的 packageManager
