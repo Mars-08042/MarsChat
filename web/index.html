@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#E2452C" />
+    <title>MarsChat</title>
+    <script>
+      // 在首屏渲染前应用主题和字体组，避免先闪一帧默认样式。逻辑与 src/lib/theme.ts、src/lib/appearance.ts 保持一致
+      ;(function () {
+        try {
+          var pref = localStorage.getItem("marschat.theme")
+          var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches)
+          if (dark) document.documentElement.classList.add("dark")
+          if (localStorage.getItem("marschat.font") === "grotesk") document.documentElement.dataset.font = "grotesk"
+        } catch (e) {
+          // 无法读取 localStorage 时使用默认外观
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

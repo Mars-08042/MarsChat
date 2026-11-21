@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package media.v1;
+
+option go_package = "github.com/Mars-08042/MarsChat/api/media/v1;v1";
+
+// ErrorReason 是 media 服务的业务错误原因，原样作为 Kratos 错误的 reason 返回。
+// 访问令牌缺失、无效、过期或已吊销时，reason 为 UNAUTHORIZED（由 pkg/auth 返回）；
+// 请求参数不符合校验规则（包括上传空文件）时，reason 为 VALIDATOR；查询参数无法解析时为 CODEC。
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+
+  // 400：上传的请求体没有读完（客户端中断、超时，或实际字节数少于 Content-Length）
+  UPLOAD_INCOMPLETE = 1;
+
+  // 403：本地存储的下载地址签名错误或已过期，重新调用 GetDownloadUrls 换取
+  DOWNLOAD_URL_INVALID = 10;
+
+  // 404：下载地址有效，但存储中没有这个文件（例如切换过存储）
+  FILE_NOT_FOUND = 20;
+
+  // 411：上传请求没有 Content-Length
+  LENGTH_REQUIRED = 30;
+  // 413：超过该用途的大小上限，metadata 中 max_bytes 为上限字节数
+  FILE_TOO_LARGE = 31;
+  // 415：头像不是可解码的图片
+  UNSUPPORTED_FILE_TYPE = 32;
+
+  // 429：上传过于频繁，metadata 中 retry_after_seconds 为建议的等待秒数
+  RATE_LIMITED = 40;
+
+  // 503：存储或数据库不可用、图片处理排队超时，稍后重试
+  DEPENDENCY_UNAVAILABLE = 50;
+}

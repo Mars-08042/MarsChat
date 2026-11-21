@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package media.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/media/v1;v1";
+
+// MediaService 是面向客户端的文件接口。
+//
+// 上传与本地存储的下载内容是二进制流，不适合 protobuf JSON，由自定义的 HTTP 处理函数提供，
+// 不在本 service 中声明（也不出现在 OpenAPI 文档里），但同样经过访问日志、鉴权与参数校验：
+//   - 上传：POST /v1/files?purpose=PURPOSE_CHAT&name=<URL 编码的文件名>，请求体为文件的原始字节，
+//     必须带 Content-Length，需要 Bearer 访问令牌，成功返回 FileInfo（参数见 UploadFileRequest）；
+//   - 下载内容（仅本地存储）：GET /v1/files/{file_id}/content?variant=&expires=&signature=，
+//     地址由 GetDownloadUrls 签发，签名即授权，不需要访问令牌（参数见 DownloadContentRequest）。
+service MediaService {
+  // 换取文件的限时下载地址，需要访问令牌。头像文件所有登录用户都可以下载；聊天文件需要访问密钥匹配，
+  // 或者当前用户就是上传者。文件不存在或无权访问的项直接省略，不区分原因。
+  rpc GetDownloadUrls(GetDownloadUrlsRequest) returns (GetDownloadUrlsResponse) {
+    option (google.api.http) = {
+      post: "/v1/files/download-urls"
+      body: "*"
+    };
+  }
+}
+
+// 文件用途，决定大小上限、类型要求和下载权限。
+enum Purpose {
+  PURPOSE_UNSPECIFIED = 0;
+  // 聊天中发送的文件或图片，凭访问密钥下载
+  PURPOSE_CHAT = 1;
+  // 用户或群的头像，必须是可解码的图片，所有登录用户都可以下载
+  PURPOSE_AVATAR = 2;
+}
+
+// 文件种类。
+enum FileKind {
+  FILE_KIND_UNSPECIFIED = 0;
+  // 普通文件，下载时浏览器只会保存，不会内联显示
+  FILE_KIND_FILE = 1;
+  // 已成功解码并生成缩略图的光栅图片（JPEG、PNG、GIF、WebP）
+  FILE_KIND_IMAGE = 2;
+}
+
+// 下载的变体。
+enum Variant {
+  VARIANT_UNSPECIFIED = 0;
+  // 原文件
+  VARIANT_ORIGINAL = 1;
+  // 缩略图（JPEG，最长边不超过配置值），只有图片才有
+  VARIANT_THUMBNAIL = 2;
+}
+
+// FileInfo 是文件的元数据。名称、大小、类型都由服务端根据文件内容确定。
+message FileInfo {
+  int64 id = 1;
+  // 访问密钥（128 位随机数的 base64url 编码），随消息发给会话成员，凭它换取下载地址
+  string access_key = 2;
+  Purpose purpose = 3;
+  FileKind kind = 4;
+  // 清理后的文件名，只用于展示和下载时的默认文件名
+  string name = 5;
+  // 字节数
+  int64 size = 6;
+  // 按文件内容识别的类型
+  string mime_type = 7;
+  // 图片的原始宽高，普通文件为 0
+  int32 width = 8;
+  int32 height = 9;
+  bool has_thumbnail = 10;
+  int64 uploader_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+// UploadFileRequest 是上传接口的查询参数，文件内容在请求体中。
+message UploadFileRequest {
+  Purpose purpose = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // 原始文件名，服务端会去掉路径和控制字符并截断到 255 字节；为空时用 file
+  string name = 2 [(buf.validate.field).string.max_len = 1024];
+}
+
+// DownloadContentRequest 是本地存储下载地址的参数，由 GetDownloadUrls 生成，客户端不需要自己拼接。
+message DownloadContentRequest {
+  int64 file_id = 1 [(buf.validate.field).int64.gt = 0];
+  Variant variant = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // 过期时间（Unix 秒）
+  int64 expires = 3 [(buf.validate.field).int64.gt = 0];
+  // HMAC-SHA256 签名的 base64url 编码
+  string signature = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+}
+
+message DownloadUrlRequest {
+  int64 file_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 聊天文件必填；头像文件和自己上传的文件可以不填
+  string access_key = 2 [(buf.validate.field).string.max_len = 64];
+  Variant variant = 3 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+}
+
+message GetDownloadUrlsRequest {
+  repeated DownloadUrlRequest items = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+  }];
+}
+
+message DownloadUrl {
+  int64 file_id = 1;
+  Variant variant = 2;
+  // 限时有效的下载地址，可以直接用于 <img src> 或下载链接
+  string url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message GetDownloadUrlsResponse {
+  // 与请求的顺序一致，校验不通过的项被省略
+  repeated DownloadUrl urls = 1;
+}

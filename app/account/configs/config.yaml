@@ -1,0 +1,109 @@
+# account 服务配置。${XXX} 引用环境变量 MARSCHAT_XXX，${XXX:默认值} 在变量缺失时取默认值。
+# 默认值对应本地开发环境（compose.yaml），密码和密钥只从环境变量读取。
+# mail.fixed_code 默认 000000 只适用于开发环境的 log 发送方，使用 smtp 时必须置空（启动时检查）。
+# 时长按 protobuf Duration 的 JSON 格式书写，单位只能是秒，例如 0.5s、3600s；500ms、1h 会解析失败。
+server:
+  http:
+    addr: ${ACCOUNT_HTTP_ADDR:127.0.0.1:18010}
+    timeout: 3s
+  grpc:
+    addr: ${ACCOUNT_GRPC_ADDR:127.0.0.1:19010}
+    timeout: 3s
+
+registry:
+  consul:
+    address: ${CONSUL_ADDR:127.0.0.1:18500}
+    tcp_check_interval: ${CONSUL_TCP_CHECK_INTERVAL:0s}
+
+mysql:
+  dsn: account:${ACCOUNT_DB_PASSWORD}@tcp(${MYSQL_ADDR:127.0.0.1:13306})/marschat_account?charset=utf8mb4&parseTime=true&loc=UTC&timeout=5s
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 3600s
+  slow_threshold: 0.2s
+
+redis:
+  addr: ${REDIS_ADDR:127.0.0.1:16379}
+  password: ${REDIS_PASSWORD}
+  db: 0
+  dial_timeout: 2s
+  read_timeout: 0.5s
+  write_timeout: 0.5s
+
+log:
+  level: ${LOG_LEVEL:info}
+  format: ${LOG_FORMAT:text}
+
+# 访问令牌校验（各服务相同）
+auth:
+  public_key: ${JWT_PUBLIC_KEY}
+  issuer: marschat-account
+  audience: marschat
+
+# 以下各段修改后需要重启
+token:
+  private_key: ${JWT_PRIVATE_KEY}
+  key_id: ${JWT_KEY_ID:dev-1}
+  access_ttl: 900s
+  refresh_ttl: 2592000s
+  rotation_grace: 10s
+  revocation_ttl: 3600s
+
+# 验证码邮件。默认 log：只把验证码写进日志，开发和 e2e 用固定验证码 000000。
+# 真实发送时在 .env 中设置 MARSCHAT_MAIL_PROVIDER=smtp、MARSCHAT_MAIL_FIXED_CODE=（置空）和 SMTP 参数，见 docs/deployment.md
+mail:
+  provider: ${MAIL_PROVIDER:log}
+  fixed_code: ${MAIL_FIXED_CODE:000000}
+  smtp:
+    # host:port，465 端口用隐式 TLS，其他端口要求 STARTTLS
+    addr: ${SMTP_ADDR:}
+    # 发件邮箱，同时是登录用户名
+    username: ${SMTP_USERNAME:}
+    # 邮箱的 SMTP 授权码，不是登录密码
+    password: ${SMTP_PASSWORD:}
+    timeout: 2.5s
+
+security:
+  bcrypt_cost: 12
+  # 可信代理（网关）的 IP 或 CIDR：只有直接连接方是它们时才读取 X-Forwarded-For。
+  # 宿主机运行时客户端直连，为空；容器模式下为网关的固定 IP（见 compose.yaml）
+  trusted_proxies:
+    - ${TRUSTED_PROXY:}
+
+cache:
+  user_ttl: 1800s
+  null_ttl: 60s
+
+# 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
+policy:
+  email_code:
+    code_ttl: 300s
+    max_verify_attempts: 5
+    send_interval: 60s
+    daily_limit_per_email: 10
+    ip_limit:
+      limit: 20
+      window: 3600s
+  login:
+    max_failures: 5
+    failure_window: 900s
+    lock_duration: 900s
+    ip_limit:
+      limit: 20
+      window: 60s
+
+kafka:
+  brokers: ${KAFKA_BROKERS:127.0.0.1:19092}
+
+# Outbox 发布器：事务提交后立即唤醒，轮询只是兜底；已发布的事件保留 7 天
+outbox:
+  poll_interval: 0.5s
+  batch_size: 200
+  retention: 604800s
+
+# 指标与链路追踪，修改后需要重启。指标始终在 HTTP 端口的 /metrics 上暴露（Prometheus 抓取）；
+# Trace 只在设置了 OTLP 地址时导出，容器模式下为 jaeger:4317，宿主机运行时可设为 127.0.0.1:14317。
+telemetry:
+  otlp_endpoint: ${OTLP_ENDPOINT:}
+  # 采样比例 0～1；上游已采样的请求跟随上游的决定。压测时调低，避免 Jaeger 内存上涨
+  sample_ratio: ${TRACE_SAMPLE_RATIO:1}

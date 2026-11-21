@@ -1,5 +1,7 @@
 # 文档索引
 
+文档描述 `dev` 分支上的当前代码：Kratos v3 微服务后端已按 [后端重构计划](plans/completed/backend-refactor.md) 完成（2026-11-21），前端在 `web/` 重写中，见[前端计划](plans/active/frontend-rewrite.md)。旧版本（Gin 单体 + Vue 3 前端）的代码与文档见提交 `6624cea`。
+
 ## 目录
 
 ```
@@ -10,17 +12,20 @@ docs/
 │   └── modules/             各业务模块：职责、流程、接口、代码位置
 ├── architecture/            系统现在如何工作、为什么这样设计
 │   ├── system.md            分层、目录、技术组件、横切约定
-│   ├── data-model.md        表结构、枚举、Redis 键
-│   ├── data-flow.md         请求、消息、信令的流转与消息格式
+│   ├── data-model.md        表结构、Redis 键
+│   ├── data-flow.md         请求、消息、事件、信令的流转与 WebSocket 帧格式
 │   └── adr/                 架构决策记录
-├── deployment.md            运行依赖、配置、硬编码项、部署步骤
-├── plans/                   正在做什么、还有什么问题
+├── design/                  各服务与重大改造的设计文档（含实施中的调整）
+├── deployment.md            运行依赖、依赖组件、配置、开发命令、监控与压测
+├── plans/                   正在做什么、做完了什么、还有什么问题
+│   ├── active/              进行中的计划
+│   ├── completed/           已完成的计划
 │   └── tech-debt.md         技术债与已知问题
 ├── lessons/                 踩过的坑与预防措施
 └── images/                  文档插图（SVG）
 ```
 
-`design/`、`plans/active/` 按需创建。已完成计划包括 [本地 Compose 开发环境](plans/completed/local-compose.md)、[无证书本地启动](plans/completed/local-http.md)、[前端迁移 pnpm](plans/completed/pnpm-migration.md)。
+已完成计划：[后端重构](plans/completed/backend-refactor.md)（含故障实验与压测结果）；旧基线时期的 [本地 Compose 开发环境](plans/completed/local-compose.md)、[无证书本地启动](plans/completed/local-http.md)、[前端迁移 pnpm](plans/completed/pnpm-migration.md)。
 
 ## 按问题查找
 
@@ -30,9 +35,10 @@ docs/
 | 某个功能做没做、做到什么程度 | [product/features.md](product/features.md) |
 | 某个模块的接口和代码在哪 | [product/modules/](product/modules/) 下对应文档 |
 | 整体架构 | [../ARCHITECTURE.md](../ARCHITECTURE.md) → [architecture/system.md](architecture/system.md) |
-| 某张表、某个状态值、某个缓存键 | [architecture/data-model.md](architecture/data-model.md) |
-| WebSocket 消息格式、通话信令 | [architecture/data-flow.md](architecture/data-flow.md) |
-| 为什么这样设计 | [architecture/adr/](architecture/adr/README.md) |
+| 某张表、某个缓存键 | [architecture/data-model.md](architecture/data-model.md) |
+| WebSocket 帧格式、通话信令、事件 | [architecture/data-flow.md](architecture/data-flow.md) |
+| 为什么这样设计 | [architecture/adr/](architecture/adr/README.md)、[design/](design/) |
+| 可靠性与性能的实测数据 | [后端重构计划的故障实验与压测结果](plans/completed/backend-refactor.md#故障实验结果) |
 | 有哪些已知缺陷 | [plans/tech-debt.md](plans/tech-debt.md) |
 
 ## 模块文档
@@ -50,8 +56,14 @@ docs/
 
 | 文档 | 摘要 |
 |---|---|
-| [av-signaling-no-echo.md](lessons/av-signaling-no-echo.md) | 通话信令回显给发送方会导致自己收到自己的通话请求 |
-| [static-path-normalization.md](lessons/static-path-normalization.md) | 静态资源地址存完整 URL，换服务器地址后全部失效 |
+| [kratos-grpc-selector-nil.md](lessons/kratos-grpc-selector-nil.md) | Kratos v3.0.0 的 gRPC 负载均衡器在 init 时存下了空的全局选择器，经服务发现调用会 panic |
+| [docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md) | Hyper-V 后端的 Docker Desktop 挂载未授权目录时，compose 会一直等待共享确认 |
+| [kratos-v3-server-defaults.md](lessons/kratos-v3-server-defaults.md) | Kratos 自带的日志与恢复中间件会把密码等请求体写进日志、内部错误原文返回客户端；v3 的 json codec 不按 protobuf JSON 收发 |
+| [redis-resp3-reply-types.md](lessons/redis-resp3-reply-types.md) | go-redis v9 默认 RESP3，`BF.EXISTS` 返回布尔值，按整数读取会让布隆过滤器静默失效 |
+| [franz-go-record-timestamp-timeout.md](lessons/franz-go-record-timestamp-timeout.md) | franz-go 按记录的 Timestamp 计算投递超时，填事件创建时间会让积压的 Outbox 事件一发出就超时 |
+| [redis-dial-stall-docker-dns.md](lessons/redis-dial-stall-docker-dns.md) | Redis 容器停止后，go-redis 的拨号重试把每条命令拖到几秒，本该放行的调用变成请求超时 |
+| [smtp-465-tls-interception.md](lessons/smtp-465-tls-interception.md) | 开发机到 465 端口的 TLS 连接被截获，SMTP 发信报证书不受信任；改用 587（STARTTLS），不要关闭证书校验 |
+| [innodb-gap-lock-register-deadlock.md](lessons/innodb-gap-lock-register-deadlock.md) | 注册事务中查不到行的 `SELECT ... FOR UPDATE` 锁住索引末尾的间隙，新用户 ID 递增，并发注册互相死锁 |
 
 ## 编写规则
 

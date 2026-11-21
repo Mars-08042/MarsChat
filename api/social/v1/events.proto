@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package social.v1;
+
+import "google/protobuf/timestamp.proto";
+import "social/v1/social.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/social/v1;v1";
+
+// 以下事件经 Outbox 发布到 Kafka topic marschat.social.events（发布器在重构步骤 4 实现）。
+// 分区键：群事件为群 ID；好友事件为两人中较小的用户 ID；申请事件为接收方（用户或群）ID。
+// 同一个群、同一对用户的事件因此在同一分区内有序。拉黑不发事件，被拉黑方不应收到通知。
+
+// 成员离开群的原因。
+enum LeaveReason {
+  LEAVE_REASON_UNSPECIFIED = 0;
+  // 主动退群
+  LEAVE_REASON_LEFT = 1;
+  // 被群主或管理员移除
+  LEAVE_REASON_REMOVED = 2;
+}
+
+// FriendRequestCreated 表示新建了好友申请（重复申请只刷新附言，不再发送），delivery 通知接收方。
+message FriendRequestCreated {
+  int64 request_id = 1;
+  int64 from_user_id = 2;
+  int64 to_user_id = 3;
+  string message = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// FriendAdded 表示两人成为好友。user_id 为同意申请的一方（互相申请时为后申请的一方）。
+message FriendAdded {
+  int64 user_id = 1;
+  int64 friend_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// FriendDeleted 表示好友关系被删除。user_id 为发起删除的一方。
+message FriendDeleted {
+  int64 user_id = 1;
+  int64 friend_id = 2;
+  google.protobuf.Timestamp deleted_at = 3;
+}
+
+// GroupCreated 表示新建了群，member_ids 含群主。
+message GroupCreated {
+  Group group = 1;
+  repeated int64 member_ids = 2;
+}
+
+// GroupMembersJoined 表示有人入群：直接加入、审核通过或被邀请。
+// operator_id 为操作者：直接加入时是本人，审核通过时是审批人，邀请时是邀请人。
+message GroupMembersJoined {
+  int64 group_id = 1;
+  repeated int64 user_ids = 2;
+  int64 operator_id = 3;
+  google.protobuf.Timestamp joined_at = 4;
+}
+
+// GroupMemberLeft 表示成员退群或被移除。
+message GroupMemberLeft {
+  int64 group_id = 1;
+  int64 user_id = 2;
+  LeaveReason reason = 3;
+  int64 operator_id = 4;
+  google.protobuf.Timestamp left_at = 5;
+}
+
+// GroupMemberUpdated 表示成员的角色或禁言状态变化，转让群主时新旧群主各一条。
+message GroupMemberUpdated {
+  int64 group_id = 1;
+  int64 user_id = 2;
+  GroupRole role = 3;
+  // 未禁言时不填
+  google.protobuf.Timestamp muted_until = 4;
+  int64 operator_id = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// GroupUpdated 表示群资料变化（包括转让群主），group 为变化后的资料，my_role 不填。
+message GroupUpdated {
+  Group group = 1;
+  int64 operator_id = 2;
+}
+
+// GroupDismissed 表示群被解散，member_ids 为解散前的全部成员。
+message GroupDismissed {
+  int64 group_id = 1;
+  repeated int64 member_ids = 2;
+  int64 operator_id = 3;
+  google.protobuf.Timestamp dismissed_at = 4;
+}
+
+// GroupJoinRequestCreated 表示需审核的群收到了新的入群申请，delivery 通知群主和管理员。
+message GroupJoinRequestCreated {
+  int64 request_id = 1;
+  int64 group_id = 2;
+  int64 user_id = 3;
+  string message = 4;
+  google.protobuf.Timestamp created_at = 5;
+}

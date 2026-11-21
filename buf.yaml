@@ -1,0 +1,40 @@
+version: v2
+modules:
+  # 对外接口契约，使用默认 lint 规则（STANDARD）
+  - path: api
+    lint:
+      use:
+        - STANDARD
+      # 错误原因会原样作为 Kratos 错误的 reason 返回给客户端，不加枚举名前缀
+      ignore_only:
+        ENUM_VALUE_PREFIX:
+          - api/account/v1/error_reason.proto
+          - api/social/v1/error_reason.proto
+          - api/message/v1/error_reason.proto
+          - api/access/v1/error_reason.proto
+          - api/media/v1/error_reason.proto
+  # 跨服务共用的配置片段
+  - path: pkg
+    lint:
+      use:
+        - STANDARD
+      # 配置 proto 不是对外契约，不要求版本后缀；包名统一加 marschat 前缀避免与依赖冲突，不要求与目录一致
+      except:
+        - PACKAGE_VERSION_SUFFIX
+        - PACKAGE_DIRECTORY_MATCH
+  # 各服务自己的 Bootstrap 配置
+  - path: app
+    lint:
+      use:
+        - STANDARD
+      except:
+        - PACKAGE_VERSION_SUFFIX
+        - PACKAGE_DIRECTORY_MATCH
+deps:
+  # google.api.http 注解
+  - buf.build/googleapis/googleapis
+  # protovalidate 校验规则，接口参数和配置都使用
+  - buf.build/bufbuild/protovalidate
+breaking:
+  use:
+    - FILE

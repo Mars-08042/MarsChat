@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # proto 兼容性检查要与基准分支或上一次推送比较，需要完整历史
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # 只安装 buf，lint 由下面的步骤执行；版本与本地保持一致
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: 1.71.0
+          setup_only: true
+
+      - name: proto 规范检查
+        run: buf lint
+
+      # 规则为 FILE（buf.yaml）：删除或改动已发布的字段、改字段号等会导致已生成代码不兼容的修改都会失败
+      - name: proto 兼容性检查
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            against="origin/$BASE_REF"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            against="$BEFORE"
+          else
+            echo "没有可比较的基准提交（新分支的第一次推送），跳过"
+            exit 0
+          fi
+          buf breaking --against ".git#ref=$against"
+
+      # make gen 会生成前端的 TS 代码，要先装好 web/ 的依赖；pnpm 版本取自 web/package.json 的 packageManager
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+          cache: true
+          cache_dependency_path: web/pnpm-lock.yaml
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 安装前端依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: 生成代码与提交内容一致
+        run: |
+          make gen
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "生成代码与提交内容不一致，请在本地执行 make gen 后提交："
+            git status --porcelain
+            git diff
+            exit 1
+          fi
+
+      - name: go.mod 已整理
+        run: go mod tidy -diff
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: 构建
+        run: go build ./...
+
+      - name: 单元测试
+        run: go test -race ./...
+
+      - name: 前端检查（lint、类型检查、单元测试、构建）
+        working-directory: web
+        run: pnpm check

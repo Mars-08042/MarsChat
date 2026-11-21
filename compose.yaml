@@ -1,54 +1,113 @@
+# MarsChat 本地依赖组件与容器模式的应用服务。宿主机端口 = 容器默认端口 + 10000，只绑定 127.0.0.1。
+# 密码从 .env 读取（模板见 .env.example）。
+# 日常开发时应用服务运行在宿主机（make run-<服务>）；容器模式（profile apps，make cluster-up）用于多实例与故障实验。
+# 两种模式共用同一个 Consul 且服务名相同，不能同时运行。
 name: marschat
+
+# 固定子网：网关需要固定 IP，供 account 的 trusted_proxies 信任。动态分配只用后半段（ip_range），
+# 不会占用前半段的固定地址。本机其他项目的网络占用 172.17～172.26 网段。
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
+
+# 应用服务的公共设置。地址类配置用 MARSCHAT_ 环境变量覆盖配置文件中的 ${XXX:默认值}；
+# 密钥按服务单独传入，不用 env_file 把整个 .env 交给每个容器。
+x-app: &app
+  profiles: ["apps"]
+  restart: unless-stopped
+  mem_limit: 256m
+  stop_grace_period: 10s
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    consul:
+      condition: service_healthy
+
+x-app-env: &app-env
+  MARSCHAT_CONSUL_ADDR: consul:8500
+  # 容器里的 Consul 能探测到服务端口，开启 TCP 检查，实例被杀后几秒内从发现结果中消失
+  MARSCHAT_CONSUL_TCP_CHECK_INTERVAL: 3s
+  MARSCHAT_MYSQL_ADDR: mysql:3306
+  MARSCHAT_REDIS_ADDR: redis:6379
+  MARSCHAT_REDIS_PASSWORD: ${MARSCHAT_REDIS_PASSWORD:?请在 .env 中设置 MARSCHAT_REDIS_PASSWORD}
+  MARSCHAT_KAFKA_BROKERS: kafka:29092
+  MARSCHAT_JWT_PUBLIC_KEY: ${MARSCHAT_JWT_PUBLIC_KEY:?请执行 make keys 生成 JWT 密钥}
+  MARSCHAT_LOG_FORMAT: json
+  # Trace 发往 Jaeger（profile monitoring）。Jaeger 没有启动时导出失败、Span 丢弃，每分钟最多一条 warn 日志；
+  # 压测时在命令环境中调低 MARSCHAT_TRACE_SAMPLE_RATIO
+  MARSCHAT_OTLP_ENDPOINT: jaeger:4317
+  MARSCHAT_TRACE_SAMPLE_RATIO: ${MARSCHAT_TRACE_SAMPLE_RATIO:-1}
 
 services:
   mysql:
-    image: mysql:8.0
-    pull_policy: never
+    image: mysql:9.7.4
     restart: unless-stopped
     ports:
-      - "127.0.0.1:13307:3306"
+      - "127.0.0.1:13306:3306"
     environment:
-      MYSQL_DATABASE: marschat
-      MYSQL_USER: marschat
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 中设置 MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MARSCHAT_MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MARSCHAT_MYSQL_ROOT_PASSWORD}
+      # 供初始化脚本为各服务建库建账号
+      MARSCHAT_ACCOUNT_DB_PASSWORD: ${MARSCHAT_ACCOUNT_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_ACCOUNT_DB_PASSWORD}
+      MARSCHAT_SOCIAL_DB_PASSWORD: ${MARSCHAT_SOCIAL_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_SOCIAL_DB_PASSWORD}
+      MARSCHAT_MESSAGE_DB_PASSWORD: ${MARSCHAT_MESSAGE_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MESSAGE_DB_PASSWORD}
+      MARSCHAT_MEDIA_DB_PASSWORD: ${MARSCHAT_MEDIA_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MEDIA_DB_PASSWORD}
+    # 慢查询日志：超过 200 毫秒（与 GORM 的慢 SQL 告警阈值一致）的语句写入数据卷中的 mysql-slow.log，
+    # make mysql-slow 查看。不记录未走索引的快查询，小表全表扫描会刷屏。修改参数需要重建容器，数据卷保留。
+    # 最大连接数：所有服务共用这个实例，容器模式下各实例连接池上限之和为 230
+    # （account 50、social 50、message 50 × 2、media 30），默认的 151 不够，留出余量给迁移和排查用的连接。
+    command:
+      - --slow-query-log=ON
+      - --long-query-time=0.2
+      - --slow-query-log-file=/var/lib/mysql/mysql-slow.log
+      - --log-queries-not-using-indexes=OFF
+      - --max-connections=300
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./deploy/mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --protocol=TCP -h127.0.0.1 -u\"$$MYSQL_USER\" \"$$MYSQL_DATABASE\" -e 'SELECT 1' >/dev/null"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 5s
       timeout: 5s
       retries: 30
-      start_period: 20s
+      start_period: 30s
 
   redis:
-    image: redis:7
-    pull_policy: never
+    image: redis:8.8.4
     restart: unless-stopped
     ports:
-      - "127.0.0.1:16381:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - "127.0.0.1:16379:6379"
+    environment:
+      REDIS_PASSWORD: ${MARSCHAT_REDIS_PASSWORD:?请在 .env 中设置 MARSCHAT_REDIS_PASSWORD}
+    # 自定义命令后不再加载镜像默认配置中的模块，RedisBloom（用户 ID 布隆过滤器）需要显式加载
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\" --loadmodule /usr/local/lib/redis/modules/redisbloom.so"]
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   kafka:
-    image: apache/kafka:4.3.1
-    pull_policy: never
+    image: apache/kafka:4.4.0
     restart: unless-stopped
     ports:
-      - "127.0.0.1:19093:19093"
+      - "127.0.0.1:19092:9092"
     environment:
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      CLUSTER_ID: bWFyc2NoYXQta2Fma2EtMQ
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:19093,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://127.0.0.1:19093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      # EXTERNAL 供宿主机上的服务访问，INTERNAL 供容器网络内访问
+      KAFKA_LISTENERS: EXTERNAL://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://127.0.0.1:19092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
@@ -56,28 +115,364 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # topic 由初始化任务显式创建，避免拼写错误时被静默自动创建
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # 镜像默认堆为 1 GiB，本地单 broker、几个 topic 用不了这么多；Docker Desktop 虚拟机只有 3.8 GiB
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka:9092", "--list"]
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka:29092", "--list"]
       interval: 10s
       timeout: 10s
       retries: 15
-      start_period: 20s
+      start_period: 30s
 
+  consul:
+    image: hashicorp/consul:2.1.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18500:8500"
+    command: ["agent", "-server", "-bootstrap-expect=1", "-ui", "-client=0.0.0.0", "-data-dir=/consul/data"]
+    volumes:
+      - consul-data:/consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 数据库迁移任务，带 profile 所以 make up 不会启动，由 make migrate-<服务> 按需运行
+  migrate-account:
+    image: migrate/migrate:v4.20.1
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${MARSCHAT_ACCOUNT_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_ACCOUNT_DB_PASSWORD}
+    volumes:
+      - ./app/account/migrations:/migrations:ro
+    # 密码从环境变量展开，不写进 compose 文件；"$$@" 接收 docker compose run 传入的子命令（up、down 1 等）
+    entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://account:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_account?multiStatements=true\" \"$$@\"", "migrate"]
+    command: ["up"]
+
+  migrate-social:
+    image: migrate/migrate:v4.20.1
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${MARSCHAT_SOCIAL_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_SOCIAL_DB_PASSWORD}
+    volumes:
+      - ./app/social/migrations:/migrations:ro
+    entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://social:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_social?multiStatements=true\" \"$$@\"", "migrate"]
+    command: ["up"]
+
+  migrate-message:
+    image: migrate/migrate:v4.20.1
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${MARSCHAT_MESSAGE_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MESSAGE_DB_PASSWORD}
+    volumes:
+      - ./app/message/migrations:/migrations:ro
+    entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://message:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_message?multiStatements=true\" \"$$@\"", "migrate"]
+    command: ["up"]
+
+  migrate-media:
+    image: migrate/migrate:v4.20.1
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${MARSCHAT_MEDIA_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MEDIA_DB_PASSWORD}
+    volumes:
+      - ./app/media/migrations:/migrations:ro
+    entrypoint: ["sh", "-c", "exec migrate -path /migrations -database \"mysql://media:$${DB_PASSWORD}@tcp(mysql:3306)/marschat_media?multiStatements=true\" \"$$@\"", "migrate"]
+    command: ["up"]
+
+  # 创建 Kafka topic，由 make up 在依赖组件健康后执行，已存在的 topic 跳过。
+  # 格式为 topic:分区数，副本数固定为 1（本地单 broker）。marschat.e2e.events 只给集成测试使用。
   kafka-init:
-    image: apache/kafka:4.3.1
-    pull_policy: never
-    restart: "no"
+    image: apache/kafka:4.4.0
+    profiles: ["init"]
     depends_on:
       kafka:
         condition: service_healthy
-    entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
-    command: ["--bootstrap-server", "kafka:9092", "--create", "--if-not-exists", "--topic", "chat_message", "--partitions", "1", "--replication-factor", "1"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        for spec in marschat.account.events:3 marschat.social.events:6 marschat.message.events:12 \
+            marschat.social-cache.retry:3 marschat.e2e.events:3 marschat.e2e.retry:3; do
+          topic=$${spec%%:*}
+          partitions=$${spec##*:}
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
+            --topic "$$topic" --partitions "$$partitions" --replication-factor 1
+        done
+        # 死信队列，所有消费组共用，保留 14 天
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
+          --topic marschat.dlq --partitions 3 --replication-factor 1 --config retention.ms=1209600000
+
+  # 以下为容器模式的应用服务（profile apps），镜像由 make images 构建，配置目录只读挂载。
+  # 不发布宿主机端口，客户端经网关访问。access、message、delivery 各两个实例。
+  account:
+    <<: *app
+    image: marschat/account:dev
+    volumes:
+      - ./app/account/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_ACCOUNT_HTTP_ADDR: 0.0.0.0:18010
+      MARSCHAT_ACCOUNT_GRPC_ADDR: 0.0.0.0:19010
+      MARSCHAT_ACCOUNT_DB_PASSWORD: ${MARSCHAT_ACCOUNT_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_ACCOUNT_DB_PASSWORD}
+      MARSCHAT_JWT_PRIVATE_KEY: ${MARSCHAT_JWT_PRIVATE_KEY:?请执行 make keys 生成 JWT 密钥}
+      # 验证码邮件：.env 中没有设置时用 log 发送方与固定验证码；MAIL_FIXED_CODE 设为空值时以空值为准
+      MARSCHAT_MAIL_PROVIDER: ${MARSCHAT_MAIL_PROVIDER:-log}
+      MARSCHAT_MAIL_FIXED_CODE: ${MARSCHAT_MAIL_FIXED_CODE-000000}
+      MARSCHAT_SMTP_ADDR: ${MARSCHAT_SMTP_ADDR:-}
+      MARSCHAT_SMTP_USERNAME: ${MARSCHAT_SMTP_USERNAME:-}
+      MARSCHAT_SMTP_PASSWORD: ${MARSCHAT_SMTP_PASSWORD:-}
+      # 只信任网关转发的 X-Forwarded-For，按 IP 限流才能拿到真实客户端 IP
+      MARSCHAT_TRUSTED_PROXY: 172.30.0.10
+
+  social:
+    <<: *app
+    image: marschat/social:dev
+    volumes:
+      - ./app/social/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_SOCIAL_HTTP_ADDR: 0.0.0.0:18020
+      MARSCHAT_SOCIAL_GRPC_ADDR: 0.0.0.0:19020
+      MARSCHAT_SOCIAL_DB_PASSWORD: ${MARSCHAT_SOCIAL_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_SOCIAL_DB_PASSWORD}
+
+  message:
+    <<: *app
+    image: marschat/message:dev
+    deploy:
+      replicas: 2
+    volumes:
+      - ./app/message/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_MESSAGE_HTTP_ADDR: 0.0.0.0:18030
+      MARSCHAT_MESSAGE_GRPC_ADDR: 0.0.0.0:19030
+      MARSCHAT_MESSAGE_DB_PASSWORD: ${MARSCHAT_MESSAGE_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MESSAGE_DB_PASSWORD}
+
+  delivery:
+    <<: *app
+    image: marschat/delivery:dev
+    deploy:
+      replicas: 2
+    volumes:
+      - ./app/delivery/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_DELIVERY_HTTP_ADDR: 0.0.0.0:18040
+      MARSCHAT_DELIVERY_GRPC_ADDR: 0.0.0.0:19040
+
+  access:
+    <<: *app
+    image: marschat/access:dev
+    deploy:
+      replicas: 2
+    # 停机时要排空 WebSocket 连接，留得比其他服务长
+    stop_grace_period: 20s
+    volumes:
+      - ./app/access/configs:/app/configs:ro
+    environment:
+      <<: *app-env
+      MARSCHAT_ACCESS_HTTP_ADDR: 0.0.0.0:18000
+      MARSCHAT_ACCESS_GRPC_ADDR: 0.0.0.0:19100
+
+  # 本地存储时文件写在挂载的仓库目录 data/media，与宿主机模式共用（两种模式不能同时运行）；
+  # 多实例必须共享同一目录，这里只起 1 个。下载地址经网关访问。
+  media:
+    <<: *app
+    image: marschat/media:dev
+    # 图片解码占内存（media 设计 3.6）；GOMEMLIMIT 让 GC 在接近上限前回收，而不是被 OOM 杀掉
+    mem_limit: 384m
+    volumes:
+      - ./app/media/configs:/app/configs:ro
+      - ./data/media:/data/media
+    environment:
+      <<: *app-env
+      GOMEMLIMIT: 320MiB
+      MARSCHAT_MEDIA_HTTP_ADDR: 0.0.0.0:18050
+      MARSCHAT_MEDIA_GRPC_ADDR: 0.0.0.0:19050
+      MARSCHAT_MEDIA_DB_PASSWORD: ${MARSCHAT_MEDIA_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MEDIA_DB_PASSWORD}
+      MARSCHAT_MEDIA_LOCAL_DIR: /data/media
+      MARSCHAT_MEDIA_PUBLIC_BASE_URL: https://127.0.0.1:19443
+      # 本地存储必填（make keys 生成），缺失时 media 启动失败并提示；OSS 不需要
+      MARSCHAT_MEDIA_URL_SECRET: ${MARSCHAT_MEDIA_URL_SECRET:-}
+      MARSCHAT_STORAGE_PROVIDER: ${MARSCHAT_STORAGE_PROVIDER:-local}
+      MARSCHAT_OSS_REGION: ${MARSCHAT_OSS_REGION:-}
+      MARSCHAT_OSS_ENDPOINT: ${MARSCHAT_OSS_ENDPOINT:-}
+      MARSCHAT_OSS_BUCKET: ${MARSCHAT_OSS_BUCKET:-}
+      MARSCHAT_OSS_ACCESS_KEY_ID: ${MARSCHAT_OSS_ACCESS_KEY_ID:-}
+      MARSCHAT_OSS_ACCESS_KEY_SECRET: ${MARSCHAT_OSS_ACCESS_KEY_SECRET:-}
+      MARSCHAT_OSS_KEY_PREFIX: ${MARSCHAT_OSS_KEY_PREFIX:-marschat/}
+      MARSCHAT_OSS_PUBLIC_ENDPOINT: ${MARSCHAT_OSS_PUBLIC_ENDPOINT:-}
+
+  # API 网关（profile apps）。Standalone 模式，配置见 deploy/apisix/；上游节点经 Consul 发现。
+  # 固定 IP 172.30.0.10：account 的 trusted_proxies 只信任它转发的 X-Forwarded-For。
+  apisix:
+    image: apache/apisix:3.20.0-debian
+    profiles: ["apps"]
+    restart: unless-stopped
+    mem_limit: 512m
+    depends_on:
+      consul:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:19080:9080"
+      - "127.0.0.1:19443:9443"
+    networks:
+      default:
+        ipv4_address: 172.30.0.10
+    environment:
+      # 入口脚本据此跳过 etcd 初始化
+      APISIX_STAND_ALONE: "true"
+    # 证书内容读入环境变量，供 apisix.yaml 中的 $env:// 引用，再交给镜像原来的入口脚本（前台运行 OpenResty）。
+    # 证书由 make certs 生成，make cluster-up 会先执行它。
+    entrypoint: ["sh", "-c", "export MARSCHAT_TLS_CERT=\"$$(cat /certs/tls.crt)\" MARSCHAT_TLS_KEY=\"$$(cat /certs/tls.key)\" && exec /docker-entrypoint.sh docker-start"]
+    volumes:
+      - ./deploy/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./deploy/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./deploy/apisix/certs:/certs:ro
+
+  # 以下为监控组件（profile monitoring，make monitoring-up），只在容器模式下工作：宿主机运行的服务监听
+  # 127.0.0.1，容器里的 Prometheus 访问不到。配置见 deploy/prometheus、alertmanager、grafana、jaeger。
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    mem_limit: 256m
+    depends_on:
+      consul:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:19090:9090"
+    # 保留 3 天、上限 1 GiB；--web.enable-lifecycle 允许 POST /-/reload 重新加载配置与告警规则
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+      - --storage.tsdb.retention.size=1GB
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  alertmanager:
+    image: prom/alertmanager:v0.35.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    mem_limit: 64m
+    ports:
+      - "127.0.0.1:19093:9093"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./deploy/alertmanager:/etc/alertmanager:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 内存存储，重启后 Trace 丢失；GOMEMLIMIT 让 GC 在接近上限前回收
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - "127.0.0.1:26686:16686"
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:14318:4318"
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    environment:
+      GOMEMLIMIT: 200MiB
+    volumes:
+      - ./deploy/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 匿名只读（Viewer），管理员 admin 的密码由 make keys 写入 .env；数据源与面板来自 provisioning，不持久化。
+  # 关闭更新检查、使用统计、新闻与插件预装，不访问外网。
+  grafana:
+    image: grafana/grafana:13.3.1
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    # 实测空闲约 236 MiB（2026-11-21），256m 太紧
+    mem_limit: 384m
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:13000:3000"
+    environment:
+      GOMEMLIMIT: 320MiB
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${MARSCHAT_GRAFANA_ADMIN_PASSWORD:-}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    # 只挂载用到的两个子目录，保留镜像中其余的空 provisioning 目录，否则 Grafana 启动时报目录不存在
+    volumes:
+      - ./deploy/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./deploy/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # 压测（profile loadtest），只在压测时用 docker compose run --rm 运行，见 Makefile 的 load-* 命令。
+  # 经网关访问各服务；脚本在 test/load/k6，准备的数据和结果摘要写入 data/load（被 Git 忽略）。
+  # 固定 IP 172.30.0.20：网关只对这个地址信任 X-Forwarded-For（apisix.yaml 的 global_rules），
+  # 每个虚拟客户端带不同的来源地址，网关与 account 的按 IP 限流按虚拟客户端生效。
+  k6:
+    image: grafana/k6:2.4.0
+    profiles: ["loadtest"]
+    mem_limit: 768m
+    networks:
+      default:
+        ipv4_address: 172.30.0.20
+    working_dir: /scripts
+    environment:
+      # 不向 k6 官方上报匿名使用统计
+      K6_NO_USAGE_REPORT: "true"
+    volumes:
+      - ./test/load/k6:/scripts:ro
+      - ./data/load:/load
 
 volumes:
   mysql-data:
   redis-data:
   kafka-data:
+  consul-data:
+  prometheus-data:

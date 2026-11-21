@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package marschat.message.conf;
+
+import "buf/validate/validate.proto";
+import "conf/conf.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/app/message/internal/conf;conf";
+
+message Bootstrap {
+  marschat.conf.Server server = 1;
+  marschat.conf.Registry registry = 2;
+  marschat.conf.MySQL mysql = 3;
+  marschat.conf.Redis redis = 4;
+  marschat.conf.Log log = 5;
+  marschat.conf.Auth auth = 6 [(buf.validate.field).required = true];
+  marschat.conf.Kafka kafka = 7 [(buf.validate.field).required = true];
+  marschat.conf.Outbox outbox = 8 [(buf.validate.field).required = true];
+  // 发消息时校验发言权限、会话列表补全群资料
+  Upstream social = 9 [(buf.validate.field).required = true];
+  // 会话列表补全对方资料
+  Upstream account = 10 [(buf.validate.field).required = true];
+  // 可热更新，见 Policy
+  Policy policy = 11 [(buf.validate.field).required = true];
+  // 发送图片和文件消息时核实文件
+  Upstream media = 12 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 13;
+}
+
+// Upstream 是调用其他服务的配置，修改后需要重启。
+message Upstream {
+  // gRPC 地址，例如 discovery:///marschat-social 经 Consul 发现
+  string endpoint = 1 [(buf.validate.field).string.min_len = 1];
+  // 单次调用超时
+  google.protobuf.Duration timeout = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}
+
+// Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
+message Policy {
+  // 每人发消息的频率，所有设备、所有会话合计
+  marschat.conf.RateLimit send_message = 1 [(buf.validate.field).required = true];
+  // GetDifference 一次最多返回的消息数，请求的 limit 超过它时按它处理
+  int32 difference_max_limit = 2 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 200
+  }];
+  // 缺口超过该值时 GetDifference 返回 TOO_LONG，让客户端重新加载最新一页
+  int64 difference_too_long = 3 [(buf.validate.field).int64 = {
+    gte: 1
+    lte: 100000
+  }];
+}

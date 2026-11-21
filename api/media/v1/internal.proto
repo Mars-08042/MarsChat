@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package media.v1;
+
+import "buf/validate/validate.proto";
+import "media/v1/media.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/media/v1;v1";
+
+// MediaInternalService 只供其他服务通过 gRPC 调用，不经网关暴露（没有 HTTP 注解）。
+service MediaInternalService {
+  // 按 ID 批量获取文件元数据（含访问密钥与上传者），message 发送图片和文件消息时用来核实客户端上送的
+  // 文件 ID 与访问密钥。不存在的 ID 不出现在结果中。走元数据缓存。
+  rpc GetFiles(GetFilesRequest) returns (GetFilesResponse);
+}
+
+message GetFilesRequest {
+  repeated int64 ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+    items: {
+      int64: {gt: 0}
+    }
+  }];
+}
+
+message GetFilesResponse {
+  repeated FileInfo files = 1;
+}

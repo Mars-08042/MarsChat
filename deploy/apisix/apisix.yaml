@@ -1,0 +1,160 @@
+# 网关的路由、上游、证书与限流（APISIX Standalone）。保存后约 1 秒内自动生效，不用重启容器。
+# 文件必须以 #END 结尾：APISIX 看不到这一行会认为文件还没写完，不加载。
+#
+# 只转发对外的 HTTP 接口和 WebSocket；内部接口只注册在 gRPC 上，经网关访问不到。
+# 限流按客户端 IP（remote_addr）。经 Docker Desktop 端口转发访问时，本机所有请求的来源 IP 都是
+# Docker 网络的网关地址，限流对本机流量相当于全局限流，初始值按测试流量留了余量。
+# 超限返回 429，响应体为 APISIX 的 {"error_msg": ...}，与服务的 Kratos 错误格式不同，客户端按状态码处理。
+
+# 压测时 k6 容器（固定 IP 172.30.0.20，见 compose.yaml）相当于客户端前面的一层代理：只对它信任
+# X-Forwarded-For，用其中最后一个地址作为 remote_addr。k6 给每个虚拟客户端分配不同的地址，
+# 下面各路由的按 IP 限流就按虚拟客户端生效，而不是把单个容器的全部流量当成一个客户端。
+# 其他来源带的 X-Forwarded-For 不改变 remote_addr，限流行为与没有这条规则时相同。
+global_rules:
+  - id: real-ip
+    plugins:
+      real-ip:
+        source: http_x_forwarded_for
+        trusted_addresses:
+          - 172.30.0.20
+
+upstreams:
+  # HTTP 上游：连接失败或请求还没发到上游时换一个节点重试一次；
+  # 非幂等方法（POST、PATCH）的请求一旦发出就不再重试，不会被重复执行
+  - id: account
+    discovery_type: consul
+    service_name: marschat-account
+    type: roundrobin
+    scheme: http
+    retries: 1
+    timeout: {connect: 2, send: 5, read: 5}
+  - id: social
+    discovery_type: consul
+    service_name: marschat-social
+    type: roundrobin
+    scheme: http
+    retries: 1
+    timeout: {connect: 2, send: 5, read: 5}
+  - id: message
+    discovery_type: consul
+    service_name: marschat-message
+    type: roundrobin
+    scheme: http
+    retries: 1
+    timeout: {connect: 2, send: 5, read: 5}
+  # 上传 100 MB 文件和下载本地存储的文件都可能很慢，读写超时与 media 的服务器超时（300 秒）一致
+  - id: media
+    discovery_type: consul
+    service_name: marschat-media
+    type: roundrobin
+    scheme: http
+    retries: 1
+    timeout: {connect: 2, send: 300, read: 300}
+  # WebSocket 上游：长连接按当前连接数分配（least_conn）；读超时要大于客户端 30 秒的心跳间隔
+  - id: access
+    discovery_type: consul
+    service_name: marschat-access
+    type: least_conn
+    scheme: http
+    retries: 1
+    timeout: {connect: 2, send: 60, read: 120}
+
+plugin_configs:
+  # 全部 HTTP 接口：每个 IP 每秒 50 次，突发 100；超出的请求直接拒绝，不排队
+  - id: http-default
+    plugins:
+      limit-req:
+        rate: 50
+        burst: 100
+        nodelay: true
+        key_type: var
+        key: remote_addr
+        rejected_code: 429
+        rejected_msg: too many requests
+
+routes:
+  - id: account
+    uris:
+      - /v1/users/*
+      - /v1/sessions
+      - /v1/sessions/*
+      - /v1/admin/*
+    upstream_id: account
+    plugin_config_id: http-default
+  # 登录、注册、短信接口再加每个 IP 每分钟 60 次，是服务内短信与登录限制之前的第一道防线
+  - id: account-auth
+    uris:
+      - /v1/auth/*
+    upstream_id: account
+    plugin_config_id: http-default
+    plugins:
+      limit-count:
+        count: 60
+        time_window: 60
+        key_type: var
+        key: remote_addr
+        policy: local
+        rejected_code: 429
+        rejected_msg: too many requests
+  - id: social
+    uris:
+      - /v1/friend-requests
+      - /v1/friend-requests/*
+      - /v1/friends
+      - /v1/friends/*
+      - /v1/blocks
+      - /v1/blocks/*
+      - /v1/groups
+      - /v1/groups/*
+      - /v1/group-join-requests/*
+    upstream_id: social
+    plugin_config_id: http-default
+  - id: message
+    uris:
+      - /v1/conversations
+      - /v1/conversations/*
+    upstream_id: message
+    plugin_config_id: http-default
+  # 上传、换取下载地址、本地存储的下载内容。请求体上限比 media 的文件上限（100 MiB）多 1 MiB，
+  # 超过时网关直接返回 413，不转发；精确的上限由 media 按用途检查
+  - id: media
+    uris:
+      - /v1/files
+      - /v1/files/*
+    upstream_id: media
+    plugin_config_id: http-default
+    plugins:
+      client-control:
+        max_body_size: 105906176
+  # WebSocket：每个 IP 最多 50 条并发连接、每秒最多 10 次握手，防止大量建连和重连风暴
+  - id: websocket
+    uri: /ws
+    methods: [GET]
+    enable_websocket: true
+    upstream_id: access
+    plugins:
+      limit-conn:
+        conn: 50
+        burst: 0
+        default_conn_delay: 0.1
+        key_type: var
+        key: remote_addr
+        rejected_code: 429
+        rejected_msg: too many connections
+      limit-req:
+        rate: 10
+        burst: 10
+        nodelay: true
+        key_type: var
+        key: remote_addr
+        rejected_code: 429
+        rejected_msg: too many requests
+
+# 自签证书由 make certs 生成（不进仓库），compose 的启动命令把它读入环境变量
+ssls:
+  - id: localhost
+    snis:
+      - localhost
+    cert: $env://MARSCHAT_TLS_CERT
+    key: $env://MARSCHAT_TLS_KEY
+#END

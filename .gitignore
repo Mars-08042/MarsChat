@@ -1,53 +1,42 @@
-### Go template
-# Binaries for programs and plugins
+# 构建产物（build/ 是 make images 交叉编译的二进制）
+/bin/
+/build/
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+coverage.*
+vendor/
+__pycache__/
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# 前端依赖与构建产物
+node_modules/
+web/dist/
+# 平台表情图片版权属于各平台，由 make web-emoji 在本地生成（设计 3.6.4）
+web/public/emoji-packs/
 
-.idea
-.idea/*
-
-*.xml
-
-*_local.go
-*_local.toml
-
-vendor/*
-
-*.log
-
-static/avatars/*
-
-static/files/*
-
-web/chat-server/src/assets/cert/*
-
-internal/service/kafka/start.bat
-
-*.sh
-
-*.ext
-
-# 后端构建产物与运行日志
-cmd/mars_chat_server/mars_chat_backend
-cmd/mars_chat_server/logs
+# 本地配置与密钥（模板见 .env.example）
+.env
+*.local.yaml
 
 # 本地开发证书（含私钥）
-pkg/ssl/*.pem
+deploy/apisix/certs/
+*.pem
+*.key
 
-# Compose 本地凭据
-.env
+# 本地数据：media 本地存储的文件、压测数据、平台表情的来源仓库
+/data/
 
-# 临时文件
+# 日志
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+
+# 只读参考代码与临时文件
 tmp/

@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1500" viewBox="0 0 1800 1500" role="img" aria-labelledby="title desc" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<title id="title">MarsChat 当前架构：Kratos、Consul 与 Apache APISIX，前端拟用 React 重构</title><desc id="desc">后端已按此架构实施（2026-11-21）。聊天客户端与管理界面拟重构为 React + TypeScript + Vite + pnpm。浏览器经 Apache APISIX 进入系统：WebSocket 连接转发到只承载长连接的接入服务 access，HTTP 接口按路径直达账户、社交、文件和消息等 Kratos 业务服务，令牌由 Kratos 中间件校验。APISIX 使用 Standalone 文件配置并从 Consul 发现上游；Kratos 服务通过 Consul 注册与发现。access 在握手时校验令牌，在 Redis 登记用户、设备与实例的在线路由，并按路由把通话信令直接转给对端 access。消息服务按会话存储消息（读扩散）并分配会话内序号，消息与待发布事件同事务落库，经 Kafka 异步分发；投递服务消费事件后查询在线路由，定向推送到目标 access 实例。实时推送尽力而为，客户端断线后比对游标按序号补拉。WebRTC 媒体由浏览器直连，coturn 中继随前端重构部署。</desc>
+<rect width="1800" height="1500" fill="white"/><defs><marker id="gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b4b2a9"/></marker><marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2c6fd1"/></marker></defs>
+<text x="40" y="49" font-size="30" font-weight="600" fill="#1f1e1c" text-anchor="start">MarsChat 通过可靠消息、多端同步与跨节点投递演进为分布式 IM</text>
+<text x="40" y="86" font-size="20" font-weight="400" fill="#6b6964" text-anchor="start">当前架构 · 后端已实施（2026-11-21） · Go + Kratos · Consul 服务发现 · Apache APISIX 入口网关</text>
+<rect x="40" y="120" width="1320" height="160" rx="15" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="62" y="153" font-size="23" font-weight="600" fill="#6b6964" text-anchor="start">用户与产品入口 · 前端拟重构</text>
+<rect x="65" y="170" width="810" height="85" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="470.0" y="205" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">聊天客户端 · React + TypeScript + Vite + pnpm</text>
+<text x="470.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">单聊／群聊 · 多设备 · 未读与已读 · 断线补拉 · 文件 · 一对一音视频</text>
+<rect x="905" y="170" width="430" height="85" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1120.0" y="205" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">管理界面 · React + TypeScript</text>
+<text x="1120.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">用户／群管理 · 封禁</text>
+<rect x="1400" y="170" width="360" height="110" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1580.0" y="205" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">WebRTC / coturn</text>
+<text x="1580.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">浏览器间直连，中继随前端部署</text>
+<text x="1580.0" y="262" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">媒体不经过聊天业务服务</text>
+<path d="M875 205H895V140H1580V168" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#gray)"/>
+<text x="1100" y="135" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">音视频媒体</text>
+<rect x="400" y="325" width="600" height="85" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="700.0" y="360" font-size="23" font-weight="600" fill="#1f1e1c" text-anchor="middle">Apache APISIX · API 网关</text>
+<text x="700.0" y="390" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">TLS／入口限流／HTTP 按路径路由／WebSocket 转发</text>
+<text x="65" y="361" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">Standalone · YAML 路由</text>
+<text x="65" y="390" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">网关配置不额外依赖 etcd</text>
+<text x="1060" y="352" font-size="19" font-weight="400" fill="#6b6964" text-anchor="start">Consul 发现上游</text>
+<path d="M470 255V300H560V323" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<path d="M1120 255V300H840V323" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<text x="65" y="311" font-size="19" font-weight="400" fill="#6b6964" text-anchor="start">① 业务请求／消息／通话信令</text>
+<text x="65" y="480" font-size="19" font-weight="600" fill="#1f1e1c" text-anchor="start">HTTP 接口按路径直达业务服务</text>
+<text x="65" y="509" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">不经过 access，业务发布不断长连接</text>
+<text x="65" y="537" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">令牌由 Kratos jwt 中间件校验</text>
+<text x="492" y="443" font-size="19" font-weight="400" fill="#6b6964" text-anchor="start">HTTP</text>
+<path d="M900 410V463" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<text x="912" y="443" font-size="19" font-weight="400" fill="#6b6964" text-anchor="start">WebSocket（WSS）</text>
+<rect x="545" y="465" width="790" height="140" rx="12" fill="#e6eef9" stroke="#2c6fd1" stroke-width="2.5"/>
+<text x="940.0" y="500" font-size="23" font-weight="600" fill="#1f1e1c" text-anchor="middle">接入服务 access × N · Kratos · 只承载 WebSocket</text>
+<text x="940.0" y="530" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">握手校验令牌 · 心跳与连接管理 · 有界发送队列／慢连接隔离</text>
+<text x="940.0" y="557" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">在线路由：用户 → 设备 → 实例，写入 Redis，TTL 随心跳续期</text>
+<text x="940.0" y="584" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">通话信令：按路由直转对端 access，不落库、不经 Kafka</text>
+<rect x="40" y="650" width="1320" height="280" rx="15" fill="#e6eef9" stroke="#2c6fd1" stroke-width="3"/>
+<text x="62" y="683" font-size="23" font-weight="600" fill="#1f1e1c" text-anchor="start">Kratos 业务微服务</text>
+<text x="520" y="683" font-size="19" font-weight="400" fill="#6b6964" text-anchor="start">独立进程与数据归属 · 服务间 gRPC</text>
+<path d="M480 410V712" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  />
+<path d="M175 712H830" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  />
+<path d="M175 712V738" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<path d="M415 712V738" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<path d="M655 712V738" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<path d="M830 712V738" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<rect x="65" y="740" width="220" height="165" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="175.0" y="775" font-size="21" font-weight="600" fill="#1f1e1c" text-anchor="middle">账户 account</text>
+<text x="175.0" y="805" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">登录／令牌／设备</text>
+<text x="175.0" y="832" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">封禁后实时踢下线</text>
+<text x="175.0" y="859" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">密码 bcrypt 哈希</text>
+<rect x="305" y="740" width="220" height="165" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="415.0" y="775" font-size="21" font-weight="600" fill="#1f1e1c" text-anchor="middle">社交 social</text>
+<text x="415.0" y="805" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">好友／群组／角色</text>
+<text x="415.0" y="832" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">成员关系与发言权限</text>
+<text x="415.0" y="859" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">供投递查询群成员</text>
+<rect x="545" y="740" width="220" height="165" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="655.0" y="775" font-size="21" font-weight="600" fill="#1f1e1c" text-anchor="middle">文件 media</text>
+<text x="655.0" y="805" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">上传下载／权限</text>
+<text x="655.0" y="832" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">元数据／缩略图</text>
+<text x="655.0" y="859" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">服务端生成文件 ID</text>
+<rect x="785" y="740" width="300" height="165" rx="12" fill="white" stroke="#2c6fd1" stroke-width="2.5"/>
+<text x="935.0" y="775" font-size="21" font-weight="600" fill="#1f1e1c" text-anchor="middle">消息 message × N</text>
+<text x="935.0" y="805" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">幂等／seq 定序／历史分页</text>
+<text x="935.0" y="832" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">读扩散：按会话存一份</text>
+<text x="935.0" y="859" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">已读位置／未读数／游标补拉</text>
+<text x="935.0" y="886" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">消息 + Outbox 同事务</text>
+<rect x="1105" y="740" width="230" height="165" rx="12" fill="white" stroke="#2c6fd1" stroke-width="2.5"/>
+<text x="1220.0" y="775" font-size="21" font-weight="600" fill="#1f1e1c" text-anchor="middle">投递 delivery × N</text>
+<text x="1220.0" y="805" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">查在线路由定向推送</text>
+<text x="1220.0" y="832" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">多设备，排除发起端</text>
+<text x="1220.0" y="859" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">消费幂等</text>
+<text x="1220.0" y="886" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">推送尽力，靠补拉兜底</text>
+<path d="M1000 605V738" fill="none" stroke="#2c6fd1" stroke-width="2.5" stroke-linejoin="round"  marker-end="url(#blue)"/>
+<text x="1012" y="636" font-size="18" font-weight="400" fill="#2c6fd1" text-anchor="start">② 发送消息 gRPC</text>
+<path d="M1220 740V607" fill="none" stroke="#2c6fd1" stroke-width="2.5" stroke-linejoin="round"  marker-end="url(#blue)"/>
+<text x="1232" y="636" font-size="18" font-weight="400" fill="#2c6fd1" text-anchor="start">⑤ 定向推送</text>
+<rect x="65" y="975" width="280" height="130" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="205.0" y="1010" font-size="21" font-weight="600" fill="#1f1e1c" text-anchor="middle">同步与补拉</text>
+<text x="205.0" y="1040" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">推送尽力而为，不做重试</text>
+<text x="205.0" y="1067" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">重连比对游标，按 seq 补拉</text>
+<text x="205.0" y="1094" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">缺口过大：分批或重载</text>
+<rect x="365" y="975" width="500" height="130" rx="12" fill="#ecebe6" stroke="#b4b2a9" stroke-width="2"/>
+<text x="615.0" y="1010" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">③ 可靠发布 · 事务 Outbox</text>
+<text x="615.0" y="1040" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">MySQL 同事务保存消息与待发布事件</text>
+<text x="615.0" y="1067" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">后台任务发布，失败重试</text>
+<text x="615.0" y="1094" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">按事件 ID 去重</text>
+<rect x="945" y="975" width="390" height="130" rx="12" fill="#e6eef9" stroke="#2c6fd1" stroke-width="2.5"/>
+<text x="1140.0" y="1010" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">Kafka · 持久化事件与异步分发</text>
+<text x="1140.0" y="1040" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">按会话分区 · 消费组扩容</text>
+<text x="1140.0" y="1067" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">至少一次投递 + 消费幂等</text>
+<text x="1140.0" y="1094" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">失败重试与留存 · 积压监控</text>
+<path d="M935 905V945H615V973" fill="none" stroke="#2c6fd1" stroke-width="2.5" stroke-linejoin="round"  marker-end="url(#blue)"/>
+<path d="M865 1040H943" fill="none" stroke="#2c6fd1" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#blue)"/>
+<text x="885" y="1028" font-size="18" font-weight="400" fill="#2c6fd1" text-anchor="start">发布</text>
+<path d="M1220 975V907" fill="none" stroke="#2c6fd1" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#blue)"/>
+<text x="1232" y="960" font-size="19" font-weight="400" fill="#2c6fd1" text-anchor="start">④ 消费事件</text>
+<text x="48" y="1140" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">存储依赖：account / social / message → MySQL（按服务分库）；access / delivery → Redis；media → 文件存储 + MySQL</text>
+<rect x="40" y="1165" width="1320" height="180" rx="15" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="62" y="1198" font-size="23" font-weight="600" fill="#6b6964" text-anchor="start">数据与存储 · 各服务通过接口协作，避免跨服务直接写表</text>
+<rect x="65" y="1220" width="400" height="90" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="265.0" y="1255" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">MySQL</text>
+<text x="265.0" y="1285" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">按服务分库：账户／社交／消息与事件</text>
+<rect x="490" y="1220" width="400" height="90" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="690.0" y="1255" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">Redis</text>
+<text x="690.0" y="1285" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">在线路由（TTL）／热点缓存／限流</text>
+<rect x="915" y="1220" width="420" height="90" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1125.0" y="1255" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">文件存储（ADR-0007）</text>
+<text x="1125.0" y="1285" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">本地目录或阿里云 OSS：图片／文件</text>
+<text x="65" y="1333" font-size="17" font-weight="400" fill="#6b6964" text-anchor="start">同步游标与已读位置由 message 管理并持久化；缓存与在线路由不替代消息存储。</text>
+<rect x="1400" y="325" width="360" height="1020" rx="15" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1422" y="358" font-size="23" font-weight="600" fill="#6b6964" text-anchor="start">治理、观测与部署</text>
+<rect x="1420" y="390" width="320" height="115" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1580.0" y="425" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">Consul</text>
+<text x="1580.0" y="455" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">服务注册与发现／健康检查</text>
+<text x="1580.0" y="482" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">Kratos 与 APISIX 使用</text>
+<rect x="1420" y="535" width="320" height="135" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1580.0" y="570" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">Kratos / gRPC</text>
+<text x="1580.0" y="600" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">同一 proto 生成 HTTP 与 gRPC</text>
+<text x="1580.0" y="627" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">jwt 中间件／超时／熔断／追踪</text>
+<text x="1580.0" y="654" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">WebSocket 由 access 自管</text>
+<rect x="1420" y="700" width="320" height="135" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1580.0" y="735" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">指标与告警</text>
+<text x="1580.0" y="765" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">Prometheus + Grafana</text>
+<text x="1580.0" y="792" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">Alertmanager</text>
+<text x="1580.0" y="819" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">连接数／延迟／失败／积压</text>
+<rect x="1420" y="865" width="320" height="115" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1580.0" y="900" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">链路追踪</text>
+<text x="1580.0" y="930" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">OpenTelemetry + Jaeger</text>
+<text x="1580.0" y="957" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">日志带 trace_id，经 Kafka 传播</text>
+<rect x="1420" y="1010" width="320" height="115" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
+<text x="1580.0" y="1045" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">Docker Compose</text>
+<text x="1580.0" y="1075" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">服务多实例／依赖编排</text>
+<text x="1580.0" y="1102" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">可复现部署与故障实验</text>
+<text x="1422" y="1180" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">作用于全部应用服务；</text>
+<text x="1422" y="1208" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">省略逐服务依赖连线。</text>
+<text x="1422" y="1250" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">× N：支持多个应用实例</text>
+<path d="M1000 366H1380V445H1418" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round"  marker-end="url(#gray)"/>
+<rect x="40" y="1380" width="1720" height="85" rx="12" fill="#ecebe6"/>
+<text x="62" y="1411" font-size="21" font-weight="600" fill="#1f1e1c" text-anchor="start">可靠性闭环：客户端消息 ID → 唯一约束幂等 → 会话 seq 定序 → 事务 Outbox → 消费幂等 → 定向推送 → 断线按 seq 补拉</text>
+<text x="62" y="1443" font-size="19" font-weight="400" fill="#6b6964" text-anchor="start">图例：灰实线＝同步调用；蓝实线＝核心路径；蓝虚线＝异步事件；灰虚线＝媒体路径；虚线框＝设计说明。不含组件高可用、超大群、多人音视频。</text>
+</svg>

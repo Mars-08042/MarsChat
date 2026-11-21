@@ -1,0 +1,82 @@
+# social 服务配置。${XXX} 引用环境变量 MARSCHAT_XXX，${XXX:默认值} 在变量缺失时取默认值。
+# 默认值对应本地开发环境（compose.yaml），密码只从环境变量读取。
+# 时长按 protobuf Duration 的 JSON 格式书写，单位只能是秒，例如 0.5s、3600s；500ms、1h 会解析失败。
+server:
+  http:
+    addr: ${SOCIAL_HTTP_ADDR:127.0.0.1:18020}
+    timeout: 3s
+  grpc:
+    addr: ${SOCIAL_GRPC_ADDR:127.0.0.1:19020}
+    timeout: 3s
+
+registry:
+  consul:
+    address: ${CONSUL_ADDR:127.0.0.1:18500}
+    tcp_check_interval: ${CONSUL_TCP_CHECK_INTERVAL:0s}
+
+mysql:
+  dsn: social:${SOCIAL_DB_PASSWORD}@tcp(${MYSQL_ADDR:127.0.0.1:13306})/marschat_social?charset=utf8mb4&parseTime=true&loc=UTC&timeout=5s
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 3600s
+  slow_threshold: 0.2s
+
+redis:
+  addr: ${REDIS_ADDR:127.0.0.1:16379}
+  password: ${REDIS_PASSWORD}
+  db: 0
+  dial_timeout: 2s
+  read_timeout: 0.5s
+  write_timeout: 0.5s
+
+log:
+  level: ${LOG_LEVEL:info}
+  format: ${LOG_FORMAT:text}
+
+# 访问令牌校验（各服务相同）
+auth:
+  public_key: ${JWT_PUBLIC_KEY}
+  issuer: marschat-account
+  audience: marschat
+
+# 以下各段修改后需要重启
+account:
+  endpoint: ${ACCOUNT_ENDPOINT:discovery:///marschat-account}
+  timeout: 1s
+
+cache:
+  group_ttl: 1800s
+  members_ttl: 1800s
+  null_ttl: 60s
+
+# 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
+policy:
+  friend_request:
+    limit: 20
+    window: 3600s
+  group_create:
+    limit: 10
+    window: 86400s
+  join_request:
+    limit: 20
+    window: 3600s
+  max_group_members: 500
+  max_initial_members: 50
+
+kafka:
+  brokers: ${KAFKA_BROKERS:127.0.0.1:19092}
+  # 消费组会话超时：实例被杀后，它的分区要等这么久才会转给其他实例
+  session_timeout: 10s
+
+# Outbox 发布器：事务提交后立即唤醒，轮询只是兜底；已发布的事件保留 7 天
+outbox:
+  poll_interval: 0.5s
+  batch_size: 200
+  retention: 604800s
+
+# 指标与链路追踪，修改后需要重启。指标始终在 HTTP 端口的 /metrics 上暴露（Prometheus 抓取）；
+# Trace 只在设置了 OTLP 地址时导出，容器模式下为 jaeger:4317，宿主机运行时可设为 127.0.0.1:14317。
+telemetry:
+  otlp_endpoint: ${OTLP_ENDPOINT:}
+  # 采样比例 0～1；上游已采样的请求跟随上游的决定。压测时调低，避免 Jaeger 内存上涨
+  sample_ratio: ${TRACE_SAMPLE_RATIO:1}

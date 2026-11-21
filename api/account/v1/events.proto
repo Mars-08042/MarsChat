@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package account.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/account/v1;v1";
+
+// 以下事件经 Outbox 发布到 Kafka（发布器在重构步骤 4 实现），分区键为用户 ID。
+// access 收到后断开对应的长连接。
+
+// 会话被吊销的原因，数值与 sessions.revoke_reason 一致。
+enum RevokeReason {
+  REVOKE_REASON_UNSPECIFIED = 0;
+  REVOKE_REASON_LOGOUT = 1;
+  REVOKE_REASON_KICKED = 2;
+  REVOKE_REASON_BANNED = 3;
+  // 同一设备重新登录，旧会话被替换
+  REVOKE_REASON_REPLACED = 4;
+  // 检测到刷新令牌被重放，疑似泄露
+  REVOKE_REASON_REFRESH_REUSE = 5;
+}
+
+// SessionRevoked 表示某个会话失效，access 断开该会话的连接。
+message SessionRevoked {
+  int64 user_id = 1;
+  int64 session_id = 2;
+  RevokeReason reason = 3;
+  google.protobuf.Timestamp revoked_at = 4;
+}
+
+// UserBanned 表示用户被封禁，access 断开该用户的全部连接。
+message UserBanned {
+  int64 user_id = 1;
+  google.protobuf.Timestamp banned_at = 2;
+}

@@ -1,0 +1,1913 @@
+# Generated with protoc-gen-openapi
+# https://github.com/google/gnostic/tree/master/cmd/protoc-gen-openapi
+
+openapi: 3.0.3
+info:
+    title: ""
+    version: 0.0.1
+paths:
+    /v1/admin/users/{userId}/ban:
+        post:
+            tags:
+                - AccountService
+            description: 封禁用户（管理员）：吊销其全部会话，之后无法登录。
+            operationId: AccountService_BanUser
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.BanUserRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.BanUserResponse'
+    /v1/admin/users/{userId}/unban:
+        post:
+            tags:
+                - AccountService
+            description: 解封用户（管理员）。
+            operationId: AccountService_UnbanUser
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.UnbanUserRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.UnbanUserResponse'
+    /v1/auth/email-codes:
+        post:
+            tags:
+                - AccountService
+            description: |-
+                发送邮箱验证码。同一邮箱有发送间隔和每日上限，同一 IP 有频率限制。
+                 邮箱地址去掉首尾空白并转为小写后使用。
+            operationId: AccountService_SendEmailCode
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.SendEmailCodeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.SendEmailCodeResponse'
+    /v1/auth/login/email-code:
+        post:
+            tags:
+                - AccountService
+            description: 邮箱加验证码登录。
+            operationId: AccountService_LoginByEmailCode
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.LoginByEmailCodeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.LoginByEmailCodeResponse'
+    /v1/auth/login/password:
+        post:
+            tags:
+                - AccountService
+            description: 邮箱加密码登录。
+            operationId: AccountService_LoginByPassword
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.LoginByPasswordRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.LoginByPasswordResponse'
+    /v1/auth/logout:
+        post:
+            tags:
+                - AccountService
+            description: 退出当前设备。
+            operationId: AccountService_Logout
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.LogoutRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.LogoutResponse'
+    /v1/auth/refresh:
+        post:
+            tags:
+                - AccountService
+            description: 用刷新令牌换取新的令牌对，旧的刷新令牌随即失效。
+            operationId: AccountService_RefreshToken
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.RefreshTokenRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.RefreshTokenResponse'
+    /v1/auth/register:
+        post:
+            tags:
+                - AccountService
+            description: 邮箱加验证码注册，成功后直接登录当前设备。
+            operationId: AccountService_Register
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.RegisterRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.RegisterResponse'
+    /v1/blocks:
+        get:
+            tags:
+                - SocialService
+            description: 列出我拉黑的用户，按用户 ID 递增。
+            operationId: SocialService_ListBlockedUsers
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.ListBlockedUsersResponse'
+        post:
+            tags:
+                - SocialService
+            description: 拉黑用户。不删除好友关系；任何一方拉黑另一方后，双方都不能单聊、不能互发好友申请。重复拉黑返回成功。
+            operationId: SocialService_BlockUser
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.BlockUserRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.BlockUserResponse'
+    /v1/blocks/{userId}:
+        delete:
+            tags:
+                - SocialService
+            description: 解除拉黑。没有拉黑时也返回成功。
+            operationId: SocialService_UnblockUser
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.UnblockUserResponse'
+    /v1/conversations:
+        get:
+            tags:
+                - MessageService
+            description: |-
+                列出我的会话，按会话 ID 游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+                 next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 100。
+                 不按最近活跃排序：客户端拿到完整列表后按 last_message 的时间排序，重连时据此比对各会话的 max_seq。
+            operationId: MessageService_ListConversations
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.ListConversationsResponse'
+    /v1/conversations/{conversationId}:
+        get:
+            tags:
+                - MessageService
+            description: 获取单个会话，字段与列表相同。客户端收到未知会话的消息推送时调用。
+            operationId: MessageService_GetConversation
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.GetConversationResponse'
+    /v1/conversations/{conversationId}/difference:
+        get:
+            tags:
+                - MessageService
+            description: 补拉 from_seq 之后的消息，按 seq 升序。三种结果见 DifferenceResult。limit 为 0 时取 100，最大 200。
+            operationId: MessageService_GetDifference
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: fromSeq
+                  in: query
+                  description: 客户端本地连续的最大 seq，第一次同步传 0
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.GetDifferenceResponse'
+    /v1/conversations/{conversationId}/messages:
+        get:
+            tags:
+                - MessageService
+            description: |-
+                历史消息，从 before_seq 往前翻页（不含 before_seq），按 seq 降序。before_seq 为 0 表示从最新开始；
+                 next_before_seq 为 0 表示没有更早的消息。limit 为 0 时取 20，最大 100。
+            operationId: MessageService_ListMessages
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: beforeSeq
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.ListMessagesResponse'
+    /v1/conversations/{conversationId}/read:
+        post:
+            tags:
+                - MessageService
+            description: |-
+                标记已读到 seq。已读位置只增不减，超过会话最新 seq 时按最新 seq 处理；
+                 位置变化后推送给本人的其他设备，单聊同时推给对方作为已读回执。
+            operationId: MessageService_MarkRead
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/message.v1.MarkReadRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/message.v1.MarkReadResponse'
+    /v1/files/download-urls:
+        post:
+            tags:
+                - MediaService
+            description: |-
+                换取文件的限时下载地址，需要访问令牌。头像文件所有登录用户都可以下载；聊天文件需要访问密钥匹配，
+                 或者当前用户就是上传者。文件不存在或无权访问的项直接省略，不区分原因。
+            operationId: MediaService_GetDownloadUrls
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/media.v1.GetDownloadUrlsRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/media.v1.GetDownloadUrlsResponse'
+    /v1/friend-requests:
+        post:
+            tags:
+                - SocialService
+            description: 申请添加好友。对方已经向我发出待处理申请时直接成为好友；已有我发出的待处理申请时更新附言。
+            operationId: SocialService_SendFriendRequest
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.SendFriendRequestRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.SendFriendRequestResponse'
+    /v1/friend-requests/received:
+        get:
+            tags:
+                - SocialService
+            description: 列出收到的待处理好友申请，按时间倒序。
+            operationId: SocialService_ListReceivedFriendRequests
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.ListReceivedFriendRequestsResponse'
+    /v1/friend-requests/sent:
+        get:
+            tags:
+                - SocialService
+            description: 列出发出的好友申请（全部状态），按时间倒序。
+            operationId: SocialService_ListSentFriendRequests
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.ListSentFriendRequestsResponse'
+    /v1/friend-requests/{requestId}/accept:
+        post:
+            tags:
+                - SocialService
+            description: 同意好友申请，只有接收方可以操作。
+            operationId: SocialService_AcceptFriendRequest
+            parameters:
+                - name: requestId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.AcceptFriendRequestRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.AcceptFriendRequestResponse'
+    /v1/friend-requests/{requestId}/reject:
+        post:
+            tags:
+                - SocialService
+            description: 拒绝好友申请，只有接收方可以操作。
+            operationId: SocialService_RejectFriendRequest
+            parameters:
+                - name: requestId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.RejectFriendRequestRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.RejectFriendRequestResponse'
+    /v1/friends:
+        get:
+            tags:
+                - SocialService
+            description: 列出好友，按用户 ID 递增。
+            operationId: SocialService_ListFriends
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.ListFriendsResponse'
+    /v1/friends/{userId}:
+        delete:
+            tags:
+                - SocialService
+            description: 删除好友，双方的关系同时删除。对方不是好友时也返回成功。
+            operationId: SocialService_DeleteFriend
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.DeleteFriendResponse'
+    /v1/group-join-requests/{requestId}/accept:
+        post:
+            tags:
+                - SocialService
+            description: 同意入群申请（群主、管理员）。
+            operationId: SocialService_AcceptGroupJoinRequest
+            parameters:
+                - name: requestId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.AcceptGroupJoinRequestRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.AcceptGroupJoinRequestResponse'
+    /v1/group-join-requests/{requestId}/reject:
+        post:
+            tags:
+                - SocialService
+            description: 拒绝入群申请（群主、管理员）。
+            operationId: SocialService_RejectGroupJoinRequest
+            parameters:
+                - name: requestId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.RejectGroupJoinRequestRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.RejectGroupJoinRequestResponse'
+    /v1/groups:
+        get:
+            tags:
+                - SocialService
+            description: 列出我加入的群，按群 ID 递增。
+            operationId: SocialService_ListMyGroups
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.ListMyGroupsResponse'
+        post:
+            tags:
+                - SocialService
+            description: 创建群，可以带上初始成员（必须是创建者的好友）。
+            operationId: SocialService_CreateGroup
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.CreateGroupRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.CreateGroupResponse'
+    /v1/groups/{groupId}:
+        get:
+            tags:
+                - SocialService
+            description: 获取群资料。非成员看不到群公告；已解散的群仍可查询。
+            operationId: SocialService_GetGroup
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.GetGroupResponse'
+        patch:
+            tags:
+                - SocialService
+            description: 修改群资料（群主、管理员），只修改请求中出现的字段。version 与当前版本不一致时返回 GROUP_VERSION_CONFLICT。
+            operationId: SocialService_UpdateGroup
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.UpdateGroupRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.UpdateGroupResponse'
+    /v1/groups/{groupId}/dismiss:
+        post:
+            tags:
+                - SocialService
+            description: 解散群（群主或系统管理员）。
+            operationId: SocialService_DismissGroup
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.DismissGroupRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.DismissGroupResponse'
+    /v1/groups/{groupId}/join:
+        post:
+            tags:
+                - SocialService
+            description: 加入群。直接加入的群立即入群；需审核的群生成入群申请。
+            operationId: SocialService_JoinGroup
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.JoinGroupRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.JoinGroupResponse'
+    /v1/groups/{groupId}/join-requests:
+        get:
+            tags:
+                - SocialService
+            description: 列出群的待处理入群申请（群主、管理员），按时间倒序。
+            operationId: SocialService_ListGroupJoinRequests
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.ListGroupJoinRequestsResponse'
+    /v1/groups/{groupId}/leave:
+        post:
+            tags:
+                - SocialService
+            description: 退出群。群主需要先转让群主。
+            operationId: SocialService_LeaveGroup
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.LeaveGroupRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.LeaveGroupResponse'
+    /v1/groups/{groupId}/members:
+        get:
+            tags:
+                - SocialService
+            description: 列出群成员（仅成员可见），按用户 ID 递增。
+            operationId: SocialService_ListGroupMembers
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.ListGroupMembersResponse'
+        post:
+            tags:
+                - SocialService
+            description: 邀请好友入群（群主、管理员），不需要审核；已是成员的人跳过。
+            operationId: SocialService_AddGroupMembers
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.AddGroupMembersRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.AddGroupMembersResponse'
+    /v1/groups/{groupId}/members/{userId}:
+        delete:
+            tags:
+                - SocialService
+            description: 移除群成员。群主可以移除管理员和成员，管理员只能移除成员。
+            operationId: SocialService_RemoveGroupMember
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.RemoveGroupMemberResponse'
+    /v1/groups/{groupId}/members/{userId}/mute:
+        put:
+            tags:
+                - SocialService
+            description: 禁言或解除禁言。群主可以禁言管理员和成员，管理员只能禁言成员。
+            operationId: SocialService_MuteGroupMember
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.MuteGroupMemberRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.MuteGroupMemberResponse'
+    /v1/groups/{groupId}/members/{userId}/role:
+        put:
+            tags:
+                - SocialService
+            description: 设置或取消管理员（群主）。
+            operationId: SocialService_SetGroupMemberRole
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.SetGroupMemberRoleRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.SetGroupMemberRoleResponse'
+    /v1/groups/{groupId}/transfer:
+        post:
+            tags:
+                - SocialService
+            description: 转让群主（群主）。新群主必须是成员，原群主变为管理员。
+            operationId: SocialService_TransferGroupOwner
+            parameters:
+                - name: groupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/social.v1.TransferGroupOwnerRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/social.v1.TransferGroupOwnerResponse'
+    /v1/sessions:
+        get:
+            tags:
+                - AccountService
+            description: 列出自己当前有效的登录设备。
+            operationId: AccountService_ListSessions
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.ListSessionsResponse'
+    /v1/sessions/{sessionId}:
+        delete:
+            tags:
+                - AccountService
+            description: 让自己的某个设备下线。
+            operationId: AccountService_RevokeSession
+            parameters:
+                - name: sessionId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.RevokeSessionResponse'
+    /v1/users/me:
+        get:
+            tags:
+                - AccountService
+            description: 获取自己的完整资料。
+            operationId: AccountService_GetMe
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.GetMeResponse'
+        patch:
+            tags:
+                - AccountService
+            description: 修改自己的资料，只修改请求中出现的字段。
+            operationId: AccountService_UpdateMe
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/account.v1.UpdateMeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.UpdateMeResponse'
+    /v1/users/{userId}:
+        get:
+            tags:
+                - AccountService
+            description: 获取其他用户的公开资料。
+            operationId: AccountService_GetUser
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.GetUserResponse'
+components:
+    schemas:
+        account.v1.BanUserRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+        account.v1.BanUserResponse:
+            type: object
+            properties: {}
+        account.v1.Device:
+            type: object
+            properties:
+                deviceId:
+                    type: string
+                platform:
+                    type: integer
+                    format: enum
+                deviceName:
+                    type: string
+            description: Device 描述发起登录的设备。device_id 由客户端生成并持久保存，同一设备重复登录时会替换旧会话。
+        account.v1.GetMeResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+        account.v1.GetUserResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.UserProfile'
+        account.v1.ListSessionsResponse:
+            type: object
+            properties:
+                sessions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/account.v1.Session'
+        account.v1.LoginByEmailCodeRequest:
+            type: object
+            properties:
+                email:
+                    type: string
+                code:
+                    type: string
+                device:
+                    $ref: '#/components/schemas/account.v1.Device'
+        account.v1.LoginByEmailCodeResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.LoginByPasswordRequest:
+            type: object
+            properties:
+                email:
+                    type: string
+                password:
+                    type: string
+                device:
+                    $ref: '#/components/schemas/account.v1.Device'
+        account.v1.LoginByPasswordResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.LogoutRequest:
+            type: object
+            properties: {}
+        account.v1.LogoutResponse:
+            type: object
+            properties: {}
+        account.v1.RefreshTokenRequest:
+            type: object
+            properties:
+                refreshToken:
+                    type: string
+        account.v1.RefreshTokenResponse:
+            type: object
+            properties:
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.RegisterRequest:
+            type: object
+            properties:
+                email:
+                    type: string
+                code:
+                    type: string
+                password:
+                    type: string
+                    description: 8～64 位可打印 ASCII 字符，必须同时包含字母和数字
+                nickname:
+                    type: string
+                device:
+                    $ref: '#/components/schemas/account.v1.Device'
+        account.v1.RegisterResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+                token:
+                    $ref: '#/components/schemas/account.v1.TokenPair'
+        account.v1.RevokeSessionResponse:
+            type: object
+            properties: {}
+        account.v1.SendEmailCodeRequest:
+            type: object
+            properties:
+                email:
+                    type: string
+                purpose:
+                    type: integer
+                    format: enum
+        account.v1.SendEmailCodeResponse:
+            type: object
+            properties:
+                cooldownSeconds:
+                    type: integer
+                    description: 距离下次可以发送的秒数
+                    format: int32
+        account.v1.Session:
+            type: object
+            properties:
+                id:
+                    type: string
+                platform:
+                    type: integer
+                    format: enum
+                deviceName:
+                    type: string
+                lastIp:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                lastActiveAt:
+                    type: string
+                    format: date-time
+                current:
+                    type: boolean
+                    description: 是否为发起本次请求的设备
+        account.v1.TokenPair:
+            type: object
+            properties:
+                accessToken:
+                    type: string
+                accessExpiresIn:
+                    type: integer
+                    description: 访问令牌剩余有效秒数
+                    format: int32
+                refreshToken:
+                    type: string
+                refreshExpiresIn:
+                    type: integer
+                    description: 刷新令牌剩余有效秒数
+                    format: int32
+        account.v1.UnbanUserRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+        account.v1.UnbanUserResponse:
+            type: object
+            properties: {}
+        account.v1.UpdateMeRequest:
+            type: object
+            properties:
+                nickname:
+                    type: string
+                avatar:
+                    type: string
+                gender:
+                    type: integer
+                    format: enum
+                birthday:
+                    type: string
+                    description: 格式 YYYY-MM-DD，传空字符串表示清除
+                signature:
+                    type: string
+        account.v1.UpdateMeResponse:
+            type: object
+            properties:
+                user:
+                    $ref: '#/components/schemas/account.v1.User'
+        account.v1.User:
+            type: object
+            properties:
+                id:
+                    type: string
+                email:
+                    type: string
+                nickname:
+                    type: string
+                avatar:
+                    type: string
+                    description: media 服务的文件 ID，未设置时为空
+                gender:
+                    type: integer
+                    format: enum
+                birthday:
+                    type: string
+                    description: 格式 YYYY-MM-DD，未设置时为空
+                signature:
+                    type: string
+                role:
+                    type: integer
+                    format: enum
+                status:
+                    type: integer
+                    format: enum
+                createdAt:
+                    type: string
+                    format: date-time
+            description: User 是用户本人可见的完整资料。
+        account.v1.UserProfile:
+            type: object
+            properties:
+                id:
+                    type: string
+                nickname:
+                    type: string
+                avatar:
+                    type: string
+                gender:
+                    type: integer
+                    format: enum
+                signature:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
+            description: UserProfile 是其他用户可见的公开资料，不含邮箱。
+        media.v1.DownloadUrl:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                variant:
+                    type: integer
+                    format: enum
+                url:
+                    type: string
+                    description: 限时有效的下载地址，可以直接用于 <img src> 或下载链接
+                expiresAt:
+                    type: string
+                    format: date-time
+        media.v1.DownloadUrlRequest:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                accessKey:
+                    type: string
+                    description: 聊天文件必填；头像文件和自己上传的文件可以不填
+                variant:
+                    type: integer
+                    format: enum
+        media.v1.GetDownloadUrlsRequest:
+            type: object
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/media.v1.DownloadUrlRequest'
+        media.v1.GetDownloadUrlsResponse:
+            type: object
+            properties:
+                urls:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/media.v1.DownloadUrl'
+                    description: 与请求的顺序一致，校验不通过的项被省略
+        message.v1.Conversation:
+            type: object
+            properties:
+                id:
+                    type: string
+                type:
+                    type: integer
+                    format: enum
+                peerUser:
+                    allOf:
+                        - $ref: '#/components/schemas/account.v1.UserProfile'
+                    description: 单聊对方的资料，account 不可用时只有 id
+                group:
+                    allOf:
+                        - $ref: '#/components/schemas/message.v1.GroupBrief'
+                    description: 群资料，social 不可用时只有 id
+                maxSeq:
+                    type: string
+                    description: 会话最新消息的 seq
+                readSeq:
+                    type: string
+                    description: 本人的已读位置
+                unreadCount:
+                    type: string
+                    description: max_seq - read_seq
+                peerReadSeq:
+                    type: string
+                    description: 单聊对方的已读位置，用于显示已读回执；群聊为 0
+                lastMessage:
+                    allOf:
+                        - $ref: '#/components/schemas/message.v1.Message'
+                    description: 最新一条消息，会话还没有消息时为空
+        message.v1.FileContent:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                accessKey:
+                    type: string
+                name:
+                    type: string
+                size:
+                    type: string
+                mimeType:
+                    type: string
+            description: FileContent 是文件消息，规则同 ImageContent，任意类型的聊天文件都可以发送。
+        message.v1.GetConversationResponse:
+            type: object
+            properties:
+                conversation:
+                    $ref: '#/components/schemas/message.v1.Conversation'
+        message.v1.GetDifferenceResponse:
+            type: object
+            properties:
+                result:
+                    type: integer
+                    format: enum
+                messages:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/message.v1.Message'
+                nextFromSeq:
+                    type: string
+                    description: SLICE 时下一次请求的 from_seq
+                maxSeq:
+                    type: string
+                    description: 会话当前最新的 seq
+        message.v1.GroupBrief:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                avatar:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
+                memberCount:
+                    type: integer
+                    format: int32
+            description: GroupBrief 是会话列表中展示的群资料。
+        message.v1.ImageContent:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                accessKey:
+                    type: string
+                name:
+                    type: string
+                size:
+                    type: string
+                mimeType:
+                    type: string
+                width:
+                    type: integer
+                    format: int32
+                height:
+                    type: integer
+                    format: int32
+            description: |-
+                ImageContent 是图片消息。文件先经 media 上传（用途 PURPOSE_CHAT），发送时只需填 file_id 和 access_key；
+                 其余字段由 message 按 media 的记录填写，客户端上送的值被覆盖。文件必须是已生成缩略图的图片，
+                 否则返回 FILE_INVALID。接收方凭 file_id 和 access_key 调用 media 的 GetDownloadUrls 换取缩略图与原图地址。
+        message.v1.ListConversationsResponse:
+            type: object
+            properties:
+                conversations:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/message.v1.Conversation'
+                nextCursor:
+                    type: string
+        message.v1.ListMessagesResponse:
+            type: object
+            properties:
+                messages:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/message.v1.Message'
+                nextBeforeSeq:
+                    type: string
+        message.v1.MarkReadRequest:
+            type: object
+            properties:
+                conversationId:
+                    type: string
+                seq:
+                    type: string
+        message.v1.MarkReadResponse:
+            type: object
+            properties:
+                readSeq:
+                    type: string
+                    description: 生效后的已读位置
+        message.v1.Message:
+            type: object
+            properties:
+                conversationId:
+                    type: string
+                conversationType:
+                    type: integer
+                    format: enum
+                seq:
+                    type: string
+                    description: 会话内从 1 开始连续递增，(conversation_id, seq) 唯一标识一条消息
+                senderId:
+                    type: string
+                clientMsgId:
+                    type: string
+                    description: 发送方生成的幂等键，只对发送方有意义
+                content:
+                    $ref: '#/components/schemas/message.v1.MessageContent'
+                createdAt:
+                    type: string
+                    format: date-time
+        message.v1.MessageContent:
+            type: object
+            properties:
+                text:
+                    $ref: '#/components/schemas/message.v1.TextContent'
+                image:
+                    $ref: '#/components/schemas/message.v1.ImageContent'
+                file:
+                    $ref: '#/components/schemas/message.v1.FileContent'
+            description: MessageContent 是消息正文，按类型取其中一种。
+        message.v1.TextContent:
+            type: object
+            properties:
+                text:
+                    type: string
+        social.v1.AcceptFriendRequestRequest:
+            type: object
+            properties:
+                requestId:
+                    type: string
+        social.v1.AcceptFriendRequestResponse:
+            type: object
+            properties: {}
+        social.v1.AcceptGroupJoinRequestRequest:
+            type: object
+            properties:
+                requestId:
+                    type: string
+        social.v1.AcceptGroupJoinRequestResponse:
+            type: object
+            properties: {}
+        social.v1.AddGroupMembersRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+                userIds:
+                    type: array
+                    items:
+                        type: string
+                    description: 被邀请人，必须都是操作者的好友
+        social.v1.AddGroupMembersResponse:
+            type: object
+            properties:
+                addedUserIds:
+                    type: array
+                    items:
+                        type: string
+                    description: 实际加入的用户，不含原本已是成员的人
+        social.v1.BlockUserRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+        social.v1.BlockUserResponse:
+            type: object
+            properties: {}
+        social.v1.BlockedUser:
+            type: object
+            properties:
+                userId:
+                    type: string
+                profile:
+                    $ref: '#/components/schemas/account.v1.UserProfile'
+                createdAt:
+                    type: string
+                    format: date-time
+        social.v1.CreateGroupRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+                avatar:
+                    type: string
+                notice:
+                    type: string
+                joinMode:
+                    type: integer
+                    format: enum
+                memberIds:
+                    type: array
+                    items:
+                        type: string
+                    description: 初始成员，必须是创建者的好友，不含创建者本人；数量上限由服务端配置（默认 50）
+        social.v1.CreateGroupResponse:
+            type: object
+            properties:
+                group:
+                    $ref: '#/components/schemas/social.v1.Group'
+        social.v1.DeleteFriendResponse:
+            type: object
+            properties: {}
+        social.v1.DismissGroupRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+        social.v1.DismissGroupResponse:
+            type: object
+            properties: {}
+        social.v1.Friend:
+            type: object
+            properties:
+                userId:
+                    type: string
+                profile:
+                    $ref: '#/components/schemas/account.v1.UserProfile'
+                createdAt:
+                    type: string
+                    description: 成为好友的时间
+                    format: date-time
+        social.v1.FriendRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                fromUserId:
+                    type: string
+                toUserId:
+                    type: string
+                message:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
+                createdAt:
+                    type: string
+                    format: date-time
+                updatedAt:
+                    type: string
+                    description: 重复申请会刷新附言和该时间
+                    format: date-time
+                peer:
+                    allOf:
+                        - $ref: '#/components/schemas/account.v1.UserProfile'
+                    description: 对方（收到的申请为申请人，发出的申请为接收方）的公开资料
+        social.v1.GetGroupResponse:
+            type: object
+            properties:
+                group:
+                    $ref: '#/components/schemas/social.v1.Group'
+        social.v1.Group:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                avatar:
+                    type: string
+                    description: media 服务的文件 ID，未设置时为空
+                notice:
+                    type: string
+                    description: 群公告，非成员查询时为空
+                ownerId:
+                    type: string
+                joinMode:
+                    type: integer
+                    format: enum
+                muteAll:
+                    type: boolean
+                    description: 全员禁言，开启后只有群主和管理员能发言
+                memberCount:
+                    type: integer
+                    format: int32
+                status:
+                    type: integer
+                    format: enum
+                version:
+                    type: integer
+                    description: 资料版本号，修改资料时带上
+                    format: int32
+                createdAt:
+                    type: string
+                    format: date-time
+                updatedAt:
+                    type: string
+                    format: date-time
+                myRole:
+                    type: integer
+                    description: 当前用户在群里的角色，不是成员时为 GROUP_ROLE_UNSPECIFIED
+                    format: enum
+        social.v1.GroupJoinRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                groupId:
+                    type: string
+                userId:
+                    type: string
+                message:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
+                handledBy:
+                    type: string
+                    description: 处理人，未处理时为 0
+                createdAt:
+                    type: string
+                    format: date-time
+                updatedAt:
+                    type: string
+                    format: date-time
+                profile:
+                    allOf:
+                        - $ref: '#/components/schemas/account.v1.UserProfile'
+                    description: 申请人的公开资料
+        social.v1.GroupMember:
+            type: object
+            properties:
+                userId:
+                    type: string
+                role:
+                    type: integer
+                    format: enum
+                mutedUntil:
+                    type: string
+                    description: 单人禁言截止时间，未禁言或已过期时不返回
+                    format: date-time
+                inviterId:
+                    type: string
+                    description: 邀请人，自己加入时为 0
+                joinedAt:
+                    type: string
+                    format: date-time
+                profile:
+                    $ref: '#/components/schemas/account.v1.UserProfile'
+        social.v1.JoinGroupRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+                message:
+                    type: string
+                    description: 附言，只在需审核的群中保存
+        social.v1.JoinGroupResponse:
+            type: object
+            properties:
+                joined:
+                    type: boolean
+                    description: 已经入群
+                request:
+                    allOf:
+                        - $ref: '#/components/schemas/social.v1.GroupJoinRequest'
+                    description: 需审核的群返回待处理的入群申请
+        social.v1.LeaveGroupRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+        social.v1.LeaveGroupResponse:
+            type: object
+            properties: {}
+        social.v1.ListBlockedUsersResponse:
+            type: object
+            properties:
+                users:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/social.v1.BlockedUser'
+                nextCursor:
+                    type: string
+        social.v1.ListFriendsResponse:
+            type: object
+            properties:
+                friends:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/social.v1.Friend'
+                nextCursor:
+                    type: string
+        social.v1.ListGroupJoinRequestsResponse:
+            type: object
+            properties:
+                requests:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/social.v1.GroupJoinRequest'
+                nextCursor:
+                    type: string
+        social.v1.ListGroupMembersResponse:
+            type: object
+            properties:
+                members:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/social.v1.GroupMember'
+                nextCursor:
+                    type: string
+        social.v1.ListMyGroupsResponse:
+            type: object
+            properties:
+                groups:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/social.v1.Group'
+                nextCursor:
+                    type: string
+        social.v1.ListReceivedFriendRequestsResponse:
+            type: object
+            properties:
+                requests:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/social.v1.FriendRequest'
+                nextCursor:
+                    type: string
+        social.v1.ListSentFriendRequestsResponse:
+            type: object
+            properties:
+                requests:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/social.v1.FriendRequest'
+                nextCursor:
+                    type: string
+        social.v1.MuteGroupMemberRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+                userId:
+                    type: string
+                durationSeconds:
+                    type: integer
+                    description: 禁言时长，0 表示解除禁言，最长 30 天
+                    format: int32
+        social.v1.MuteGroupMemberResponse:
+            type: object
+            properties:
+                mutedUntil:
+                    type: string
+                    description: 禁言截止时间，解除禁言时不返回
+                    format: date-time
+        social.v1.RejectFriendRequestRequest:
+            type: object
+            properties:
+                requestId:
+                    type: string
+        social.v1.RejectFriendRequestResponse:
+            type: object
+            properties: {}
+        social.v1.RejectGroupJoinRequestRequest:
+            type: object
+            properties:
+                requestId:
+                    type: string
+        social.v1.RejectGroupJoinRequestResponse:
+            type: object
+            properties: {}
+        social.v1.RemoveGroupMemberResponse:
+            type: object
+            properties: {}
+        social.v1.SendFriendRequestRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+                message:
+                    type: string
+                    description: 附言
+        social.v1.SendFriendRequestResponse:
+            type: object
+            properties:
+                request:
+                    allOf:
+                        - $ref: '#/components/schemas/social.v1.FriendRequest'
+                    description: 新建或更新的待处理申请；直接成为好友时不返回
+                becameFriends:
+                    type: boolean
+                    description: 对方已经向我发出过申请，双方直接成为好友
+        social.v1.SetGroupMemberRoleRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+                userId:
+                    type: string
+                role:
+                    type: integer
+                    description: 只能设为成员或管理员，转让群主用 TransferGroupOwner
+                    format: enum
+        social.v1.SetGroupMemberRoleResponse:
+            type: object
+            properties: {}
+        social.v1.TransferGroupOwnerRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+                newOwnerId:
+                    type: string
+        social.v1.TransferGroupOwnerResponse:
+            type: object
+            properties: {}
+        social.v1.UnblockUserResponse:
+            type: object
+            properties: {}
+        social.v1.UpdateGroupRequest:
+            type: object
+            properties:
+                groupId:
+                    type: string
+                version:
+                    type: integer
+                    description: 客户端读到的资料版本号
+                    format: int32
+                name:
+                    type: string
+                avatar:
+                    type: string
+                notice:
+                    type: string
+                joinMode:
+                    type: integer
+                    format: enum
+                muteAll:
+                    type: boolean
+        social.v1.UpdateGroupResponse:
+            type: object
+            properties:
+                group:
+                    $ref: '#/components/schemas/social.v1.Group'
+tags:
+    - name: AccountService
+      description: |-
+        AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+         除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
+    - name: MediaService
+      description: |-
+        MediaService 是面向客户端的文件接口。
+
+         上传与本地存储的下载内容是二进制流，不适合 protobuf JSON，由自定义的 HTTP 处理函数提供，
+         不在本 service 中声明（也不出现在 OpenAPI 文档里），但同样经过访问日志、鉴权与参数校验：
+           - 上传：POST /v1/files?purpose=PURPOSE_CHAT&name=<URL 编码的文件名>，请求体为文件的原始字节，
+             必须带 Content-Length，需要 Bearer 访问令牌，成功返回 FileInfo（参数见 UploadFileRequest）；
+           - 下载内容（仅本地存储）：GET /v1/files/{file_id}/content?variant=&expires=&signature=，
+             地址由 GetDownloadUrls 签发，签名即授权，不需要访问令牌（参数见 DownloadContentRequest）。
+    - name: MessageService
+      description: |-
+        MessageService 是面向客户端的会话与消息接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+         全部接口都需要在 Authorization 头携带 Bearer 访问令牌，当前用户取自令牌。
+         发消息只走 WebSocket（见 access.v1 的帧协议），这里只有读取与已读。
+
+         不是会话成员时一律返回 CONVERSATION_NOT_FOUND，不区分“会话不存在”和“无权访问”。
+    - name: SocialService
+      description: |-
+        SocialService 是面向客户端的好友与群接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+         全部接口都需要在 Authorization 头携带 Bearer 访问令牌，当前用户取自令牌。
+
+         列表接口都是游标分页：第一页 cursor 传 0，之后传上一页返回的 next_cursor；
+         next_cursor 为 0 表示没有更多数据。limit 为 0 时取 20，最大 100。
+         列表中的用户资料（profile）来自 account 服务，account 不可用时为空，客户端显示占位。

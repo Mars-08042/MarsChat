@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package message.v1;
+
+option go_package = "github.com/Mars-08042/MarsChat/api/message/v1;v1";
+
+// ErrorReason 是 message 服务的业务错误原因，原样作为 Kratos 错误的 reason 返回。
+// 访问令牌无效时 reason 为 UNAUTHORIZED，参数不符合校验规则时为 VALIDATOR；
+// 发消息时发言权限不足，原样返回 social 的原因（social.v1.ErrorReason）。
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+
+  // 400：图片或文件消息引用的文件无效：不存在、访问密钥不匹配、不是聊天文件，或者图片消息引用的不是图片。不区分原因
+  FILE_INVALID = 10;
+
+  // 404：会话不存在，或当前用户不是会话成员
+  CONVERSATION_NOT_FOUND = 20;
+
+  // 429：发消息过于频繁，metadata 中 retry_after_seconds 为建议的等待秒数
+  RATE_LIMITED = 40;
+
+  // 503：依赖的服务不可用（发消息时无法校验发言权限，或无法向 media 核实图片、文件）
+  DEPENDENCY_UNAVAILABLE = 50;
+}

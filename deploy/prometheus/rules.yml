@@ -1,0 +1,88 @@
+# 告警规则（设计 observability.md 3.5）。Prometheus 评估后发给 Alertmanager，不对外发送通知。
+# 修改后 curl -X POST http://127.0.0.1:19090/-/reload 重新加载。
+# delivery 的两个实例报告相同的 Kafka 积压，按 max 聚合；其余计数器按服务求和。
+groups:
+  - name: marschat-availability
+    rules:
+      - alert: InstanceDown
+        expr: up{job="marschat"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} 实例 {{ $labels.instance }} 无法抓取"
+          description: "实例已停止或不可达。被杀的实例在 Consul 中保持 critical，600 秒后注销，告警随之结束。"
+
+      - alert: HighErrorRate
+        # 只看服务端 5xx：4xx 是客户端的问题；每秒不到 1 个请求时不告警，避免偶发错误触发
+        expr: |
+          sum by (service) (rate(server_requests_code_total{code=~"5.."}[5m]))
+            / sum by (service) (rate(server_requests_code_total[5m])) > 0.05
+          and sum by (service) (rate(server_requests_code_total[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} 5xx 占比 {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        # 上传、下载文件的耗时取决于文件大小和网络，不参与
+        expr: |
+          histogram_quantile(0.99, sum by (service, operation, le) (
+            rate(server_requests_seconds_bucket{operation!~"/media.v1.MediaService/(UploadFile|DownloadContent)"}[5m])
+          )) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} {{ $labels.operation }} P99 {{ $value | humanizeDuration }}"
+
+  - name: marschat-pipeline
+    rules:
+      - alert: KafkaConsumerLag
+        expr: max by (group, topic) (marschat_kafka_consumer_lag) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "消费组 {{ $labels.group }} 在 {{ $labels.topic }} 上积压 {{ $value }} 条"
+          description: "消费跟不上或消费者已停止。"
+
+      - alert: KafkaDeadLetter
+        expr: sum by (service, group) (increase(marschat_kafka_consumed_total{result="dlq"}[10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "消费组 {{ $labels.group }} 10 分钟内有 {{ $value }} 条事件进入死信队列"
+          description: "需要人工排查，见 make dlq。"
+
+      - alert: PushFailures
+        expr: |
+          sum(rate(marschat_push_total{result="failed"}[5m]))
+            / sum(rate(marschat_push_total{result=~"ok|failed|cooling"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "推送失败率 {{ $value | humanizePercentage }}"
+          description: "access 实例不可达或超时；路由最多残留一个心跳超时，实例宕机后短时间内失败属于预期。"
+
+      - alert: OutboxPublishDelay
+        expr: |
+          histogram_quantile(0.99, sum by (source, le) (rate(marschat_outbox_publish_delay_seconds_bucket[5m]))) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.source }} 的 Outbox 发布延迟 P99 {{ $value | humanizeDuration }}"
+          description: "Kafka 不可用或发布租约异常。"
+
+      - alert: MessageDeliveryLatency
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(marschat_message_delivery_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "消息投递延迟 P99 {{ $value | humanizeDuration }}"
+          description: "从写库到推送进入 access 的时长，覆盖 Outbox、Kafka、delivery 三段。"

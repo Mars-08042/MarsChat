@@ -1,0 +1,77 @@
+# access 服务配置。${XXX} 引用环境变量 MARSCHAT_XXX，${XXX:默认值} 在变量缺失时取默认值。
+# 默认值对应本地开发环境（compose.yaml），密码只从环境变量读取。
+# 时长按 protobuf Duration 的 JSON 格式书写，单位只能是秒，例如 0.5s、3600s；500ms、1h 会解析失败。
+server:
+  # 只提供 WebSocket（GET /ws）和健康检查；timeout 对 WebSocket 连接不起作用
+  http:
+    addr: ${ACCESS_HTTP_ADDR:127.0.0.1:18000}
+    timeout: 3s
+  grpc:
+    addr: ${ACCESS_GRPC_ADDR:127.0.0.1:19100}
+    timeout: 3s
+
+# 本实例 gRPC 地址，写入在线路由供 delivery 直连。留空时取注册到 Consul 的 gRPC 端点
+#（宿主机运行为 127.0.0.1:19100，容器内为容器 IP），只有经 NAT 等不同地址访问时才需要填写
+advertise_addr: ${ACCESS_ADVERTISE_ADDR:}
+
+registry:
+  consul:
+    address: ${CONSUL_ADDR:127.0.0.1:18500}
+    tcp_check_interval: ${CONSUL_TCP_CHECK_INTERVAL:0s}
+
+redis:
+  addr: ${REDIS_ADDR:127.0.0.1:16379}
+  password: ${REDIS_PASSWORD}
+  db: 0
+  dial_timeout: 2s
+  read_timeout: 0.5s
+  write_timeout: 0.5s
+
+log:
+  level: ${LOG_LEVEL:info}
+  format: ${LOG_FORMAT:text}
+
+# 访问令牌校验（各服务相同）
+auth:
+  public_key: ${JWT_PUBLIC_KEY}
+  issuer: marschat-account
+  audience: marschat
+
+message:
+  endpoint: ${MESSAGE_ENDPOINT:discovery:///marschat-message}
+  timeout: 3s
+
+# 呼叫前校验权限（好友且未拉黑）
+social:
+  endpoint: ${SOCIAL_ENDPOINT:discovery:///marschat-social}
+  timeout: 1s
+
+# 通话信令
+call:
+  # 振铃超时，到期无人接听自动结束
+  ring_timeout: 60s
+  # access 之间转发信令的单次超时
+  forward_timeout: 2s
+  # 对端 access 实例不可达后跳过它的时长，冷却结束后重新拨号
+  forward_cooldown: 5s
+
+websocket:
+  auth_timeout: 10s
+  heartbeat_interval: 30s
+  heartbeat_timeout: 90s
+  send_queue: 256
+  write_timeout: 10s
+  max_frame_bytes: 65536
+  # 停机时在该时间内分批关闭现有连接（关闭码 1001），客户端分散重连到其他实例
+  drain_window: 5s
+
+# 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
+policy:
+  frames_per_second: 30
+
+# 指标与链路追踪，修改后需要重启。指标始终在 HTTP 端口的 /metrics 上暴露（Prometheus 抓取）；
+# Trace 只在设置了 OTLP 地址时导出，容器模式下为 jaeger:4317，宿主机运行时可设为 127.0.0.1:14317。
+telemetry:
+  otlp_endpoint: ${OTLP_ENDPOINT:}
+  # 采样比例 0～1；上游已采样的请求跟随上游的决定。压测时调低，避免 Jaeger 内存上涨
+  sample_ratio: ${TRACE_SAMPLE_RATIO:1}

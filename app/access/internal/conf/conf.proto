@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package marschat.access.conf;
+
+import "buf/validate/validate.proto";
+import "conf/conf.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/app/access/internal/conf;conf";
+
+message Bootstrap {
+  marschat.conf.Server server = 1;
+  marschat.conf.Registry registry = 2;
+  marschat.conf.Redis redis = 3;
+  marschat.conf.Log log = 4;
+  marschat.conf.Auth auth = 5 [(buf.validate.field).required = true];
+  // 转发客户端发送的消息
+  Upstream message = 6 [(buf.validate.field).required = true];
+  WebSocket websocket = 7 [(buf.validate.field).required = true];
+  // 可热更新，见 Policy
+  Policy policy = 8 [(buf.validate.field).required = true];
+  // 写入在线路由的本实例 gRPC 地址（host:port），delivery 按它直连推送。
+  // 留空时取 Kratos 注册到 Consul 的 gRPC 端点：监听 0.0.0.0 时是网卡 IP，多副本部署不用逐个配置。
+  // 只有其他服务要经 NAT 等不同地址访问本实例时才需要填写。
+  string advertise_addr = 9;
+  // 呼叫前校验权限（好友且未拉黑）
+  Upstream social = 10 [(buf.validate.field).required = true];
+  Call call = 11 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 12;
+}
+
+// Upstream 是调用其他服务的配置，修改后需要重启。
+message Upstream {
+  // gRPC 地址，例如 discovery:///marschat-message 经 Consul 发现
+  string endpoint = 1 [(buf.validate.field).string.min_len = 1];
+  // 单次调用超时
+  google.protobuf.Duration timeout = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}
+
+// WebSocket 是连接参数，修改后需要重启。
+message WebSocket {
+  option (buf.validate.message).cel = {
+    id: "heartbeat_timeout_gt_interval"
+    message: "heartbeat_timeout must be greater than heartbeat_interval"
+    expression: "this.heartbeat_timeout > this.heartbeat_interval"
+  };
+
+  // 建立连接后必须在该时间内完成认证
+  google.protobuf.Duration auth_timeout = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 告诉客户端的心跳间隔，每次心跳续期在线路由
+  google.protobuf.Duration heartbeat_interval = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gte = {seconds: 1}
+  ];
+  // 超过该时间没有收到任何帧就断开连接，同时是在线路由的 TTL
+  google.protobuf.Duration heartbeat_timeout = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 每个连接的发送队列容量，满了就断开慢连接（4003）
+  int32 send_queue = 4 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 65536
+  }];
+  // 单帧写超时
+  google.protobuf.Duration write_timeout = 5 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 上行帧的最大字节数，超出时连接被关闭（1009）
+  int32 max_frame_bytes = 6 [(buf.validate.field).int32 = {
+    gte: 1024
+    lte: 1048576
+  }];
+  // 停机时分批关闭现有连接的时间窗口，避免全部客户端同时重连到其他实例；0 表示一次全部关闭。
+  // 上限留出关闭握手和收尾的时间，必须小于进程的停机超时（15 秒）
+  google.protobuf.Duration drain_window = 7 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {seconds: 0}
+      lte: {seconds: 10}
+    }
+  ];
+}
+
+// Call 是通话信令的参数，修改后需要重启。
+message Call {
+  // 振铃超时，到期无人接听自动结束
+  google.protobuf.Duration ring_timeout = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {seconds: 5}
+      lte: {seconds: 300}
+    }
+  ];
+  // access 之间转发信令的单次超时
+  google.protobuf.Duration forward_timeout = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 对端 access 实例不可达后跳过它的时长，0 表示只摘除连接、不冷却
+  google.protobuf.Duration forward_cooldown = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gte = {seconds: 0}
+  ];
+}
+
+// Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
+message Policy {
+  // 每个连接每秒最多处理的上行帧数，超出时以 4008 关闭。只保护 access 自身，
+  // 按用户的发消息频率由 message 服务统一限制
+  int32 frames_per_second = 1 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 1000
+  }];
+}

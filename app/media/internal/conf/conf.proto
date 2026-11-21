@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package marschat.media.conf;
+
+import "buf/validate/validate.proto";
+import "conf/conf.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/app/media/internal/conf;conf";
+
+message Bootstrap {
+  marschat.conf.Server server = 1;
+  marschat.conf.Registry registry = 2;
+  marschat.conf.MySQL mysql = 3;
+  marschat.conf.Redis redis = 4;
+  marschat.conf.Log log = 5;
+  marschat.conf.Auth auth = 6 [(buf.validate.field).required = true];
+  Storage storage = 7 [(buf.validate.field).required = true];
+  Cache cache = 8 [(buf.validate.field).required = true];
+  // 可热更新，见 Policy
+  Policy policy = 9 [(buf.validate.field).required = true];
+  // 指标与链路追踪
+  marschat.conf.Telemetry telemetry = 10;
+}
+
+// Storage 选择文件存储后端，修改后需要重启。切换后端不迁移已有文件。
+message Storage {
+  // local：仓库下的本地目录，media 签发并提供下载；oss：阿里云 OSS
+  string provider = 1 [(buf.validate.field).string = {
+    in: ["local", "oss"]
+  }];
+  // provider 为 local 时必填，启动时检查
+  Local local = 2;
+  // provider 为 oss 时必填，启动时检查
+  Oss oss = 3;
+}
+
+// Local 是本地目录存储的配置。
+message Local {
+  // 根目录；相对路径相对于进程的工作目录（make run-media 在仓库根目录运行）
+  string dir = 1;
+  // 下载地址的前缀（协议、主机、端口），客户端用它直接访问 media 的下载接口
+  string public_base_url = 2;
+  // 下载地址的 HMAC 签名密钥，至少 32 个字符，多个实例必须相同；make keys 生成
+  string url_secret = 3;
+}
+
+// Oss 是阿里云 OSS 的配置。AccessKey 使用只授权该 Bucket 读写的 RAM 用户，只放在 .env 中。
+message Oss {
+  // 地域，例如 cn-hangzhou
+  string region = 1;
+  // 上传与删除使用的地址；为空时按地域使用公网地址，部署在同地域 ECS 时可填内网地址
+  string endpoint = 2;
+  string bucket = 3;
+  string access_key_id = 4;
+  string access_key_secret = 5;
+  // 对象键前缀，便于与其他数据共用 Bucket
+  string key_prefix = 6;
+  // 下载地址使用的自定义域名（已绑定到 Bucket 的 CNAME，例如 https://files.example.com）；
+  // 为空时用 Bucket 的默认域名，此时浏览器直接打开图片会被 OSS 强制下载，<img> 嵌入不受影响
+  string public_endpoint = 7;
+}
+
+// Cache 修改后需要重启。
+message Cache {
+  // 文件元数据的缓存时间。记录写入后不再变化，不存在缓存与数据库不一致的问题
+  google.protobuf.Duration file_ttl = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 不存在的文件 ID 的空值缓存时间
+  google.protobuf.Duration null_ttl = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+}
+
+// Policy 是上传限制与下载地址参数。修改配置文件后自动热更新，校验不通过时保留旧值。
+message Policy {
+  // 聊天文件的大小上限
+  int64 max_chat_file_bytes = 1 [(buf.validate.field).int64.gt = 0];
+  // 按图片处理（解码、生成缩略图）的大小上限，更大的图片按普通文件保存
+  int64 max_image_bytes = 2 [(buf.validate.field).int64.gt = 0];
+  // 头像的大小上限
+  int64 max_avatar_bytes = 3 [(buf.validate.field).int64.gt = 0];
+  // 图片的像素数上限（宽 × 高），防止解压炸弹耗尽内存
+  int64 max_image_pixels = 4 [(buf.validate.field).int64.gt = 0];
+  // 缩略图最长边的像素数
+  int32 thumbnail_max_side = 5 [(buf.validate.field).int32 = {
+    gte: 32
+    lte: 2048
+  }];
+  // 下载地址的有效期；OSS 签名 V4 最长 7 天
+  google.protobuf.Duration download_url_ttl = 6 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {seconds: 60}
+      lte: {seconds: 604800}
+    }
+  ];
+  // 每个用户的上传次数限制
+  marschat.conf.RateLimit upload_limit = 7 [(buf.validate.field).required = true];
+}

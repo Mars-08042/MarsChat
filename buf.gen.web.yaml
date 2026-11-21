@@ -1,0 +1,14 @@
+# 生成前端用的 TS 代码：make web-gen（make gen 会一并执行）
+# 插件来自 web/node_modules，版本由 web/package.json 锁定；用 node 直接运行插件入口，
+# 避免 Windows 上 buf 无法执行 node_modules/.bin 下的 sh 脚本。
+version: v2
+inputs:
+  - directory: api
+plugins:
+  - local: ["node", "web/node_modules/@bufbuild/protoc-gen-es/bin/protoc-gen-es"]
+    out: web/src/gen
+    # buf/validate、google/api 等依赖一起生成，生成代码的文件描述符要引用它们；
+    # 标准类型（google/protobuf）始终从 @bufbuild/protobuf/wkt 引入，不会重复生成
+    include_imports: true
+    opt:
+      - target=ts

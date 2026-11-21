@@ -1,0 +1,177 @@
+# 告警规则的单元测试：用构造的时间序列检查每条规则在该触发时触发、不该触发时不触发。
+# 运行：make rules-test（用 Prometheus 镜像中的 promtool，不需要启动监控组件）。
+rule_files:
+  - rules.yml
+
+evaluation_interval: 15s
+
+tests:
+  # 实例无法抓取满 1 分钟才告警；恢复后告警消失
+  - interval: 15s
+    input_series:
+      - series: 'up{job="marschat", service="access", instance="10.0.0.1:18000"}'
+        values: "1 1 0 0 0 0 0 0 1"
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: InstanceDown
+        exp_alerts: []
+      - eval_time: 105s
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: marschat
+              service: access
+              instance: 10.0.0.1:18000
+            exp_annotations:
+              summary: "access 实例 10.0.0.1:18000 无法抓取"
+              description: "实例已停止或不可达。被杀的实例在 Consul 中保持 critical，600 秒后注销，告警随之结束。"
+      - eval_time: 120s
+        alertname: InstanceDown
+        exp_alerts: []
+
+  # 5xx 占比 10%、每秒 2 个请求：持续 5 分钟后告警；每秒不到 1 个请求时即使全是 5xx 也不告警
+  - interval: 1m
+    input_series:
+      - series: 'server_requests_code_total{service="message", code="200"}'
+        values: "0+108x12"
+      - series: 'server_requests_code_total{service="message", code="503"}'
+        values: "0+12x12"
+      - series: 'server_requests_code_total{service="social", code="500"}'
+        values: "0+30x12"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: HighErrorRate
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: message
+            exp_annotations:
+              summary: "message 5xx 占比 10%"
+
+  # P99 超过 500 毫秒告警；上传接口再慢也不参与
+  - interval: 1m
+    input_series:
+      - series: 'server_requests_seconds_bucket{service="social", operation="/social.v1.SocialService/ListFriends", le="0.5"}'
+        values: "0+0x12"
+      - series: 'server_requests_seconds_bucket{service="social", operation="/social.v1.SocialService/ListFriends", le="1"}'
+        values: "0+60x12"
+      - series: 'server_requests_seconds_bucket{service="social", operation="/social.v1.SocialService/ListFriends", le="+Inf"}'
+        values: "0+60x12"
+      - series: 'server_requests_seconds_bucket{service="media", operation="/media.v1.MediaService/UploadFile", le="0.5"}'
+        values: "0+0x12"
+      - series: 'server_requests_seconds_bucket{service="media", operation="/media.v1.MediaService/UploadFile", le="+Inf"}'
+        values: "0+60x12"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: HighLatency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: social
+              operation: /social.v1.SocialService/ListFriends
+            exp_annotations:
+              summary: "social /social.v1.SocialService/ListFriends P99 995ms"
+
+  # 两个 delivery 实例报告相同的积压，按 max 聚合后只有一条告警；值不变说明没有翻倍
+  - interval: 1m
+    input_series:
+      - series: 'marschat_kafka_consumer_lag{instance="a", group="marschat-delivery", topic="marschat.message.events"}'
+        values: "1500x10"
+      - series: 'marschat_kafka_consumer_lag{instance="b", group="marschat-delivery", topic="marschat.message.events"}'
+        values: "1500x10"
+      - series: 'marschat_kafka_consumer_lag{instance="a", group="marschat-social-cache", topic="marschat.social.events"}'
+        values: "10x10"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KafkaConsumerLag
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: KafkaConsumerLag
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              group: marschat-delivery
+              topic: marschat.message.events
+            exp_annotations:
+              summary: "消费组 marschat-delivery 在 marschat.message.events 上积压 1500 条"
+              description: "消费跟不上或消费者已停止。"
+
+  # 有事件进入死信队列立即告警，10 分钟窗口过后消失
+  - interval: 1m
+    input_series:
+      - series: 'marschat_kafka_consumed_total{service="social", group="marschat-social-cache", topic="marschat.social.events", result="dlq"}'
+        values: "0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: KafkaDeadLetter
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: KafkaDeadLetter
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: social
+              group: marschat-social-cache
+            exp_annotations:
+              summary: "消费组 marschat-social-cache 10 分钟内有 1 条事件进入死信队列"
+              description: "需要人工排查，见 make dlq。"
+      - eval_time: 14m
+        alertname: KafkaDeadLetter
+        exp_alerts: []
+
+  # 推送失败占 10%（冷却期跳过也算在分母里）
+  - interval: 1m
+    input_series:
+      - series: 'marschat_push_total{instance="a", kind="message", result="ok"}'
+        values: "0+90x12"
+      - series: 'marschat_push_total{instance="a", kind="message", result="failed"}'
+        values: "0+10x12"
+      - series: 'marschat_push_total{instance="a", kind="message", result="offline"}'
+        values: "0+500x12"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: PushFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "推送失败率 10%"
+              description: "access 实例不可达或超时；路由最多残留一个心跳超时，实例宕机后短时间内失败属于预期。"
+
+  # Outbox 发布延迟与消息投递延迟：样本都落在 5～10 秒的桶里
+  - interval: 1m
+    input_series:
+      - series: 'marschat_outbox_publish_delay_seconds_bucket{source="marschat-message", le="5"}'
+        values: "0+0x12"
+      - series: 'marschat_outbox_publish_delay_seconds_bucket{source="marschat-message", le="10"}'
+        values: "0+30x12"
+      - series: 'marschat_outbox_publish_delay_seconds_bucket{source="marschat-message", le="+Inf"}'
+        values: "0+30x12"
+      - series: 'marschat_message_delivery_seconds_bucket{conversation_type="CONVERSATION_TYPE_SINGLE", le="1"}'
+        values: "0+0x12"
+      - series: 'marschat_message_delivery_seconds_bucket{conversation_type="CONVERSATION_TYPE_SINGLE", le="2.5"}'
+        values: "0+30x12"
+      - series: 'marschat_message_delivery_seconds_bucket{conversation_type="CONVERSATION_TYPE_SINGLE", le="+Inf"}'
+        values: "0+30x12"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: OutboxPublishDelay
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              source: marschat-message
+            exp_annotations:
+              summary: "marschat-message 的 Outbox 发布延迟 P99 9.95s"
+              description: "Kafka 不可用或发布租约异常。"
+      - eval_time: 11m
+        alertname: MessageDeliveryLatency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "消息投递延迟 P99 2.485s"
+              description: "从写库到推送进入 access 的时长，覆盖 Outbox、Kafka、delivery 三段。"

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package message.v1;
+
+import "message/v1/message.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/message/v1;v1";
+
+// 以下事件经 Outbox 发布到 Kafka topic marschat.message.events，分区键为会话 ID，
+// 同一会话的事件按 seq 顺序进入同一分区。delivery 消费后推送给在线连接。
+
+// MessageCreated 表示消息已写入。
+message MessageCreated {
+  Message message = 1;
+  // 单聊双方的用户 ID；群聊为空，delivery 从 social 取成员
+  repeated int64 member_ids = 2;
+  // 发起发送的连接 ID，推送时排除
+  int64 origin_connection_id = 3;
+}
+
+// ReadPositionUpdated 表示某个用户的已读位置前进了。
+message ReadPositionUpdated {
+  ReadPosition position = 1;
+  ConversationType conversation_type = 2;
+  // 单聊对方的用户 ID，推送已读回执；群聊为 0
+  int64 peer_user_id = 3;
+}

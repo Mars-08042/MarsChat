@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package message.v1;
+
+import "account/v1/account.proto";
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "social/v1/social.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/message/v1;v1";
+
+// MessageService 是面向客户端的会话与消息接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
+// 全部接口都需要在 Authorization 头携带 Bearer 访问令牌，当前用户取自令牌。
+// 发消息只走 WebSocket（见 access.v1 的帧协议），这里只有读取与已读。
+//
+// 不是会话成员时一律返回 CONVERSATION_NOT_FOUND，不区分“会话不存在”和“无权访问”。
+service MessageService {
+  // 列出我的会话，按会话 ID 游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+  // next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 100。
+  // 不按最近活跃排序：客户端拿到完整列表后按 last_message 的时间排序，重连时据此比对各会话的 max_seq。
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse) {
+    option (google.api.http) = {get: "/v1/conversations"};
+  }
+  // 获取单个会话，字段与列表相同。客户端收到未知会话的消息推送时调用。
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse) {
+    option (google.api.http) = {get: "/v1/conversations/{conversation_id}"};
+  }
+  // 历史消息，从 before_seq 往前翻页（不含 before_seq），按 seq 降序。before_seq 为 0 表示从最新开始；
+  // next_before_seq 为 0 表示没有更早的消息。limit 为 0 时取 20，最大 100。
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse) {
+    option (google.api.http) = {get: "/v1/conversations/{conversation_id}/messages"};
+  }
+  // 补拉 from_seq 之后的消息，按 seq 升序。三种结果见 DifferenceResult。limit 为 0 时取 100，最大 200。
+  rpc GetDifference(GetDifferenceRequest) returns (GetDifferenceResponse) {
+    option (google.api.http) = {get: "/v1/conversations/{conversation_id}/difference"};
+  }
+  // 标记已读到 seq。已读位置只增不减，超过会话最新 seq 时按最新 seq 处理；
+  // 位置变化后推送给本人的其他设备，单聊同时推给对方作为已读回执。
+  rpc MarkRead(MarkReadRequest) returns (MarkReadResponse) {
+    option (google.api.http) = {
+      post: "/v1/conversations/{conversation_id}/read"
+      body: "*"
+    };
+  }
+}
+
+// 会话类型，取值与 social.v1.PeerType 一致。
+enum ConversationType {
+  CONVERSATION_TYPE_UNSPECIFIED = 0;
+  // 单聊，对端为用户
+  CONVERSATION_TYPE_SINGLE = 1;
+  // 群聊，会话 ID 等于群 ID
+  CONVERSATION_TYPE_GROUP = 2;
+}
+
+message TextContent {
+  string text = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 4000
+  }];
+}
+
+// ImageContent 是图片消息。文件先经 media 上传（用途 PURPOSE_CHAT），发送时只需填 file_id 和 access_key；
+// 其余字段由 message 按 media 的记录填写，客户端上送的值被覆盖。文件必须是已生成缩略图的图片，
+// 否则返回 FILE_INVALID。接收方凭 file_id 和 access_key 调用 media 的 GetDownloadUrls 换取缩略图与原图地址。
+message ImageContent {
+  int64 file_id = 1 [(buf.validate.field).int64.gt = 0];
+  string access_key = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string name = 3;
+  int64 size = 4;
+  string mime_type = 5;
+  int32 width = 6;
+  int32 height = 7;
+}
+
+// FileContent 是文件消息，规则同 ImageContent，任意类型的聊天文件都可以发送。
+message FileContent {
+  int64 file_id = 1 [(buf.validate.field).int64.gt = 0];
+  string access_key = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string name = 3;
+  int64 size = 4;
+  string mime_type = 5;
+}
+
+// MessageContent 是消息正文，按类型取其中一种。
+message MessageContent {
+  oneof body {
+    option (buf.validate.oneof).required = true;
+    TextContent text = 1;
+    ImageContent image = 2;
+    FileContent file = 3;
+  }
+}
+
+message Message {
+  int64 conversation_id = 1;
+  ConversationType conversation_type = 2;
+  // 会话内从 1 开始连续递增，(conversation_id, seq) 唯一标识一条消息
+  int64 seq = 3;
+  int64 sender_id = 4;
+  // 发送方生成的幂等键，只对发送方有意义
+  string client_msg_id = 5;
+  MessageContent content = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// OutgoingMessage 是客户端要发送的消息，经 WebSocket 的 SendMessage 帧发给 access。
+message OutgoingMessage {
+  ConversationType peer_type = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // 单聊为对方用户 ID，群聊为群 ID
+  int64 peer_id = 2 [(buf.validate.field).int64.gt = 0];
+  // 客户端为每条消息生成（建议 UUID），超时未收到确认时用同一个值重发，服务端只存一条
+  string client_msg_id = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+    pattern: "^[A-Za-z0-9_-]+$"
+  }];
+  MessageContent content = 4 [(buf.validate.field).required = true];
+}
+
+// SendResult 是发送确认：消息已写入数据库。重复发送时返回首次的结果。
+message SendResult {
+  int64 conversation_id = 1;
+  int64 seq = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// ReadPosition 表示某个用户在会话中的已读位置。
+message ReadPosition {
+  int64 conversation_id = 1;
+  int64 user_id = 2;
+  int64 read_seq = 3;
+}
+
+// GroupBrief 是会话列表中展示的群资料。
+message GroupBrief {
+  int64 id = 1;
+  string name = 2;
+  string avatar = 3;
+  social.v1.GroupStatus status = 4;
+  int32 member_count = 5;
+}
+
+message Conversation {
+  int64 id = 1;
+  ConversationType type = 2;
+  // 单聊对方的资料，account 不可用时只有 id
+  account.v1.UserProfile peer_user = 3;
+  // 群资料，social 不可用时只有 id
+  GroupBrief group = 4;
+  // 会话最新消息的 seq
+  int64 max_seq = 5;
+  // 本人的已读位置
+  int64 read_seq = 6;
+  // max_seq - read_seq
+  int64 unread_count = 7;
+  // 单聊对方的已读位置，用于显示已读回执；群聊为 0
+  int64 peer_read_seq = 8;
+  // 最新一条消息，会话还没有消息时为空
+  Message last_message = 9;
+}
+
+message ListConversationsRequest {
+  int64 cursor = 1 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+  int64 next_cursor = 2;
+}
+
+message GetConversationRequest {
+  int64 conversation_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message GetConversationResponse {
+  Conversation conversation = 1;
+}
+
+message ListMessagesRequest {
+  int64 conversation_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 before_seq = 2 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  int64 next_before_seq = 2;
+}
+
+// 补拉的结果。
+enum DifferenceResult {
+  DIFFERENCE_RESULT_UNSPECIFIED = 0;
+  // 已经返回到最新，本地补齐完成
+  DIFFERENCE_RESULT_COMPLETE = 1;
+  // 缺口超过本次 limit，用 next_from_seq 继续拉
+  DIFFERENCE_RESULT_SLICE = 2;
+  // 缺口过大，messages 为空：丢弃本地缓存，用 ListMessages 重新加载最新一页
+  DIFFERENCE_RESULT_TOO_LONG = 3;
+}
+
+message GetDifferenceRequest {
+  int64 conversation_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 客户端本地连续的最大 seq，第一次同步传 0
+  int64 from_seq = 2 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+}
+
+message GetDifferenceResponse {
+  DifferenceResult result = 1;
+  repeated Message messages = 2;
+  // SLICE 时下一次请求的 from_seq
+  int64 next_from_seq = 3;
+  // 会话当前最新的 seq
+  int64 max_seq = 4;
+}
+
+message MarkReadRequest {
+  int64 conversation_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 seq = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+message MarkReadResponse {
+  // 生效后的已读位置
+  int64 read_seq = 1;
+}

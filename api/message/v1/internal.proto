@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package message.v1;
+
+import "buf/validate/validate.proto";
+import "message/v1/message.proto";
+
+option go_package = "github.com/Mars-08042/MarsChat/api/message/v1;v1";
+
+// MessageInternalService 只供其他服务通过 gRPC 调用，不经网关暴露（没有 HTTP 注解）。
+service MessageInternalService {
+  // 发送消息，由 access 在收到客户端的 SendMessage 帧后调用。写库成功才返回确认。
+  // 发言权限不足时原样返回 social 的错误（NOT_FRIENDS、BLOCKED、MEMBER_MUTED 等）。
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+}
+
+message SendMessageRequest {
+  // 以下三项来自 access 上已鉴权的连接，不来自客户端
+  int64 sender_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 登录会话 ID（令牌中的 sid）
+  int64 session_id = 2 [(buf.validate.field).int64.gt = 0];
+  // 发起发送的连接，推送时排除它，同一用户的其他设备和标签页仍能收到
+  int64 connection_id = 3 [(buf.validate.field).int64.gt = 0];
+  OutgoingMessage message = 4 [(buf.validate.field).required = true];
+}
+
+message SendMessageResponse {
+  SendResult result = 1;
+}
