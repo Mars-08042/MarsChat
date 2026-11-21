@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述后端的运行方式，最近一次更新于 2026-11-21（后端重构完成）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。
+> 本文描述后端与前端开发环境的运行方式，最近一次更新于 2026-11-21（后端重构完成，合并前端分支）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）；前端开发方式见“前端开发”。
 
 ## 运行依赖
 
@@ -10,6 +10,8 @@
 | Docker Desktop | 本机 29.9.2，Compose v5.6.1 | 运行依赖组件 |
 | buf | 1.71.0 | `make lint`、`make conf`、`make api`；protoc 插件由 `go run` 按固定版本下载，不需要单独安装 |
 | make + Git Bash | GNU make 3.81 及以上 | 开发命令；Makefile 使用 `sh`，Windows 上需要 Git Bash |
+| Node.js | 24（本机 24.12.0，CI 同为 24） | 前端开发与构建，以及 `make gen` 中的 TS 代码生成 |
+| pnpm | 11.22.0（`web/package.json` 的 `packageManager`） | 前端依赖，见“前端开发” |
 
 ## 依赖组件
 
@@ -256,6 +258,51 @@ make load-restore                # 按 .env 重建应用容器，恢复邮件发
 - 压测会在数据库中留下用户、好友关系和消息（1000 个连接 60 秒约 6.5 万条），需要清理时见“停止与重置”。
 - 结果与环境基线见[重构计划](plans/completed/backend-refactor.md#压测结果)。
 
+## 前端开发
+
+前端在 `web/`（React + Vite，pnpm 管理依赖），设计见 [frontend.md](design/frontend.md)，进度见[前端计划](plans/active/frontend-rewrite.md)。
+
+```bash
+make web-install        # 按 web/pnpm-lock.yaml 安装依赖（cd web && pnpm install --frozen-lockfile）
+make web-dev            # 开发服务器 http://localhost:5173（端口固定，被占用时直接报错）
+make web-check          # lint → 类型检查 → 单元测试 → 构建
+```
+
+开发服务器把 `/v1` 和 `/ws` 代理到后端。浏览器只访问 Vite 的源，网关和各服务都不需要配置 CORS。代理目标由环境变量 `MARSCHAT_API_TARGET` 选择：
+
+| 取值 | 代理到 | 后端运行方式 |
+|---|---|---|
+| `gateway`（默认） | APISIX `http://127.0.0.1:19080` | 容器模式（`make cluster-up`） |
+| `host` | 按路径前缀转发到各服务的宿主机端口，与网关的路由划分一致，见 [vite.config.ts](../web/vite.config.ts) | 宿主机运行（`make run-<服务>`） |
+
+例如 `MARSCHAT_API_TARGET=host make web-dev`。后端没有运行时，代理请求返回 502。
+
+- 本机经网关的请求来源 IP 相同，`/v1/auth/*` 每分钟 60 次的入口限流对本机是全局的；需要反复登录时用 `host` 模式。
+- 本机设置了系统 HTTP 代理时，curl 访问 `localhost` 也会走代理，返回带 `Proxy-Connection` 头的 502。加上 `--noproxy '*'` 即可。
+- 改了 `api/` 下的 proto 后执行 `make gen`，它会一并执行 `make web-gen`，重新生成 `web/src/gen/` 下的 TS 代码。生成代码要提交到仓库。
+
+### 平台表情（可选）
+
+微信、QQ 等平台表情的图片版权属于各平台，不在仓库里。没有生成时表情面板只有系统 emoji，消息里的短代码显示为文字，其他功能不受影响。需要时在本地生成：
+
+```bash
+# 1. 按 scripts/emoji_packs.py 中 SOURCES 的提交克隆来源仓库（只读取图片和 JSON，不执行其中的脚本）
+git clone https://github.com/walinejs/emojis.git tmp/emoji-sources/walinejs-emojis
+git clone https://github.com/Augenstern-O/Stickers.git tmp/emoji-sources/augenstern-stickers
+git clone https://github.com/gweesin/bilicon.git tmp/emoji-sources/gweesin-bilicon
+git -C tmp/emoji-sources/walinejs-emojis checkout b10c0abfdb7c52365d8f5a46b730ab9130de173f
+git -C tmp/emoji-sources/augenstern-stickers checkout 91285989c50eaf45560dab02043df1d4b03aded1
+git -C tmp/emoji-sources/gweesin-bilicon checkout 70b2b187a867a62b91fddf5505bd8ab52cb43e7f
+
+# 2. 生成到 web/public/emoji-packs（需要 Python 3 和 Pillow，约 2～7 分钟）
+make web-emoji
+```
+
+- 生成目录被 git 忽略；Vite 开发时直接提供，构建时整体复制到 `dist/emoji-packs/`（约 50 MB）。
+- `EMOJI_PACKS_OUT=<目录>` 可以输出到别处。输出目录自带 README 和 `manifest.json`，可以单独复制到其他项目使用。
+- 来源仓库的提交与脚本中固定的不一致时，脚本会打印警告，但继续生成。
+- 公开部署前需要确认这些图片的授权（[前端设计 7.1](design/frontend.md#71-风险)）。
+
 ## 服务配置
 
 配置文件在 `app/<服务>/configs/config.yaml`，结构定义在各服务的 `internal/conf/conf.proto`，约定见 [system.md](architecture/system.md#51-配置)。
@@ -448,7 +495,10 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 
 | 命令 | 作用 |
 |---|---|
-| `make gen` | 重新生成配置 proto（`make conf`）、接口 proto（`make api`）和依赖注入代码（`make wire`） |
+| `make gen` | 重新生成配置 proto（`make conf`）、接口 proto（`make api`）、依赖注入代码（`make wire`）和前端 TS 代码（`make web-gen`，需要先 `make web-install`） |
+| `make web-install` / `make web-dev` / `make web-check` | 安装前端依赖 / 启动前端开发服务器 / 前端检查，见“前端开发” |
+| `make web-gen` | 删除并重新生成 `web/src/gen/` |
+| `make web-emoji` | 从 `tmp/emoji-sources/` 生成平台表情资源到 `web/public/emoji-packs/`，见“平台表情（可选）” |
 | `make lint` | `buf lint` |
 | `make vet` / `make test` | `go vet ./...` / `go test ./...` |
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |
@@ -466,7 +516,7 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 | `make load-up`、`load-seed`、`load-token`、`load-ws`、`load-read`、`load-bust`、`load-restore` | 压测，见“压测” |
 | `make grant-admin EMAIL=…` | 设置管理员 |
 
-CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时执行：`buf lint`、`buf breaking`（PR 与基准分支比较，推送与上一次推送比较）、重新生成代码并检查与提交一致、`go mod tidy -diff`、`go vet`、`go build`、`go test -race`。e2e 需要 compose 环境，暂不在 CI 中运行。
+CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时执行：`buf lint`、`buf breaking`（PR 与基准分支比较，推送与上一次推送比较）、安装前端依赖、重新生成代码（含前端 TS 代码）并检查与提交一致、`go mod tidy -diff`、`go vet`、`go build`、`go test -race`、前端检查（`pnpm check`）。e2e 需要 compose 环境，暂不在 CI 中运行。
 
 ## 死信队列
 

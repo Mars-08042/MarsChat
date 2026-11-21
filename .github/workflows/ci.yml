@@ -47,6 +47,21 @@ jobs:
           fi
           buf breaking --against ".git#ref=$against"
 
+      # make gen 会生成前端的 TS 代码，要先装好 web/ 的依赖；pnpm 版本取自 web/package.json 的 packageManager
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+          cache: true
+          cache_dependency_path: web/pnpm-lock.yaml
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 安装前端依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
       - name: 生成代码与提交内容一致
         run: |
           make gen
@@ -68,3 +83,7 @@ jobs:
 
       - name: 单元测试
         run: go test -race ./...
+
+      - name: 前端检查（lint、类型检查、单元测试、构建）
+        working-directory: web
+        run: pnpm check

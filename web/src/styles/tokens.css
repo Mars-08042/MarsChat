@@ -1,0 +1,90 @@
+/*
+ * 设计变量（设计 3.4）。颜色只用 6 位十六进制，tokens.test.ts 会解析本文件核对对比度。
+ * 变量名沿用 shadcn/ui 的约定（background、primary、accent 等），shadcn 组件可以直接使用；
+ * 品牌专用的变量另外命名。注意 shadcn 的 accent 表示悬停和选中背景，所以沙金色叫 gold。
+ */
+
+:root {
+  color-scheme: light;
+
+  --background: #FAF7F3;             /* 月岩白 */
+  --foreground: #17110F;             /* 墨黑 */
+  --card: #FFFFFF;
+  --card-foreground: #17110F;
+  --popover: #FFFFFF;
+  --popover-foreground: #17110F;
+  /* 白字按钮必须用深火星红：白字放在 #E2452C 上只有 4.10，不满足正文 4.5 */
+  --primary: #C2361F;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F1ECE6;
+  --secondary-foreground: #17110F;
+  --muted: #F1ECE6;
+  --muted-foreground: #6E635C;       /* 尘灰，在 muted 背景上也要满足 4.5 */
+  --accent: #FDEBE6;                 /* 选中的会话、悬停背景 */
+  --accent-foreground: #17110F;
+  --destructive: #B42318;
+  --border: #E8E1DA;
+  --input: #E8E1DA;
+  --ring: #E2452C;                   /* 焦点环属于非文字元素，要求 3:1 */
+
+  --brand: #E2452C;                  /* 火星红：大色块、图标、大号标题、装饰 */
+  --brand-strong: #C2361F;           /* 我方气泡、白字按钮 */
+  --brand-text: #C2361F;             /* 普通背景上的红色文字、链接 */
+  --bubble-peer: #F1ECE6;
+  --gold: #F0A23B;                   /* 沙金：未读徽章等少量点缀 */
+  --gold-foreground: #17110F;
+  --success: #187A4C;
+
+  --radius: 0.625rem;                /* 按钮、输入框 10px */
+  --card-radius: 1rem;               /* 卡片、面板 16px */
+  --bubble-radius: 1.125rem;         /* 气泡 18px */
+  --bubble-tail-radius: 0.375rem;    /* 同一发送者连续消息的相邻角 6px */
+
+  /* 阴影带暖色调，不用纯黑 */
+  --card-shadow: 0 1px 2px rgb(60 30 20 / 0.06), 0 8px 24px rgb(60 30 20 / 0.08);
+  --float-shadow: 0 12px 40px rgb(60 30 20 / 0.16);
+
+  /* 英文标题字体与等宽字体（设计 3.4.3），默认 Geist 组。中文没有对应字形，会逐字回退到系统字体 */
+  --display-font: "Geist Variable";
+  --code-font: "Geist Mono Variable";
+}
+
+/* 用户可选的其他字体组，id 与 src/lib/appearance.ts 的 FONT_PAIRS 一致 */
+:root[data-font="grotesk"] {
+  --display-font: "Space Grotesk Variable";
+  --code-font: "JetBrains Mono Variable";
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: #0F0B0A;             /* 夜色 */
+  --foreground: #F5EFE9;
+  --card: #1A1412;
+  --card-foreground: #F5EFE9;
+  --popover: #1A1412;
+  --popover-foreground: #F5EFE9;
+  --primary: #C2361F;
+  --primary-foreground: #FFFFFF;
+  --secondary: #241C19;
+  --secondary-foreground: #F5EFE9;
+  --muted: #241C19;
+  --muted-foreground: #A89C94;
+  --accent: #2A1A16;
+  --accent-foreground: #F5EFE9;
+  --destructive: #FF8A80;
+  --border: #2E2420;
+  --input: #2E2420;
+  --ring: #FF6A4D;
+
+  --brand: #FF6A4D;
+  --brand-strong: #C2361F;
+  --brand-text: #FF6A4D;
+  --bubble-peer: #241C19;
+  --gold: #F0A23B;
+  --gold-foreground: #17110F;
+  --success: #3FBF86;
+
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+  --float-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+}

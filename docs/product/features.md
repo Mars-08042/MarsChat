@@ -112,3 +112,9 @@
 ## 未实现
 
 后端目前没有以下功能，是否实现随前端重构再定：删除会话、消息撤回、消息搜索、语音消息、离线推送；找回密码、修改密码、修改邮箱、注销账号；管理员操作审计。通话相关的缺口见上方“通话信令”一节。
+
+## 计划中
+
+- [React 前端重写](../plans/active/frontend-rewrite.md)：React + pnpm 新前端，设计 [frontend.md](../design/frontend.md) 已采纳（[ADR-0008](../architecture/adr/0008-react-frontend.md)），进行中。
+
+后端已按[后端重构计划](../plans/completed/backend-refactor.md)完成（2026-11-21）。新计划在 `docs/plans/active/` 中建立（规则见 [docs/README.md](../README.md#计划文档)），并在此登记。

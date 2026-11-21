@@ -49,6 +49,7 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 test/cluster/            容器模式的集群测试与故障实验（构建标签 cluster）
 test/testkit/            e2e 与集群测试共用的调用、注册、WebSocket 与 Redis 读取函数
 test/load/k6/            k6 压测脚本（make load-*）
+web/                     前端（React + Vite，pnpm，ADR-0008）；src/gen/ 为 buf 生成的接口 TS 代码，目录约定见前端设计 3.2 节
 data/media/              media 本地存储的文件（运行时创建，被 Git 忽略）
 ```
 
@@ -180,7 +181,8 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 | 配置 proto | `make conf` | `buf generate --template buf.gen.conf.yaml`，插件 `protoc-gen-go` 用 `go run` 固定版本 |
 | 接口 proto | `make api` | `buf generate --template buf.gen.yaml`：Go 消息、gRPC、Kratos HTTP 路由，以及合并的 `api/openapi.yaml`；插件同样用 `go run` 固定版本 |
 | 依赖注入 | `make wire` | `wire` v0.7.0 |
-| 全部 | `make gen` | CI 会重新生成并检查与提交内容一致 |
+| 前端 TS | `make web-gen` | `buf generate --template buf.gen.web.yaml`：先删除 `web/src/gen/` 再生成；插件 `protoc-gen-es` 来自 `web/node_modules`，版本由 `web/package.json` 锁定，用 `node` 直接运行插件入口（Windows 上 buf 不能执行 `node_modules/.bin` 下的 sh 脚本）；`include_imports` 一并生成 `buf/validate`、`google/api` |
+| 全部 | `make gen` | 以上全部；需要先 `make web-install`。CI 会重新生成并检查与提交内容一致 |
 
 `buf.yaml` 有三个模块，lint 都使用 STANDARD 规则：
 
