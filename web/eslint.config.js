@@ -6,8 +6,9 @@ import globals from "globals"
 import tseslint from "typescript-eslint"
 
 export default defineConfig([
-  // src/gen 是 buf 生成的代码，src/components/ui 由 shadcn CLI 生成，不按本项目规则检查
-  globalIgnores(["dist", "src/gen", "src/components/ui"]),
+  // src/gen 是 buf 生成的代码，src/components/ui 由 shadcn CLI 生成，
+  // src/components/effects 是复制进来的第三方源码（保持原样便于对比上游），不按本项目规则检查
+  globalIgnores(["dist", "src/gen", "src/components/ui", "src/components/effects"]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [

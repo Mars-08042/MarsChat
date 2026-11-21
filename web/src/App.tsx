@@ -1,8 +1,17 @@
-// 工程骨架阶段的占位页，第 2 阶段（视觉原型）替换为登录页与主界面。
+import { useEffect } from "react"
+import { RouterProvider } from "react-router"
+import { router } from "@/app/router"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { PrototypePanel } from "@/dev/PrototypePanel"
+import { watchSystemTheme } from "@/lib/theme"
+
 export function App() {
+  useEffect(() => watchSystemTheme(), [])
+
   return (
-    <main className="flex min-h-svh items-center justify-center">
-      <h1 className="text-4xl font-semibold">MarsChat</h1>
-    </main>
+    <TooltipProvider delay={400}>
+      <RouterProvider router={router} />
+      {import.meta.env.DEV && <PrototypePanel />}
+    </TooltipProvider>
   )
 }

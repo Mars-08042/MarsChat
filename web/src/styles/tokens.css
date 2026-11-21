@@ -43,6 +43,16 @@
   /* 阴影带暖色调，不用纯黑 */
   --card-shadow: 0 1px 2px rgb(60 30 20 / 0.06), 0 8px 24px rgb(60 30 20 / 0.08);
   --float-shadow: 0 12px 40px rgb(60 30 20 / 0.16);
+
+  /* 英文标题字体与等宽字体（设计 3.4.3），默认 Geist 组。中文没有对应字形，会逐字回退到系统字体 */
+  --display-font: "Geist Variable";
+  --code-font: "Geist Mono Variable";
+}
+
+/* 用户可选的其他字体组，id 与 src/lib/appearance.ts 的 FONT_PAIRS 一致 */
+:root[data-font="grotesk"] {
+  --display-font: "Space Grotesk Variable";
+  --code-font: "JetBrains Mono Variable";
 }
 
 .dark {

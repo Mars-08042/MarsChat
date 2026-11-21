@@ -1,16 +1,23 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+/* 字体候选 A 与 B（视觉原型阶段对比，定稿后删除未选中的一组）。@font-face 按 unicode-range 分包，只下载用到的字体 */
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 @import "./styles/tokens.css";
 
 /* 深色主题挂在 <html class="dark"> 上；登录页等固定深色的区域用 .dark 容器包裹 */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* 中文用系统字体（中文 webfont 体积太大）；英文标题字体与等宽字体在视觉原型阶段选定（设计 3.4.3） */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-  --font-heading: var(--font-sans);
-  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
+  /* 中文用系统字体（中文 webfont 体积太大）；英文标题字体与等宽字体见 tokens.css（设计 3.4.3） */
+  /* 与 Tailwind 默认字体栈一样在末尾加彩色 emoji 字体：前面的字体都没有某个表情的字形时，用彩色字体显示，不回退到黑白符号字体 */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-display: var(--display-font), ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-heading: var(--font-display);
+  --font-mono: var(--code-font), ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", "PingFang SC", "Microsoft YaHei UI", monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -52,6 +59,19 @@
 
   --shadow-card: var(--card-shadow);
   --shadow-float: var(--float-shadow);
+}
+
+@theme {
+  /* 登录页底部的等宽跑马灯：内容重复两份，平移一半宽度后无缝衔接 */
+  --animate-marquee: marquee 48s linear infinite;
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
 }
 
 @layer base {
