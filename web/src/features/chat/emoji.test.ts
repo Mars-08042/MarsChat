@@ -39,6 +39,20 @@ describe("deleteBackward", () => {
   it("光标在开头时不变", () => {
     expect(deleteBackward("abc", 0, 0)).toEqual({ text: "abc", caret: 0 })
   })
+
+  it("光标前是已知的平台表情 code 时整个删除", () => {
+    const known = (code: string) => code === "qq_微笑"
+    const text = "好的:qq_微笑:"
+    expect(deleteBackward(text, text.length, text.length, known)).toEqual({ text: "好的", caret: 2 })
+    // 前面有多余的冒号也只删掉最后一个 code
+    const text2 = "a::qq_微笑:"
+    expect(deleteBackward(text2, text2.length, text2.length, known)).toEqual({ text: "a:", caret: 2 })
+  })
+
+  it("不认识的 code 按普通字符逐个删除", () => {
+    const text = "时间 12:30:"
+    expect(deleteBackward(text, text.length, text.length, () => false)).toEqual({ text: "时间 12:30", caret: 8 })
+  })
 })
 
 describe("pushRecent", () => {

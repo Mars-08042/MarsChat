@@ -215,6 +215,28 @@ make web-check          # lint → 类型检查 → 单元测试 → 构建
 - 本机设置了系统 HTTP 代理时，curl 访问 `localhost` 也会走代理，返回带 `Proxy-Connection` 头的 502。加上 `--noproxy '*'` 即可。
 - 改了 `api/` 下的 proto 后执行 `make gen`，它会一并执行 `make web-gen`，重新生成 `web/src/gen/` 下的 TS 代码。生成代码要提交到仓库。
 
+### 平台表情（可选）
+
+微信、QQ 等平台表情的图片版权属于各平台，不在仓库里。没有生成时表情面板只有系统 emoji，消息里的短代码显示为文字，其他功能不受影响。需要时在本地生成：
+
+```bash
+# 1. 按 scripts/emoji_packs.py 中 SOURCES 的提交克隆来源仓库（只读取图片和 JSON，不执行其中的脚本）
+git clone https://github.com/walinejs/emojis.git tmp/emoji-sources/walinejs-emojis
+git clone https://github.com/Augenstern-O/Stickers.git tmp/emoji-sources/augenstern-stickers
+git clone https://github.com/gweesin/bilicon.git tmp/emoji-sources/gweesin-bilicon
+git -C tmp/emoji-sources/walinejs-emojis checkout b10c0abfdb7c52365d8f5a46b730ab9130de173f
+git -C tmp/emoji-sources/augenstern-stickers checkout 91285989c50eaf45560dab02043df1d4b03aded1
+git -C tmp/emoji-sources/gweesin-bilicon checkout 70b2b187a867a62b91fddf5505bd8ab52cb43e7f
+
+# 2. 生成到 web/public/emoji-packs（需要 Python 3 和 Pillow，约 2～7 分钟）
+make web-emoji
+```
+
+- 生成目录被 git 忽略；Vite 开发时直接提供，构建时整体复制到 `dist/emoji-packs/`（约 50 MB）。
+- `EMOJI_PACKS_OUT=<目录>` 可以输出到别处。输出目录自带 README 和 `manifest.json`，可以单独复制到其他项目使用。
+- 来源仓库的提交与脚本中固定的不一致时，脚本会打印警告，但继续生成。
+- 公开部署前需要确认这些图片的授权（[前端设计 7.1](design/frontend.md#71-风险)）。
+
 ## 服务配置
 
 配置文件在 `app/<服务>/configs/config.yaml`，结构定义在各服务的 `internal/conf/conf.proto`，约定见 [system.md](architecture/system.md#51-配置)。
@@ -335,6 +357,7 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `make gen` | 重新生成配置 proto（`make conf`）、接口 proto（`make api`）、依赖注入代码（`make wire`）和前端 TS 代码（`make web-gen`，需要先 `make web-install`） |
 | `make web-install` / `make web-dev` / `make web-check` | 安装前端依赖 / 启动前端开发服务器 / 前端检查，见“前端开发” |
 | `make web-gen` | 删除并重新生成 `web/src/gen/` |
+| `make web-emoji` | 从 `tmp/emoji-sources/` 生成平台表情资源到 `web/public/emoji-packs/`，见“平台表情（可选）” |
 | `make lint` | `buf lint` |
 | `make vet` / `make test` | `go vet ./...` / `go test ./...` |
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |

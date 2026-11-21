@@ -5,6 +5,7 @@ import { springs } from "@/lib/motion"
 import { formatClock } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { FileAttachment, ImageAttachment } from "./attachments"
+import { EmojiText } from "./EmojiText"
 import { displayStatus, type ChatMessage, type ChatUser, type Conversation, type DisplayStatus } from "./types"
 
 interface MessageRowProps {
@@ -117,7 +118,7 @@ function Bubble({
 
   return (
     <div className={cn(shape, colors, "px-3.5 py-2 text-[15px] leading-relaxed break-words whitespace-pre-wrap transition-opacity")}>
-      {content.text}
+      <EmojiText text={content.text} />
       {/* 时间和状态浮在最后一行右侧；白字透明度不低于 90%，在 #C2361F 上对比度约 4.7 */}
       <span
         className={cn(

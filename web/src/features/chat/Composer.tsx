@@ -18,6 +18,7 @@ import { springs } from "@/lib/motion"
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query"
 import { cn } from "@/lib/utils"
 import { deleteBackward, insertAt } from "./emoji"
+import { useEmojiPacks } from "./emoji-packs"
 import { canSend, LENGTH_HINT_THRESHOLD, MAX_TEXT_LENGTH, shouldSend, textLength } from "./input-rules"
 
 // frimousse 和表情数据只在第一次打开面板时加载
@@ -51,6 +52,7 @@ const FILE_HINT = "文件或图片，单个不超过 100 MB；也可以直接拖
 // 手机端是一行：输入框、表情、文件（有内容时换成发送），表情面板顶替软键盘的位置（设计 3.6.4）
 function ComposerInput({ onSend, onFiles }: Omit<ComposerProps, "blockedReason">) {
   const desktop = useMediaQuery(DESKTOP_QUERY)
+  const emojiPacks = useEmojiPacks()
   const [text, setText] = useState("")
   const [emojiOpen, setEmojiOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -264,7 +266,7 @@ function ComposerInput({ onSend, onFiles }: Omit<ComposerProps, "blockedReason">
                         onPointerDown={(e) => e.preventDefault()}
                         onClick={() => {
                           const { start, end } = selectionRef.current
-                          applyEdit(deleteBackward(text, start, end), false)
+                          applyEdit(deleteBackward(text, start, end, (code) => emojiPacks.byCode.has(code)), false)
                         }}
                         disabled={text === ""}
                         aria-label="删除"

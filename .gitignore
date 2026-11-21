@@ -14,6 +14,8 @@ vendor/
 # 前端依赖与构建产物
 node_modules/
 web/dist/
+# 平台表情图片版权属于各平台，由 make web-emoji 在本地生成（设计 3.6.4）
+web/public/emoji-packs/
 
 # 本地配置与密钥（模板见 .env.example）
 .env

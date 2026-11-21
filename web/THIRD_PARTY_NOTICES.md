@@ -16,6 +16,7 @@
 - **React Bits**（MIT + Commons Clause）：文件头保留原版权声明和许可证说明，并在上表登记组件名与来源链接。可以作为应用的一部分使用和发布，不能单独再分发组件本身。
 - **uiverse.io**（MIT）：代码注释写明作者和原始链接，并在上表登记。
 - **Aceternity UI 和付费组件**：只参考设计，不提交源码，不在此登记。
+- **平台表情图片**（微信、QQ、B站等）：版权属于各平台，不提交进仓库，不在此登记。图片由 `make web-emoji` 在本地生成到 `public/emoji-packs/`（已被 git 忽略），来源仓库、提交和协议写在生成目录的 README 里（[设计第 10 节第 19 条](../docs/design/frontend.md#10-实施中的调整)）。
 
 ## React Bits 许可证全文
 

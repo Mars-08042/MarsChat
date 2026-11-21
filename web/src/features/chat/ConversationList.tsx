@@ -9,6 +9,7 @@ import { springs } from "@/lib/motion"
 import { formatListTime } from "@/lib/time"
 import { useNow } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
+import { EmojiText } from "./EmojiText"
 import { useChatStore } from "./fake-store"
 import { contentPreview, type ChatMessage, type Conversation } from "./types"
 
@@ -125,7 +126,7 @@ function Preview({
       {mine && (last.status === "pending" || last.status === "uploading") && <Clock3 className="size-3.5 shrink-0" aria-label="发送中" />}
       <span className="truncate">
         {prefix}
-        {contentPreview(last.content)}
+        <EmojiText text={contentPreview(last.content)} />
       </span>
     </span>
   )

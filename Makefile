@@ -47,6 +47,15 @@ web-dev: ## 启动前端开发服务器 http://localhost:5173，默认经网关�
 web-check: ## 前端检查：lint、类型检查、单元测试、构建
 	cd web && pnpm check
 
+# 平台表情图片不进仓库：源仓库按 scripts/emoji_packs.py 中固定的提交克隆到 tmp/emoji-sources，
+# 生成结果在 web/public/emoji-packs（已忽略）。Windows 上 python3 常是商店占位程序，跑不起来时退回 python
+PYTHON ?= $(shell python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+EMOJI_PACKS_OUT ?= web/public/emoji-packs
+
+.PHONY: web-emoji
+web-emoji: ## 从 tmp/emoji-sources 生成平台表情资源（需要 Pillow，约几分钟），EMOJI_PACKS_OUT 可改输出目录
+	$(PYTHON) -I scripts/emoji_packs.py --sources tmp/emoji-sources --out $(EMOJI_PACKS_OUT)
+
 .PHONY: lint
 lint: ## proto 规范检查
 	buf lint
