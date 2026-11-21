@@ -1,6 +1,6 @@
 # 数据模型
 
-> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 4（2026-11-19）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
+> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
 
 ## 1. 数据库与账号
 
@@ -255,6 +255,8 @@ media 不发事件，没有 `outbox_events` 表。用户与群的头像字段（
 | `media:file:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10%；空值标记 1 分钟 | 回源时写入；记录不会修改，不需要删除 | 文件元数据缓存（Cache-Aside），下载地址与 `GetFiles` 批量读取；不加布隆过滤器（文件 ID 不对外列举） |
 | `media:rl:upload:{uid}` | ZSET | 窗口长度 | `pkg/ratelimit` | 每人每小时 60 次上传，Redis 故障时放行 |
 | `access:route:{uid}` | Hash：字段为连接 ID，值为 `{session_id}\|{access gRPC 地址}` | **字段级** 90 秒（心跳超时） | access 认证成功和每次心跳时 `HSETEX ... PX`，连接关闭时 `HDEL` | 在线路由（`pkg/route`），delivery 推送前用 pipeline `HGETALL`。`HSETEX` 需要 Redis 8.0+ |
+| `access:call:{call_id}` | Hash：`caller_id`、`caller_conn`、`caller_addr`、`callee_id`、`callee_conn`、`callee_addr`（接听后写入）、`media`、`state`（`ringing` / `active`）、`created_at`、`answered_at`（Unix 毫秒） | 振铃中为振铃超时加 15 秒（75 秒）；通话中 90 秒（心跳超时），主叫连接与接听连接每次心跳续期 | 创建、接听、结束、续期各是一个 Lua 脚本，通话结束即删除 | 通话状态（docs/design/call-signaling.md），所有 access 实例共享；接听互斥靠脚本内的状态判断 |
+| `access:call_user:{uid}` | String，值为 `call_id` | 与所在通话相同 | 创建通话时与 Hash 一起写入（任一方已存在则创建失败）；与 Hash 一起续期、删除，但只在值仍等于本通话时才续期或删除 | 忙线标记：一个用户（包括全部设备）同时只能处于一通通话中。三个键总在同一脚本中处理，不会单独残留 |
 | `delivery:done:{event_id}` | String | 1 小时 | 推送前 `SET NX` | 推送去重：已存在就跳过，覆盖消费者重启、再均衡后的重复投递 |
 | `outbox:lease:{service}` | String，值为实例 ID | 10 秒，每 3 秒续期 | 发布器 `SET NX PX` 抢占，续期与释放都校验持有者 | 每个服务同时只有一个实例发布 Outbox（account、social、message） |
 

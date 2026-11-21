@@ -5,13 +5,26 @@ package access.v1;
 option go_package = "github.com/Mars-08042/MarsChat/api/access/v1;v1";
 
 // ErrorReason 是 access 自身的错误原因，在 WebSocket 的 Error 帧中返回。
-// 令牌无效时 reason 为 UNAUTHORIZED；发消息的错误原样来自 message 服务。
+// 令牌无效时 reason 为 UNAUTHORIZED；发消息的错误原样来自 message 服务，呼叫的权限错误原样来自 social 服务。
 enum ErrorReason {
   ERROR_REASON_UNSPECIFIED = 0;
 
   // 400：帧无法解码、没有内容，或发送时机不对（未认证就发其他帧、重复认证）
   INVALID_FRAME = 10;
 
-  // 503：调用 message 服务失败或超时，发送结果未知。客户端稍后用同一个 client_msg_id 重发
+  // 404：通话不存在或已结束、当前连接不是通话方，或通话状态不允许该操作
+  CALL_NOT_FOUND = 20;
+  // 404：呼叫时被叫没有在线连接
+  CALL_PEER_OFFLINE = 21;
+
+  // 409：被叫正在通话或振铃中
+  CALL_BUSY = 30;
+  // 409：自己（包括其他设备）已在通话或振铃中
+  ALREADY_IN_CALL = 31;
+  // 409：来电已被被叫的另一台设备接听
+  CALL_ALREADY_ANSWERED = 32;
+
+  // 503：依赖的服务（message、social）或 Redis 不可用或超时。发消息时结果未知，
+  // 客户端稍后用同一个 client_msg_id 重发；通话操作可以稍后重试
   UPSTREAM_UNAVAILABLE = 50;
 }

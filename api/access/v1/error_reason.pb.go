@@ -22,14 +22,25 @@ const (
 )
 
 // ErrorReason 是 access 自身的错误原因，在 WebSocket 的 Error 帧中返回。
-// 令牌无效时 reason 为 UNAUTHORIZED；发消息的错误原样来自 message 服务。
+// 令牌无效时 reason 为 UNAUTHORIZED；发消息的错误原样来自 message 服务，呼叫的权限错误原样来自 social 服务。
 type ErrorReason int32
 
 const (
 	ErrorReason_ERROR_REASON_UNSPECIFIED ErrorReason = 0
 	// 400：帧无法解码、没有内容，或发送时机不对（未认证就发其他帧、重复认证）
 	ErrorReason_INVALID_FRAME ErrorReason = 10
-	// 503：调用 message 服务失败或超时，发送结果未知。客户端稍后用同一个 client_msg_id 重发
+	// 404：通话不存在或已结束、当前连接不是通话方，或通话状态不允许该操作
+	ErrorReason_CALL_NOT_FOUND ErrorReason = 20
+	// 404：呼叫时被叫没有在线连接
+	ErrorReason_CALL_PEER_OFFLINE ErrorReason = 21
+	// 409：被叫正在通话或振铃中
+	ErrorReason_CALL_BUSY ErrorReason = 30
+	// 409：自己（包括其他设备）已在通话或振铃中
+	ErrorReason_ALREADY_IN_CALL ErrorReason = 31
+	// 409：来电已被被叫的另一台设备接听
+	ErrorReason_CALL_ALREADY_ANSWERED ErrorReason = 32
+	// 503：依赖的服务（message、social）或 Redis 不可用或超时。发消息时结果未知，
+	// 客户端稍后用同一个 client_msg_id 重发；通话操作可以稍后重试
 	ErrorReason_UPSTREAM_UNAVAILABLE ErrorReason = 50
 )
 
@@ -38,11 +49,21 @@ var (
 	ErrorReason_name = map[int32]string{
 		0:  "ERROR_REASON_UNSPECIFIED",
 		10: "INVALID_FRAME",
+		20: "CALL_NOT_FOUND",
+		21: "CALL_PEER_OFFLINE",
+		30: "CALL_BUSY",
+		31: "ALREADY_IN_CALL",
+		32: "CALL_ALREADY_ANSWERED",
 		50: "UPSTREAM_UNAVAILABLE",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED": 0,
 		"INVALID_FRAME":            10,
+		"CALL_NOT_FOUND":           20,
+		"CALL_PEER_OFFLINE":        21,
+		"CALL_BUSY":                30,
+		"ALREADY_IN_CALL":          31,
+		"CALL_ALREADY_ANSWERED":    32,
 		"UPSTREAM_UNAVAILABLE":     50,
 	}
 )
@@ -78,11 +99,16 @@ var File_access_v1_error_reason_proto protoreflect.FileDescriptor
 
 const file_access_v1_error_reason_proto_rawDesc = "" +
 	"\n" +
-	"\x1caccess/v1/error_reason.proto\x12\taccess.v1*X\n" +
+	"\x1caccess/v1/error_reason.proto\x12\taccess.v1*\xc2\x01\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rINVALID_FRAME\x10\n" +
-	"\x12\x18\n" +
+	"\x12\x12\n" +
+	"\x0eCALL_NOT_FOUND\x10\x14\x12\x15\n" +
+	"\x11CALL_PEER_OFFLINE\x10\x15\x12\r\n" +
+	"\tCALL_BUSY\x10\x1e\x12\x13\n" +
+	"\x0fALREADY_IN_CALL\x10\x1f\x12\x19\n" +
+	"\x15CALL_ALREADY_ANSWERED\x10 \x12\x18\n" +
 	"\x14UPSTREAM_UNAVAILABLE\x102B1Z/github.com/Mars-08042/MarsChat/api/access/v1;v1b\x06proto3"
 
 var (

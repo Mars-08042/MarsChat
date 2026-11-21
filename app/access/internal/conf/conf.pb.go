@@ -40,6 +40,9 @@ type Bootstrap struct {
 	// 留空时取 Kratos 注册到 Consul 的 gRPC 端点：监听 0.0.0.0 时是网卡 IP，多副本部署不用逐个配置。
 	// 只有其他服务要经 NAT 等不同地址访问本实例时才需要填写。
 	AdvertiseAddr string `protobuf:"bytes,9,opt,name=advertise_addr,json=advertiseAddr,proto3" json:"advertise_addr,omitempty"`
+	// 呼叫前校验权限（好友且未拉黑）
+	Social        *Upstream `protobuf:"bytes,10,opt,name=social,proto3" json:"social,omitempty"`
+	Call          *Call     `protobuf:"bytes,11,opt,name=call,proto3" json:"call,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -135,6 +138,20 @@ func (x *Bootstrap) GetAdvertiseAddr() string {
 		return x.AdvertiseAddr
 	}
 	return ""
+}
+
+func (x *Bootstrap) GetSocial() *Upstream {
+	if x != nil {
+		return x.Social
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetCall() *Call {
+	if x != nil {
+		return x.Call
+	}
+	return nil
 }
 
 // Upstream 是调用其他服务的配置，修改后需要重启。
@@ -293,6 +310,70 @@ func (x *WebSocket) GetDrainWindow() *durationpb.Duration {
 	return nil
 }
 
+// Call 是通话信令的参数，修改后需要重启。
+type Call struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 振铃超时，到期无人接听自动结束
+	RingTimeout *durationpb.Duration `protobuf:"bytes,1,opt,name=ring_timeout,json=ringTimeout,proto3" json:"ring_timeout,omitempty"`
+	// access 之间转发信令的单次超时
+	ForwardTimeout *durationpb.Duration `protobuf:"bytes,2,opt,name=forward_timeout,json=forwardTimeout,proto3" json:"forward_timeout,omitempty"`
+	// 对端 access 实例不可达后跳过它的时长，0 表示只摘除连接、不冷却
+	ForwardCooldown *durationpb.Duration `protobuf:"bytes,3,opt,name=forward_cooldown,json=forwardCooldown,proto3" json:"forward_cooldown,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *Call) Reset() {
+	*x = Call{}
+	mi := &file_access_internal_conf_conf_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Call) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Call) ProtoMessage() {}
+
+func (x *Call) ProtoReflect() protoreflect.Message {
+	mi := &file_access_internal_conf_conf_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Call.ProtoReflect.Descriptor instead.
+func (*Call) Descriptor() ([]byte, []int) {
+	return file_access_internal_conf_conf_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Call) GetRingTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.RingTimeout
+	}
+	return nil
+}
+
+func (x *Call) GetForwardTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.ForwardTimeout
+	}
+	return nil
+}
+
+func (x *Call) GetForwardCooldown() *durationpb.Duration {
+	if x != nil {
+		return x.ForwardCooldown
+	}
+	return nil
+}
+
 // Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。
 type Policy struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -305,7 +386,7 @@ type Policy struct {
 
 func (x *Policy) Reset() {
 	*x = Policy{}
-	mi := &file_access_internal_conf_conf_proto_msgTypes[3]
+	mi := &file_access_internal_conf_conf_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -317,7 +398,7 @@ func (x *Policy) String() string {
 func (*Policy) ProtoMessage() {}
 
 func (x *Policy) ProtoReflect() protoreflect.Message {
-	mi := &file_access_internal_conf_conf_proto_msgTypes[3]
+	mi := &file_access_internal_conf_conf_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -330,7 +411,7 @@ func (x *Policy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Policy.ProtoReflect.Descriptor instead.
 func (*Policy) Descriptor() ([]byte, []int) {
-	return file_access_internal_conf_conf_proto_rawDescGZIP(), []int{3}
+	return file_access_internal_conf_conf_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Policy) GetFramesPerSecond() int32 {
@@ -344,7 +425,7 @@ var File_access_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	"\x1faccess/internal/conf/conf.proto\x12\x14marschat.access.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xe0\x03\n" +
+	"\x1faccess/internal/conf/conf.proto\x12\x14marschat.access.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xd8\x04\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -354,7 +435,10 @@ const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\amessage\x18\x06 \x01(\v2\x1e.marschat.access.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\amessage\x12E\n" +
 	"\twebsocket\x18\a \x01(\v2\x1f.marschat.access.conf.WebSocketB\x06\xbaH\x03\xc8\x01\x01R\twebsocket\x12<\n" +
 	"\x06policy\x18\b \x01(\v2\x1c.marschat.access.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x12%\n" +
-	"\x0eadvertise_addr\x18\t \x01(\tR\radvertiseAddr\"q\n" +
+	"\x0eadvertise_addr\x18\t \x01(\tR\radvertiseAddr\x12>\n" +
+	"\x06social\x18\n" +
+	" \x01(\v2\x1e.marschat.access.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\x06social\x126\n" +
+	"\x04call\x18\v \x01(\v2\x1a.marschat.access.conf.CallB\x06\xbaH\x03\xc8\x01\x01R\x04call\"q\n" +
 	"\bUpstream\x12#\n" +
 	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
 	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"\x98\x05\n" +
@@ -369,7 +453,11 @@ const file_access_internal_conf_conf_proto_rawDesc = "" +
 	"\x0fmax_frame_bytes\x18\x06 \x01(\x05B\f\xbaH\t\x1a\a\x18\x80\x80@(\x80\bR\rmaxFrameBytes\x12M\n" +
 	"\fdrain_window\x18\a \x01(\v2\x19.google.protobuf.DurationB\x0f\xbaH\f\xc8\x01\x01\xaa\x01\x06\"\x02\b\n" +
 	"2\x00R\vdrainWindow:\x93\x01\xbaH\x8f\x01\x1a\x8c\x01\n" +
-	"\x1dheartbeat_timeout_gt_interval\x129heartbeat_timeout must be greater than heartbeat_interval\x1a0this.heartbeat_timeout > this.heartbeat_interval\"@\n" +
+	"\x1dheartbeat_timeout_gt_interval\x129heartbeat_timeout must be greater than heartbeat_interval\x1a0this.heartbeat_timeout > this.heartbeat_interval\"\xfc\x01\n" +
+	"\x04Call\x12P\n" +
+	"\fring_timeout\x18\x01 \x01(\v2\x19.google.protobuf.DurationB\x12\xbaH\x0f\xc8\x01\x01\xaa\x01\t\"\x03\b\xac\x022\x02\b\x05R\vringTimeout\x12O\n" +
+	"\x0fforward_timeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\x0eforwardTimeout\x12Q\n" +
+	"\x10forward_cooldown\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x022\x00R\x0fforwardCooldown\"@\n" +
 	"\x06Policy\x126\n" +
 	"\x11frames_per_second\x18\x01 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a \x00R\x0fframesPerSecondB>Z<github.com/Mars-08042/MarsChat/app/access/internal/conf;confb\x06proto3"
@@ -386,39 +474,45 @@ func file_access_internal_conf_conf_proto_rawDescGZIP() []byte {
 	return file_access_internal_conf_conf_proto_rawDescData
 }
 
-var file_access_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_access_internal_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_access_internal_conf_conf_proto_goTypes = []any{
 	(*Bootstrap)(nil),           // 0: marschat.access.conf.Bootstrap
 	(*Upstream)(nil),            // 1: marschat.access.conf.Upstream
 	(*WebSocket)(nil),           // 2: marschat.access.conf.WebSocket
-	(*Policy)(nil),              // 3: marschat.access.conf.Policy
-	(*conf.Server)(nil),         // 4: marschat.conf.Server
-	(*conf.Registry)(nil),       // 5: marschat.conf.Registry
-	(*conf.Redis)(nil),          // 6: marschat.conf.Redis
-	(*conf.Log)(nil),            // 7: marschat.conf.Log
-	(*conf.Auth)(nil),           // 8: marschat.conf.Auth
-	(*durationpb.Duration)(nil), // 9: google.protobuf.Duration
+	(*Call)(nil),                // 3: marschat.access.conf.Call
+	(*Policy)(nil),              // 4: marschat.access.conf.Policy
+	(*conf.Server)(nil),         // 5: marschat.conf.Server
+	(*conf.Registry)(nil),       // 6: marschat.conf.Registry
+	(*conf.Redis)(nil),          // 7: marschat.conf.Redis
+	(*conf.Log)(nil),            // 8: marschat.conf.Log
+	(*conf.Auth)(nil),           // 9: marschat.conf.Auth
+	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
 }
 var file_access_internal_conf_conf_proto_depIdxs = []int32{
-	4,  // 0: marschat.access.conf.Bootstrap.server:type_name -> marschat.conf.Server
-	5,  // 1: marschat.access.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
-	6,  // 2: marschat.access.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
-	7,  // 3: marschat.access.conf.Bootstrap.log:type_name -> marschat.conf.Log
-	8,  // 4: marschat.access.conf.Bootstrap.auth:type_name -> marschat.conf.Auth
+	5,  // 0: marschat.access.conf.Bootstrap.server:type_name -> marschat.conf.Server
+	6,  // 1: marschat.access.conf.Bootstrap.registry:type_name -> marschat.conf.Registry
+	7,  // 2: marschat.access.conf.Bootstrap.redis:type_name -> marschat.conf.Redis
+	8,  // 3: marschat.access.conf.Bootstrap.log:type_name -> marschat.conf.Log
+	9,  // 4: marschat.access.conf.Bootstrap.auth:type_name -> marschat.conf.Auth
 	1,  // 5: marschat.access.conf.Bootstrap.message:type_name -> marschat.access.conf.Upstream
 	2,  // 6: marschat.access.conf.Bootstrap.websocket:type_name -> marschat.access.conf.WebSocket
-	3,  // 7: marschat.access.conf.Bootstrap.policy:type_name -> marschat.access.conf.Policy
-	9,  // 8: marschat.access.conf.Upstream.timeout:type_name -> google.protobuf.Duration
-	9,  // 9: marschat.access.conf.WebSocket.auth_timeout:type_name -> google.protobuf.Duration
-	9,  // 10: marschat.access.conf.WebSocket.heartbeat_interval:type_name -> google.protobuf.Duration
-	9,  // 11: marschat.access.conf.WebSocket.heartbeat_timeout:type_name -> google.protobuf.Duration
-	9,  // 12: marschat.access.conf.WebSocket.write_timeout:type_name -> google.protobuf.Duration
-	9,  // 13: marschat.access.conf.WebSocket.drain_window:type_name -> google.protobuf.Duration
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	4,  // 7: marschat.access.conf.Bootstrap.policy:type_name -> marschat.access.conf.Policy
+	1,  // 8: marschat.access.conf.Bootstrap.social:type_name -> marschat.access.conf.Upstream
+	3,  // 9: marschat.access.conf.Bootstrap.call:type_name -> marschat.access.conf.Call
+	10, // 10: marschat.access.conf.Upstream.timeout:type_name -> google.protobuf.Duration
+	10, // 11: marschat.access.conf.WebSocket.auth_timeout:type_name -> google.protobuf.Duration
+	10, // 12: marschat.access.conf.WebSocket.heartbeat_interval:type_name -> google.protobuf.Duration
+	10, // 13: marschat.access.conf.WebSocket.heartbeat_timeout:type_name -> google.protobuf.Duration
+	10, // 14: marschat.access.conf.WebSocket.write_timeout:type_name -> google.protobuf.Duration
+	10, // 15: marschat.access.conf.WebSocket.drain_window:type_name -> google.protobuf.Duration
+	10, // 16: marschat.access.conf.Call.ring_timeout:type_name -> google.protobuf.Duration
+	10, // 17: marschat.access.conf.Call.forward_timeout:type_name -> google.protobuf.Duration
+	10, // 18: marschat.access.conf.Call.forward_cooldown:type_name -> google.protobuf.Duration
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_access_internal_conf_conf_proto_init() }
@@ -432,7 +526,7 @@ func file_access_internal_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_access_internal_conf_conf_proto_rawDesc), len(file_access_internal_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

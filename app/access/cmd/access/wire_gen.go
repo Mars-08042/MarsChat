@@ -20,8 +20,8 @@ import (
 
 // Injectors from wire.go:
 
-// *conf.Bootstrap 用于 message 客户端和 advertise_addr 这类只有 access 才有的字段。
-func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis, auth *conf.Auth, webSocket *conf2.WebSocket, confBootstrap *conf2.Bootstrap, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
+// *conf.Bootstrap 用于 message、social 客户端和 advertise_addr 这类只有 access 才有的字段。
+func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis, auth *conf.Auth, webSocket *conf2.WebSocket, call *conf2.Call, confBootstrap *conf2.Bootstrap, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
 	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
 	if err != nil {
 		return nil, nil, err
@@ -41,13 +41,24 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis
 		cleanup()
 		return nil, nil, err
 	}
-	hub := biz.NewHub(webSocket, policyHolder, authenticator, routeRepo, messageSender, logger)
+	callRepo := data.NewCallRepo(client)
+	callPermission, cleanup3, err := data.NewCallPermission(confBootstrap, consulRegistry, logger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	forwarder, cleanup4 := data.NewForwarder(confBootstrap, logger)
+	calls := biz.NewCalls(call, webSocket, callRepo, callPermission, routeRepo, forwarder, logger)
+	hub := biz.NewHub(webSocket, policyHolder, authenticator, routeRepo, messageSender, calls, logger)
 	internalService := service.NewInternalService(hub)
 	grpcServer := server.NewGRPCServer(confServer, internalService, logger)
 	dataData := data.NewData(client)
 	httpServer := server.NewHTTPServer(confServer, dataData, hub, logger)
 	app := newApp(logger, consulRegistry, grpcServer, httpServer, hub, routeRepo)
 	return app, func() {
+		cleanup4()
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil

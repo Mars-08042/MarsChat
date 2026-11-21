@@ -4,7 +4,6 @@ package biz
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 
 	"github.com/google/wire"
@@ -12,11 +11,12 @@ import (
 	accessv1 "github.com/Mars-08042/MarsChat/api/access/v1"
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
 	"github.com/Mars-08042/MarsChat/app/delivery/internal/conf"
+	"github.com/Mars-08042/MarsChat/pkg/accessclient"
 	"github.com/Mars-08042/MarsChat/pkg/route"
 )
 
 // ErrInstanceCoolingDown 表示目标 access 实例刚推送失败、仍在冷却期，这次调用被跳过。
-var ErrInstanceCoolingDown = errors.New("access instance cooling down after a failed call")
+var ErrInstanceCoolingDown = accessclient.ErrCoolingDown
 
 // PolicyHolder 持有当前生效的策略。配置热更新时整体替换，读取方每次使用时取一次快照。
 type PolicyHolder struct {

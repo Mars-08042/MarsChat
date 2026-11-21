@@ -51,6 +51,7 @@ type Hub struct {
 	auth   Authenticator
 	routes RouteRepo
 	sender MessageSender
+	calls  *Calls
 	logger *slog.Logger
 
 	mu       sync.Mutex
@@ -62,8 +63,8 @@ type Hub struct {
 }
 
 // NewHub 创建连接管理器。
-func NewHub(c *conf.WebSocket, policy *PolicyHolder, a Authenticator, routes RouteRepo, sender MessageSender, logger *slog.Logger) *Hub {
-	return &Hub{
+func NewHub(c *conf.WebSocket, policy *PolicyHolder, a Authenticator, routes RouteRepo, sender MessageSender, calls *Calls, logger *slog.Logger) *Hub {
+	h := &Hub{
 		opts: options{
 			authTimeout:       c.GetAuthTimeout().AsDuration(),
 			heartbeatInterval: c.GetHeartbeatInterval().AsDuration(),
@@ -77,11 +78,14 @@ func NewHub(c *conf.WebSocket, policy *PolicyHolder, a Authenticator, routes Rou
 		auth:    a,
 		routes:  routes,
 		sender:  sender,
+		calls:   calls,
 		logger:  logger,
 		all:     make(map[*Conn]struct{}),
 		byID:    make(map[int64]*Conn),
 		stopped: make(chan struct{}),
 	}
+	calls.hub = h
+	return h
 }
 
 // Serve 接管一条已完成握手的 WebSocket 连接，直到连接关闭才返回。
@@ -188,6 +192,8 @@ func (h *Hub) Stop(ctx context.Context) error {
 	}
 	h.mu.Unlock()
 	defer close(h.stopped)
+	// 连接关闭时会结束它们参与的通话，振铃定时器等连接全部处理完再取消
+	defer h.calls.stop()
 
 	h.logger.Info("draining websocket connections",
 		slog.Int("count", len(conns)), slog.Duration("window", h.opts.drainWindow))

@@ -22,6 +22,7 @@ import (
 	messagev1 "github.com/Mars-08042/MarsChat/api/message/v1"
 	"github.com/Mars-08042/MarsChat/app/access/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/auth"
+	"github.com/Mars-08042/MarsChat/pkg/route"
 )
 
 // ---- 假依赖 ----
@@ -34,8 +35,11 @@ type fakeAuth struct {
 
 // 令牌格式为 "ok-{user}-{session}"，只认测试里用到的几个。
 var tokens = map[string]auth.Principal{
-	"ok-42-7": {UserID: 42, SessionID: 7},
-	"ok-43-8": {UserID: 43, SessionID: 8},
+	"ok-42-7":  {UserID: 42, SessionID: 7},
+	"ok-43-8":  {UserID: 43, SessionID: 8},
+	"ok-43-9":  {UserID: 43, SessionID: 9},
+	"ok-42-11": {UserID: 42, SessionID: 11},
+	"ok-44-10": {UserID: 44, SessionID: 10},
 }
 
 func (a *fakeAuth) Authenticate(_ context.Context, token string) (auth.Principal, error) {
@@ -58,11 +62,16 @@ func (a *fakeAuth) revoke(sessionID int64) {
 	a.revoked[sessionID] = true
 }
 
+// 本实例在路由中的地址
+const localAddr = "10.0.0.1:19100"
+
 type fakeRoutes struct {
 	mu        sync.Mutex
 	m         map[int64]map[int64]int64 // user → conn → session
 	registers int
 	ttl       time.Duration
+	// 模拟其他实例上的连接，List 时与本实例的连接一起返回
+	remote map[int64][]route.Entry
 }
 
 func (r *fakeRoutes) Register(_ context.Context, userID, connID, sessionID int64, ttl time.Duration) error {
@@ -82,6 +91,33 @@ func (r *fakeRoutes) Unregister(_ context.Context, userID, connID int64) error {
 	defer r.mu.Unlock()
 	delete(r.m[userID], connID)
 	return nil
+}
+
+func (r *fakeRoutes) List(_ context.Context, userIDs []int64) (map[int64][]route.Entry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[int64][]route.Entry)
+	for _, uid := range userIDs {
+		for conn, session := range r.m[uid] {
+			out[uid] = append(out[uid], route.Entry{ConnID: conn, SessionID: session, Addr: localAddr})
+		}
+		out[uid] = append(out[uid], r.remote[uid]...)
+		if len(out[uid]) == 0 {
+			delete(out, uid)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRoutes) Addr() string { return localAddr }
+
+func (r *fakeRoutes) addRemote(userID int64, e route.Entry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.remote == nil {
+		r.remote = map[int64][]route.Entry{}
+	}
+	r.remote[userID] = append(r.remote[userID], e)
 }
 
 func (r *fakeRoutes) has(userID, connID int64) bool {
@@ -125,6 +161,9 @@ type env struct {
 	routes *fakeRoutes
 	sender *fakeSender
 	policy *PolicyHolder
+	calls  *fakeCallRepo
+	perm   *fakePerm
+	fwd    *fakeForwarder
 	url    string
 }
 
@@ -152,8 +191,13 @@ func newEnv(t *testing.T, mutate func(*conf.WebSocket)) *env {
 			return &messagev1.SendResult{ConversationId: 100, Seq: 1}, nil
 		}},
 		policy: NewPolicyHolder(&conf.Policy{FramesPerSecond: 30}),
+		calls:  newFakeCallRepo(),
+		perm:   &fakePerm{},
+		fwd:    &fakeForwarder{},
 	}
-	e.hub = NewHub(c, e.policy, e.auth, e.routes, e.sender, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	calls := NewCalls(&conf.Call{RingTimeout: durationpb.New(time.Minute)}, c, e.calls, e.perm, e.routes, e.fwd, logger)
+	e.hub = NewHub(c, e.policy, e.auth, e.routes, e.sender, calls, logger)
 	upgrader := websocket.Upgrader{Subprotocols: Subprotocols}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, err := upgrader.Upgrade(w, r, nil)

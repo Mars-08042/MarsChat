@@ -1,10 +1,10 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 6（2026-11-21）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
-- 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)；media 提供文件上传、下载地址和给 message 用的内部文件查询，文件存储可切换（默认仓库下的本地目录 `data/media/`，可选阿里云 OSS，[ADR-0007](adr/0007-object-storage.md)），设计见 [media-service.md](../design/media-service.md)。
+- 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)；access 同时处理一对一通话信令（状态在 Redis，access 之间直连转发），设计见 [call-signaling.md](../design/call-signaling.md)；media 提供文件上传、下载地址和给 message 用的内部文件查询，文件存储可切换（默认仓库下的本地目录 `data/media/`，可选阿里云 OSS，[ADR-0007](adr/0007-object-storage.md)），设计见 [media-service.md](../design/media-service.md)。
 - 服务有两种运行方式：日常开发运行在宿主机，监听 `127.0.0.1`；容器模式（compose profile `apps`）中 access、message、delivery 各两个实例（media 一个，本地存储挂载仓库的 `data/media`），客户端经 APISIX 网关（Standalone 模式，上游经 Consul 发现）访问。MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。设计见 [gateway-multi-instance.md](../design/gateway-multi-instance.md)。
 - 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
@@ -36,7 +36,8 @@ pkg/bloom/               RedisBloom ID 布隆过滤器（就绪标记、脏标�
 pkg/ratelimit/           Redis 滑动窗口限流
 pkg/outbox/              事务 Outbox：写入端与发布器（Redis 租约保证每个服务只有一个实例发布，Redis 发布订阅跨实例唤醒）
 pkg/kafka/               Kafka 生产者、消费者（按事件类型分发、手动提交、原地重试、重试队列、死信队列）与记录头约定
-pkg/route/               在线路由的 Redis 结构（access 写入、delivery 读取）
+pkg/route/               在线路由的 Redis 结构（access 写入，delivery 与 access 的通话信令读取）
+pkg/accessclient/        按在线路由中的地址直连 access 实例的客户端缓存（不可达时摘除并冷却），delivery 与 access 共用
 pkg/clientip/            按可信代理解析客户端 IP
 tools/jwtkey/            生成开发用 JWT 密钥与 media 下载地址签名密钥（make keys）
 scripts/                 运维脚本（make grant-admin）
@@ -76,10 +77,11 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
 
 - account、social、message 的 Outbox 发布器和 Kafka 消费者（`pkg/outbox.Publisher`、`pkg/kafka.Consumer`）也实现为 Kratos 的 `transport.Server`，随 `app.Run()` 启停。Kratos 传给 `Start` 的 context 在停机时不会取消，所以它们各自持有 context，`Stop` 时取消。Kafka 不可用不影响启动：事件留在 Outbox 表中，消费者在后台重连。
 - message 额外创建 social、account 两个惰性 gRPC 客户端，以及消费 social 群事件的消费者。
-- access 不连 MySQL。连接管理器 `biz.Hub` 同样是 `transport.Server`。WebSocket 处理函数注册在 Kratos HTTP 服务器上，但连接的生命周期不使用请求 context，因为 Kratos 给它加了服务端超时（有测试覆盖）。停机顺序：
+- access 不连 MySQL。连接管理器 `biz.Hub` 同样是 `transport.Server`。通话信令由 `biz.Calls` 处理，Hub 持有它：Calls 要把帧直接放进本实例连接的发送队列，两者互相引用，wire 不允许构造时成环，所以由 `NewHub` 设置 Calls 的反向引用。access 额外创建 message、social 两个惰性 gRPC 客户端，以及转发通话信令的 access 直连客户端。WebSocket 处理函数注册在 Kratos HTTP 服务器上，但连接的生命周期不使用请求 context，因为 Kratos 给它加了服务端超时（有测试覆盖）。停机顺序：
   1. Kratos 从 Consul 注销，网关约 1 秒内不再把新连接分到这个实例；
   2. Kratos 并发停止各服务器：HTTP 服务器关闭监听（`http.Server.Shutdown` 不管已劫持的 WebSocket 连接）；Hub 拒绝新连接，把现有连接以 1001 分批关闭，分布在 `websocket.drain_window`（默认 5 秒）内，连接关闭时删除路由；gRPC 服务器由 `server.DrainingGRPCServer` 包装，等 Hub 排空后才停止，排空期间发往剩余连接的推送仍然有效；
   3. 每个服务器的停机超时为 15 秒（`kratos.StopTimeout`），超时后强制断开剩余连接。Compose 中 access 的 `stop_grace_period` 为 20 秒。
+  4. 连接关闭时结束它参与的通话；Hub 停止前取消本实例的振铃定时器，此时仍在振铃的通话按 Redis TTL 过期。
 - delivery 只有 gRPC 服务器（健康检查与注册）和消费者；`policy` 段（推送冷却期）热更新。
 - media 不连 Kafka、没有 Outbox。启动时按 `storage.provider` 创建文件存储：`local` 创建目录并试写一个临时文件，目录不可写或签名密钥少于 32 个字符时启动失败；`oss` 只检查配置是否完整，不访问网络。HTTP 服务器超时为 300 秒（Kratos 对所有路由使用同一个超时，要覆盖 100 MB 上传）。
 
@@ -116,15 +118,17 @@ data/media/              media 本地存储的文件（运行时创建，被 Git
   | message → account | `BatchGetUsers`（会话列表补全对方资料） | 1 秒 |
   | message → media | `GetFiles`（发送图片、文件消息时核实文件，文本消息不调用） | 1 秒 |
   | access → message | `SendMessage` | 3 秒 |
+  | access → social | `CheckSendPermission`（发起呼叫前） | 1 秒 |
   | delivery → social | `ListAllGroupMembers` | 1 秒 |
   | delivery → access | `Push`、`Kick`，**按在线路由中的地址直连**，不经 Consul，每个地址缓存一条连接 | 2 秒 |
+  | access → access | `Push`（转发通话信令），同样按地址直连；目标是本实例时直接放进发送队列 | 2 秒（`call.forward_timeout`） |
 
   共同点：
   - 超时同时是服务发现首次解析的等待上限，并覆盖包括重试在内的整次调用。
   - 经 Consul 的调用都挂两个客户端中间件，重试在外、熔断在内：
     - 重试（`pkg/middleware/retry`）：只对客户端列出的幂等方法（上表全部经 Consul 的接口；`SendMessage` 按 `client_msg_id` 幂等），只在 503 且不带错误原因（gRPC `Unavailable`，即连接级失败）时重试一次，间隔 20～50 毫秒，剩余截止时间不足 150 毫秒时不重试。业务错误、超时、下游返回的 `DEPENDENCY_UNAVAILABLE`、`CIRCUITBREAKER`、`no_available_node` 都不重试。Kratos 的 gRPC 负载均衡只在 READY 的连接中选择，实例退出后重试通常落到其他实例。
     - 熔断（Kratos `middleware/circuitbreaker`）：Google SRE 自适应限流，按接口统计，把 500、503、504 计为失败；打开时直接返回 `503 CIRCUITBREAKER`，请求不发出。
-  - delivery 直连 access 的推送不重试、不熔断：熔断按接口统计，一个 access 实例宕机会让发往所有实例的推送一起被熔断。调用返回 `Unavailable` 或 `DeadlineExceeded` 时，关闭并移出该地址的连接，地址进入冷却期（`policy.push_cooldown`，默认 5 秒），冷却期内发往它的推送直接跳过（记 DEBUG），冷却结束后重新拨号。不监听 Consul 中 access 的变化，因为正在排空的实例已经注销，但还在给剩余连接推送。
+  - 直连 access 的调用（`pkg/accessclient`）不重试、不熔断：熔断按接口统计，一个 access 实例宕机会让发往所有实例的推送一起被熔断。调用返回 `Unavailable` 或 `DeadlineExceeded` 时，关闭并移出该地址的连接，地址进入冷却期（delivery 为 `policy.push_cooldown`，access 为 `call.forward_cooldown`，默认都是 5 秒），冷却期内发往它的调用直接跳过（记 DEBUG），冷却结束后重新拨号。不监听 Consul 中 access 的变化，因为正在排空的实例已经注销，但还在给剩余连接推送。
   - 连接惰性建立（`grpc.NewClient`），被调用方暂时不可用不影响调用方启动；就绪探针也不检查它，被调用方故障时调用方降级运行，而不是被摘掉流量。
   - 失败时 data 层统一包装成 `biz.ErrUnavailable`，由 biz 决定是返回 `503 DEPENDENCY_UNAVAILABLE`（写操作需要的校验）还是降级（列表资料补全留空并记 WARN）。
 - Kratos v3.0.0 的 gRPC 负载均衡器在包初始化时就读取了全局选择器，而默认选择器设置得更晚，经服务发现调用会空指针 panic。`pkg/balancer` 在更早的初始化阶段设置选择器，`pkg/bootstrap` 匿名导入了它；不使用 bootstrap 的程序（如 e2e 测试）要自己匿名导入 `pkg/balancer`。原因与验证见 [lessons/kratos-grpc-selector-nil.md](../lessons/kratos-grpc-selector-nil.md)。

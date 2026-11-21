@@ -1,4 +1,4 @@
-package data
+package accessclient
 
 import (
 	"context"
@@ -12,11 +12,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	accessv1 "github.com/Mars-08042/MarsChat/api/access/v1"
-	"github.com/Mars-08042/MarsChat/app/delivery/internal/biz"
-	"github.com/Mars-08042/MarsChat/app/delivery/internal/conf"
 )
 
 // fakeAccess 是 access 内部接口的假实现，err 非空时 Push 返回它。
@@ -57,22 +54,17 @@ func closedAddr(t *testing.T) string {
 	return addr
 }
 
-func newTestPusher(t *testing.T, cooldown time.Duration) *pusher {
+func newTestClient(t *testing.T, cooldown time.Duration) *Client {
 	t.Helper()
-	policy := biz.NewPolicyHolder(&conf.Policy{PushCooldown: durationpb.New(cooldown)})
-	p := newPusher(500*time.Millisecond, policy, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(func() {
-		for _, c := range p.conns {
-			_ = c.Close()
-		}
-	})
+	p := New(500*time.Millisecond, func() time.Duration { return cooldown }, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(p.Close)
 	return p
 }
 
 var frame = &accessv1.ServerFrame{Body: &accessv1.ServerFrame_Pong{Pong: &accessv1.Pong{}}}
 
-func TestPusherEvictsUnreachableInstanceAndCoolsDown(t *testing.T) {
-	p := newTestPusher(t, 5*time.Second)
+func TestClientEvictsUnreachableInstanceAndCoolsDown(t *testing.T) {
+	p := newTestClient(t, 5*time.Second)
 	base := time.Now()
 	p.now = func() time.Time { return base }
 	addr := closedAddr(t)
@@ -86,8 +78,8 @@ func TestPusherEvictsUnreachableInstanceAndCoolsDown(t *testing.T) {
 
 	start := time.Now()
 	_, err := p.Push(context.Background(), addr, []int64{1}, frame)
-	if !errors.Is(err, biz.ErrInstanceCoolingDown) {
-		t.Fatalf("err during cooldown = %v, want ErrInstanceCoolingDown", err)
+	if !errors.Is(err, ErrCoolingDown) {
+		t.Fatalf("err during cooldown = %v, want ErrCoolingDown", err)
 	}
 	if d := time.Since(start); d > 100*time.Millisecond {
 		t.Errorf("skipped push took %v, want immediate", d)
@@ -95,7 +87,7 @@ func TestPusherEvictsUnreachableInstanceAndCoolsDown(t *testing.T) {
 
 	// 冷却结束后重新拨号（仍然不可达，于是再次进入冷却）
 	p.now = func() time.Time { return base.Add(6 * time.Second) }
-	if _, err := p.Push(context.Background(), addr, []int64{1}, frame); errors.Is(err, biz.ErrInstanceCoolingDown) || err == nil {
+	if _, err := p.Push(context.Background(), addr, []int64{1}, frame); errors.Is(err, ErrCoolingDown) || err == nil {
 		t.Fatalf("err after cooldown = %v, want a dial error", err)
 	}
 	if until := p.cooling[addr]; !until.Equal(base.Add(11 * time.Second)) {
@@ -103,8 +95,8 @@ func TestPusherEvictsUnreachableInstanceAndCoolsDown(t *testing.T) {
 	}
 }
 
-func TestPusherKeepsConnectionOnBusinessError(t *testing.T) {
-	p := newTestPusher(t, 5*time.Second)
+func TestClientKeepsConnectionOnBusinessError(t *testing.T) {
+	p := newTestClient(t, 5*time.Second)
 	addr := startFakeAccess(t, &fakeAccess{err: status.Error(codes.InvalidArgument, "bad request")})
 
 	if _, err := p.Push(context.Background(), addr, []int64{1}, frame); err == nil {
@@ -118,8 +110,8 @@ func TestPusherKeepsConnectionOnBusinessError(t *testing.T) {
 	}
 }
 
-func TestPusherReusesHealthyConnection(t *testing.T) {
-	p := newTestPusher(t, 5*time.Second)
+func TestClientReusesHealthyConnection(t *testing.T) {
+	p := newTestClient(t, 5*time.Second)
 	addr := startFakeAccess(t, &fakeAccess{})
 	for i := 0; i < 2; i++ {
 		n, err := p.Push(context.Background(), addr, []int64{1, 2}, frame)
@@ -133,16 +125,16 @@ func TestPusherReusesHealthyConnection(t *testing.T) {
 }
 
 // 冷却期为 0 时只摘除连接，下一次调用立即重新拨号。
-func TestPusherZeroCooldownOnlyEvicts(t *testing.T) {
-	p := newTestPusher(t, 0)
+func TestClientZeroCooldownOnlyEvicts(t *testing.T) {
+	p := newTestClient(t, 0)
 	addr := closedAddr(t)
 	if _, err := p.Push(context.Background(), addr, []int64{1}, frame); err == nil {
 		t.Fatal("push to a closed port succeeded")
 	}
 	if _, ok := p.cooling[addr]; ok {
-		t.Error("cooldown recorded although push_cooldown is 0")
+		t.Error("cooldown recorded although cooldown is 0")
 	}
-	if _, err := p.Push(context.Background(), addr, []int64{1}, frame); errors.Is(err, biz.ErrInstanceCoolingDown) {
-		t.Error("push skipped although push_cooldown is 0")
+	if _, err := p.Push(context.Background(), addr, []int64{1}, frame); errors.Is(err, ErrCoolingDown) {
+		t.Error("push skipped although cooldown is 0")
 	}
 }

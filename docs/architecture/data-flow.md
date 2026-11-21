@@ -1,8 +1,8 @@
 # 数据流
 
-> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 6（2026-11-21）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
+> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
 >
-> 文件上传与下载见第 8 节。音视频通话信令（步骤 7）尚未重写，旧基线的流程见提交 `6624cea` 中本文的第 6 节。
+> 文件上传与下载见第 8 节，音视频通话信令见第 9 节。
 
 ## 1. 服务与通道
 
@@ -12,15 +12,17 @@
    │
    ├── GET 下载地址（签名即授权）──→ media（本地存储）或阿里云 OSS
    │
-   └── WebSocket（认证、心跳、发消息、接收推送）──→ access ──gRPC SendMessage──→ message ──gRPC GetFiles──→ media
+   └── WebSocket（认证、心跳、发消息、接收推送、通话信令）──→ access ──gRPC SendMessage──→ message ──gRPC GetFiles──→ media
                                                     ↑                              │ 事务内写 Outbox
                                                     │ gRPC Push / Kick             ↓
                                                  delivery ←── Kafka ←── Outbox 发布器（account、social、message）
 ```
 
+通话信令另有两条调用（第 9 节）：access 在呼叫前调 social 的 `CheckSendPermission`；access 之间按在线路由直连，用 `Push` 转发来电、接听、SDP 与 ICE。
+
 - 容器模式下客户端只经网关（APISIX）访问：HTTP 接口按路径转发到 account、social、message、media，`/ws` 转发到 access，上游节点经 Consul 发现；网关负责 TLS 和按 IP 的入口限流（超限返回 429，响应体为 `{"error_msg": ...}`，不是 Kratos 错误格式）。宿主机运行时客户端直连各服务端口。路由与端口见 [deployment.md](../deployment.md#网关)。
 - **发送只走 WebSocket，读取只走 HTTP**：只有一条写入路径，限流、排除发起连接、按连接顺序确认都只需实现一次。
-- 服务间同步调用用 gRPC，经 Consul 发现；delivery 调用 access 例外，按在线路由中的地址直连持有连接的实例。
+- 服务间同步调用用 gRPC，经 Consul 发现；调用 access 例外（delivery 推送、access 之间转发通话信令），按在线路由中的地址直连持有连接的实例。
 - 服务间异步通知用 Kafka，事件经事务 Outbox 发布，见第 6 节。
 
 ## 2. HTTP 请求链路
@@ -51,7 +53,7 @@
 
 ### 3.2 心跳与失效
 
-- 客户端每 30 秒发 `Ping`，服务端回 `Pong`，同时续期在线路由（字段 TTL 90 秒）并复查吊销名单。
+- 客户端每 30 秒发 `Ping`，服务端回 `Pong`，同时续期在线路由（字段 TTL 90 秒）和连接参与的通话（第 9.4 节），并复查吊销名单。
 - 90 秒内没有收到任何帧，服务端直接断开（不发关闭帧，客户端看到 1006）。
 - 用应用层心跳而不是 WebSocket 控制帧：浏览器不能主动发 ping，客户端也要靠 `Pong` 发现服务端失联。
 - 连接**不随访问令牌过期而断开**。失效有两条路径：
@@ -206,7 +208,7 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 
 - access：
   1. 从 Consul 注销后，网关的 Consul 长轮询约 1 秒内更新上游，新的 WebSocket 握手不再分到这个实例；HTTP 服务器同时关闭监听，已经发往它的握手连接失败，由网关换实例重试。
-  2. Hub 拒绝新连接，把现有连接以 1001 分批关闭，均匀分布在 `websocket.drain_window`（5 秒）内，避免所有客户端同时重连到剩下的实例。每条连接等待对端回应关闭帧（最多 2 秒），关闭时删除路由。
+  2. Hub 拒绝新连接，把现有连接以 1001 分批关闭，均匀分布在 `websocket.drain_window`（5 秒）内，避免所有客户端同时重连到剩下的实例。每条连接等待对端回应关闭帧（最多 2 秒），关闭时删除路由，并结束它参与的通话（第 9.4 节）。
   3. gRPC 服务器等 Hub 排空后才停止，所以排空期间 delivery 发往尚未关闭的连接的推送仍然送达。
   4. 停机超时 15 秒，到期后强制断开剩余连接。
 - 客户端约定：
@@ -256,3 +258,75 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 ### 8.3 图片与文件消息
 
 客户端上传后，把 `FileInfo` 中的 `id` 和 `accessKey` 放进 `ImageContent` / `FileContent`，经 WebSocket 发送（第 4 节）。message 调 media 的 `GetFiles` 核实，用 media 的记录覆盖名称、大小、类型和尺寸后落库。接收方从推送或历史中拿到文件 ID 和访问密钥，按 8.2 换取缩略图与原文件的地址。转发时访问密钥随消息一起转发，不需要额外授权。
+
+## 9. 通话信令
+
+设计见 [call-signaling.md](../design/call-signaling.md)，帧定义见 [api/access/v1/call.proto](../../api/access/v1/call.proto)。一对一音视频通话的媒体走 WebRTC 点对点，服务端只协调状态、转发 SDP 与 ICE；信令不落库、不经 Kafka。
+
+### 9.1 流程
+
+主叫用户 A 的连接 `a` 呼叫用户 B，B 有两个连接 `b1`、`b2`，可以在不同的 access 实例上：
+
+1. `a` 发 `CallRequest{invite}`。`a` 所在的 access：
+   - 调 social `CheckSendPermission`（单聊规则：好友且双方都没有拉黑）；
+   - 查 B 的在线路由，没有路由时返回 `404 CALL_PEER_OFFLINE`；
+   - 在 Redis 中用 Lua 创建通话（状态 `ringing`），同时占用 A、B 的忙线标记，任一方已在通话中时分别返回 `409 ALREADY_IN_CALL`、`409 CALL_BUSY`；
+   - 先回复 `a`：`CallAck{call_id}`，再把 `CallEvent{incoming}` 推给 `b1`、`b2`，并启动振铃定时器（`call.ring_timeout`，60 秒）。
+2. `b1` 发 `CallRequest{accept}`。`b1` 所在的 access：
+   - 在 Redis 中把状态改为 `active`，记下接听连接 `b1`；
+   - 先回复 `b1`：`CallAck`，再向 `b2` 推送 `CallEvent{ended: ANSWERED_ELSEWHERE}`，最后向 `a` 推送 `CallEvent{accepted}`。
+3. `a` 收到 `accepted` 后创建 offer，用 `CallRequest{signal}` 发送；access 从 Redis 中找到接听连接，把同一个 `CallSignal` 作为 `CallEvent{signal}` 推给 `b1`。answer 和双方的 ICE 候选按同样的方式转发。SDP 与 ICE 只在 `a`、`b1` 之间转发，不回显给发送方，接听前发送返回 `404 CALL_NOT_FOUND`。
+4. 任何一方发 `CallRequest{hangup}`：删除通话与双方的忙线标记，对方收到 `CallEvent{ended: HANGUP}`。
+
+推送给其他实例上的连接时，access 按在线路由中的地址直连对端实例，调用它的 `AccessInternalService.Push`（与 delivery 共用 `pkg/accessclient`：实例不可达时摘除连接，冷却 `call.forward_cooldown` 5 秒）；本实例的连接直接放进发送队列。同一连接发出的信令按发送顺序到达对端。
+
+### 9.2 各操作的条件与通知
+
+| 操作 | 谁能发起 | 收到 `CallEnded` 等通知的连接 |
+|---|---|---|
+| 邀请 | 任意连接 | 被叫全部连接：`incoming` |
+| 接听 | 被叫的任一连接，振铃中 | 主叫连接：`accepted`；被叫其他连接：`ended{ANSWERED_ELSEWHERE}` |
+| 拒绝 | 被叫的任一连接，振铃中 | 主叫连接与被叫其他连接：`ended{REJECTED}` |
+| 挂断 | 主叫连接（振铃中即取消），或接听连接 | 振铃中：被叫全部连接；通话中：对方连接。`ended{HANGUP}` |
+| 振铃超时 | 主叫所在 access 的定时器 | 主叫连接与被叫全部连接：`ended{TIMEOUT}` |
+| 断线 | 主叫连接或接听连接关闭 | 振铃中：被叫全部连接；通话中：对方连接。`ended{DISCONNECTED}` |
+
+振铃中的被叫只能拒绝，不能挂断；被叫没有接听的设备断开不影响通话。
+
+### 9.3 回复与失败
+
+- 每个 `CallRequest` 都收到带同一 `request_id` 的 `CallAck` 或 `Error`。`Error` 表示请求被拒绝、状态没有变化：
+
+  | 错误 | 场景 |
+  |---|---|
+  | `400 INVALID_FRAME` | 字段不合法（protovalidate）、呼叫自己 |
+  | social 的 `403 NOT_FRIENDS`、`403 BLOCKED`、`404 USER_NOT_FOUND` | 呼叫的权限，原样来自 social |
+  | `404 CALL_PEER_OFFLINE` | 被叫没有在线连接 |
+  | `404 CALL_NOT_FOUND` | 通话不存在或已结束、当前连接不是通话方、状态不允许该操作 |
+  | `409 CALL_BUSY` / `409 ALREADY_IN_CALL` | 被叫 / 自己（包括其他设备）已在通话或振铃中 |
+  | `409 CALL_ALREADY_ANSWERED` | 已被被叫的另一台设备接听后，再接听或拒绝 |
+  | `503 UPSTREAM_UNAVAILABLE` | social 或 Redis 不可用。不降级：没有共享状态就无法保证互斥接听 |
+
+- `CallAck` 表示请求已被接受，之后通话如果结束，一律经 `CallEnded` 通知，包括刚收到 `CallAck` 的连接自己：
+  - 邀请时路由还在、但被叫的连接其实都已失效（推送全部失败），主叫收到 `ended{PEER_OFFLINE}`；
+  - 转发给对方连接（`accepted`、`signal`）失败时按断线结束，发起请求的连接与对方都收到 `ended{DISCONNECTED}`。
+
+### 9.4 超时与清理
+
+通话状态在 Redis 中（`access:call:{call_id}` 与 `access:call_user:{uid}`，见 [data-model.md](data-model.md)），所有 access 实例共享：
+
+- **振铃超时**：主叫所在 access 的进程内定时器到期时，通话仍在振铃就结束。接听、拒绝、取消先发生时什么也不做。
+- **断线**：连接关闭（心跳超时、被踢、停机排空、客户端断开）时，如果它是主叫连接或接听连接，就按断线结束通话。access 滚动重启也会因此结束正在进行的通话。
+- **续期**：通话中状态的 TTL 为心跳超时（90 秒），主叫连接与接听连接每次心跳续期；振铃中的 TTL 为振铃超时加 15 秒。
+- **access 崩溃**：没有机会清理，状态按 TTL 过期。主叫所在实例崩溃时没有人发出 `CallEnded`；接听方所在实例崩溃时，主叫下一次发信令失败，通话按断线结束（集群故障实验见[重构计划](../plans/active/backend-refactor.md#故障实验结果)）。
+
+客户端约定：
+
+- 被叫收到来电后最多响铃 `ring_timeout` + 5 秒（65 秒），之后自行停止；
+- ICE 候选可能早于 SDP 到达，暂存到设置远端描述之后再添加；
+- WebRTC 连接失败（`iceconnectionstatechange` 为 `failed`）时发送挂断；
+- 不认识的 `call_id` 的事件直接忽略。
+
+### 9.5 尚未实现
+
+群通话；STUN/TURN 服务器与临时凭据下发（ICE 服务器为空时只能在可以直接互通的网络中建立连接，随前端重构部署 coturn）；通话记录写入聊天记录；断线重连后恢复通话。

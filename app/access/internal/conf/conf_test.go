@@ -37,6 +37,12 @@ func TestConfigFileParses(t *testing.T) {
 	if got := bc.GetPolicy().GetFramesPerSecond(); got != 30 {
 		t.Errorf("policy.frames_per_second = %d, want 30", got)
 	}
+	if got := bc.GetSocial().GetEndpoint(); got != "discovery:///marschat-social" {
+		t.Errorf("social.endpoint = %q, want discovery:///marschat-social", got)
+	}
+	if got := bc.GetCall().GetRingTimeout().AsDuration(); got != 60*time.Second {
+		t.Errorf("call.ring_timeout = %v, want 60s", got)
+	}
 }
 
 // 心跳超时不大于心跳间隔时，客户端按间隔发心跳也会被断开，配置校验必须拒绝。

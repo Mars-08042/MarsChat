@@ -110,7 +110,12 @@ type conn struct {
 // connect 经网关建立连接并认证，从在线路由中读出它落在哪个 access 实例。
 func connect(t *testing.T, u user) conn {
 	t.Helper()
-	c := testkit.Dial(t, gatewayWS)
+	return authAndLocate(t, testkit.Dial(t, gatewayWS), u)
+}
+
+// authAndLocate 在已建立的连接上认证，从在线路由中读出它落在哪个 access 实例。
+func authAndLocate(t *testing.T, c *testkit.WS, u user) conn {
+	t.Helper()
 	ok := c.Auth(u.token)
 	field := strconv.FormatInt(ok.GetConnectionId(), 10)
 	rdb := testkit.NewRedis(t)

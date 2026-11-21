@@ -48,6 +48,7 @@ type Conn struct {
 	connectedAt time.Time
 	windowStart time.Time
 	windowCount int
+	call        callRef // 参与的通话，见 Calls
 }
 
 func newConn(h *Hub, ws *websocket.Conn) *Conn {
@@ -86,6 +87,7 @@ func (c *Conn) serve() {
 		// 删除失败时路由按 TTL 过期，期间推送到这条连接会被 access 忽略
 		c.hub.logger.Warn("unregister route failed", slog.Int64("conn_id", id), slog.Any("error", err))
 	}
+	c.hub.calls.disconnect(c)
 	c.hub.logger.Info("websocket disconnected",
 		slog.Int64("conn_id", id),
 		slog.Int64("user_id", c.principal.UserID),
@@ -199,6 +201,8 @@ func (c *Conn) handle(f *v1.ClientFrame, decodeErr error) {
 		c.heartbeat(rid)
 	case *v1.ClientFrame_SendMessage:
 		c.sendMessage(rid, b.SendMessage)
+	case *v1.ClientFrame_Call:
+		c.hub.calls.handle(c, rid, b.Call)
 	case *v1.ClientFrame_Auth:
 		c.push(errorFrame(rid, ErrInvalidFrame("already authenticated")))
 	default:
@@ -206,7 +210,7 @@ func (c *Conn) handle(f *v1.ClientFrame, decodeErr error) {
 	}
 }
 
-// heartbeat 回复 Pong，同时续期在线路由、复查吊销名单。事件链路故障时，被吊销的连接最迟一个心跳周期后断开。
+// heartbeat 回复 Pong，同时续期在线路由和参与的通话、复查吊销名单。事件链路故障时，被吊销的连接最迟一个心跳周期后断开。
 func (c *Conn) heartbeat(rid uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
@@ -221,6 +225,7 @@ func (c *Conn) heartbeat(rid uint64) {
 		return
 	}
 	c.registerRoute(ctx)
+	c.hub.calls.heartbeat(ctx, c)
 	c.push(&v1.ServerFrame{RequestId: rid, Body: &v1.ServerFrame_Pong{Pong: &v1.Pong{}}})
 }
 

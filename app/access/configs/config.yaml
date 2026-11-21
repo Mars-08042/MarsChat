@@ -41,6 +41,20 @@ message:
   endpoint: ${MESSAGE_ENDPOINT:discovery:///marschat-message}
   timeout: 3s
 
+# 呼叫前校验权限（好友且未拉黑）
+social:
+  endpoint: ${SOCIAL_ENDPOINT:discovery:///marschat-social}
+  timeout: 1s
+
+# 通话信令
+call:
+  # 振铃超时，到期无人接听自动结束
+  ring_timeout: 60s
+  # access 之间转发信令的单次超时
+  forward_timeout: 2s
+  # 对端 access 实例不可达后跳过它的时长，冷却结束后重新拨号
+  forward_cooldown: 5s
+
 websocket:
   auth_timeout: 10s
   heartbeat_interval: 30s

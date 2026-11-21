@@ -1,4 +1,5 @@
-// Package data 实现 biz 层定义的接口：令牌校验、Redis 在线路由，以及对 message 的调用。
+// Package data 实现 biz 层定义的接口：令牌校验、Redis 在线路由与通话状态，对 message、social 的调用，
+// 以及转发通话信令用的 access 直连客户端。
 package data
 
 import (
@@ -17,8 +18,10 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	messagev1 "github.com/Mars-08042/MarsChat/api/message/v1"
+	socialv1 "github.com/Mars-08042/MarsChat/api/social/v1"
 	"github.com/Mars-08042/MarsChat/app/access/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/access/internal/conf"
+	"github.com/Mars-08042/MarsChat/pkg/accessclient"
 	"github.com/Mars-08042/MarsChat/pkg/auth"
 	"github.com/Mars-08042/MarsChat/pkg/bootstrap"
 	pkgconf "github.com/Mars-08042/MarsChat/pkg/conf"
@@ -34,6 +37,9 @@ var ProviderSet = wire.NewSet(
 	NewRouteRepo,
 	wire.Bind(new(biz.RouteRepo), new(*RouteRepo)),
 	NewMessageSender,
+	NewCallRepo,
+	NewCallPermission,
+	NewForwarder,
 )
 
 // Data 持有共用的存储客户端。
@@ -46,8 +52,8 @@ func NewData(rdb *redis.Client) *Data {
 	return &Data{rdb: rdb}
 }
 
-// ReadinessChecks 返回就绪探针要检查的依赖。message 不在其中：它不可用时连接仍能维持和接收推送，
-// 发消息返回 503，不应因此摘掉 access 的流量。
+// ReadinessChecks 返回就绪探针要检查的依赖。message、social 不在其中：它们不可用时连接仍能维持和接收推送，
+// 发消息、发起呼叫返回 503，不应因此摘掉 access 的流量。
 func (d *Data) ReadinessChecks() []bootstrap.Check {
 	return []bootstrap.Check{bootstrap.RedisCheck(d.rdb)}
 }
@@ -101,6 +107,15 @@ func (r *RouteRepo) Unregister(ctx context.Context, userID, connID int64) error 
 	return route.Unregister(ctx, r.rdb, userID, connID)
 }
 
+func (r *RouteRepo) List(ctx context.Context, userIDs []int64) (map[int64][]route.Entry, error) {
+	return route.List(ctx, r.rdb, userIDs)
+}
+
+// Addr 返回本实例的路由地址。ResolveAddr 在开始接受连接之前写入，之后只读。
+func (r *RouteRepo) Addr() string {
+	return r.addr
+}
+
 type messageSender struct {
 	c messagev1.MessageInternalServiceClient
 }
@@ -148,4 +163,58 @@ func (s *messageSender) Send(ctx context.Context, p auth.Principal, connID int64
 		return nil, biz.ErrUpstreamUnavailable(err)
 	}
 	return resp.GetResult(), nil
+}
+
+type callPermission struct {
+	c socialv1.SocialInternalServiceClient
+}
+
+// NewCallPermission 创建 social 客户端，默认地址 discovery:///marschat-social。
+// 连接是惰性的，social 暂时不可用不影响启动，期间发起呼叫返回 503。
+// CheckSendPermission 只读，连接级失败时重试一次；按接口熔断，重试在外层。
+func NewCallPermission(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (biz.CallPermission, func(), error) {
+	c := bc.GetSocial()
+	conn, err := kgrpc.NewClient(context.Background(),
+		kgrpc.WithEndpoint(c.GetEndpoint()),
+		kgrpc.WithDiscovery(r),
+		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
+		kgrpc.WithMiddleware(
+			retry.Client(socialv1.SocialInternalService_CheckSendPermission_FullMethodName),
+			circuitbreaker.Client(),
+		),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create social client %s: %w", c.GetEndpoint(), err)
+	}
+	cleanup := func() {
+		if err := conn.Close(); err != nil {
+			logger.Warn("close client failed", slog.String("upstream", "social"), slog.Any("error", err))
+		}
+	}
+	return &callPermission{c: socialv1.NewSocialInternalServiceClient(conn)}, cleanup, nil
+}
+
+// CheckCall 沿用单聊发消息的权限规则。social 的业务错误（NOT_FRIENDS、BLOCKED、USER_NOT_FOUND）
+// 和熔断错误原样返回，没有错误原因的调用失败统一为 503 UPSTREAM_UNAVAILABLE。
+func (p *callPermission) CheckCall(ctx context.Context, callerID, calleeID int64) error {
+	_, err := p.c.CheckSendPermission(ctx, &socialv1.CheckSendPermissionRequest{
+		SenderId: callerID,
+		PeerType: socialv1.PeerType_PEER_TYPE_USER,
+		PeerId:   calleeID,
+	})
+	if err == nil {
+		return nil
+	}
+	if e := kerrors.FromError(err); e.Reason != "" {
+		return e
+	}
+	return biz.ErrUpstreamUnavailable(err)
+}
+
+// NewForwarder 创建转发通话信令用的 access 直连客户端（pkg/accessclient），与 delivery 推送用的是同一套实现。
+func NewForwarder(bc *conf.Bootstrap, logger *slog.Logger) (biz.Forwarder, func()) {
+	c := bc.GetCall()
+	cooldown := c.GetForwardCooldown().AsDuration()
+	cl := accessclient.New(c.GetForwardTimeout().AsDuration(), func() time.Duration { return cooldown }, logger)
+	return cl, cl.Close
 }

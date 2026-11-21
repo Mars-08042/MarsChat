@@ -176,8 +176,10 @@
 
 ### 7. 通话信令
 
-- [ ] 信令帧（邀请、接听、拒绝、挂断、SDP、ICE）走 WebSocket；access 按在线路由直转对端实例，不落库、不经 Kafka；对方离线时立即返回失败；多端来电，一端接听后其他端提示“已在其他设备接听”。
-- [ ] coturn 推迟到前端重构时部署：TURN 中继端口段难以套用 +10000 规则，届时再单独确认。
+设计：[call-signaling.md](../../design/call-signaling.md)（已采纳，实施中的调整见其第 9 节）。
+
+- [x] 信令帧（邀请、接听、拒绝、挂断、SDP、ICE）走 WebSocket；access 按在线路由直转对端实例，不落库、不经 Kafka；对方离线时立即返回失败；多端来电，一端接听后其他端提示“已在其他设备接听”。（2026-11-21：另加只能呼叫好友、一人一通的忙线判断、服务端振铃超时、断线结束；delivery 的 access 直连客户端抽到 `pkg/accessclient` 共用）
+- [ ] coturn 推迟到前端重构时部署：TURN 中继端口段难以套用 +10000 规则，届时再单独确认。群通话、ICE 服务器与 TURN 临时凭据下发一并推迟（设计第 8 节问题 7）。
 
 ### 8. 可观测与压测
 
@@ -268,7 +270,11 @@
 
 步骤 6 实施中（2026-11-20）：设计 [media-service.md](../../design/media-service.md) 已采纳。存储由设计推荐的 SeaweedFS 改为可切换的本地目录（默认）与阿里云 OSS，见 [ADR-0007](../../architecture/adr/0007-object-storage.md)；新增依赖 OSS 官方 SDK v2 与 `golang.org/x/image`（开发者已同意）。
 
-步骤 6 第 1～5 段完成（2026-11-21），第 6 段（OSS 手动验证）等开发者提供 Bucket 与 AccessKey。实测数据：经网关上传 20 MiB 约 0.6 秒、下载约 0.14 秒（本地存储）；media 空闲约 18 MiB，并发上传 1590 万像素 16 位 PNG 时峰值 335 MiB（限制 384 MiB）。新增 TD-37（上传中途进程退出留下孤儿对象）、TD-38（缩略图不处理 JPEG 的 EXIF 方向）。验收时发现并修复 TD-39：Redis 停机约 20 秒后，节点号租约的下一轮续期可能晚于本地截止时间，留下短暂的发号失败窗口；`pkg/idgen` 改为续期失败后每秒重试。验证（2026-11-21，缩略图内存调整与 TD-39 修复之后）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（30 个包）通过；宿主机模式 `make e2e` 通过，六个服务日志无 ERROR；重建镜像后 `make cluster-test` 15 项通过（含 7 项故障实验）。修复前第一次运行时，`TestFaultStopRedisLong` 在准备阶段遇到上述窗口而失败，这也是发现 TD-39 的经过。
+步骤 6 第 1～5 段完成（2026-11-21），第 6 段（OSS 手动验证）等开发者提供 Bucket 与 AccessKey。实测数据：经网关上传 20 MiB 约 0.6 秒、下载约 0.14 秒（本地存储）；media 空闲约 18 MiB，并发上传 1590 万像素 16 位 PNG 时峰值 335 MiB（限制 384 MiB）。新增 TD-37（上传中途进程退出留下孤儿对象）、TD-38（缩略图不处理 JPEG 的 EXIF 方向）。验收时发现并修复 TD-39：Redis 停机约 20 秒后，节点号租约的下一轮续期可能晚于本地截止时间，留下短暂的发号失败窗口；`pkg/idgen` 改为续期失败后每秒重试。验证（2026-11-21，缩略图内存调整与 TD-39 修复之后）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（30 个包）通过；宿主机模式 `make e2e` 通过，六个服务日志无 ERROR；重建镜像后 `make cluster-test` 15 项通过（含 7 项故障实验）。修复前第一次运行时，`TestFaultStopRedisLong` 在准备阶段遇到上述窗口而失败，这也是发现 TD-39 的经过。第 1～5 段提交为 `f1ade90`。
+
+步骤 7 完成（2026-11-21，coturn 按计划推迟）：设计 [call-signaling.md](../../design/call-signaling.md) 已采纳（第 8 节的 7 个问题均按推荐方案确认），实施中的调整记在其第 9 节，主要一项是“先回复 `CallAck`，之后的失败一律经 `CallEnded` 通知”。验证：`buf lint`、`make gen` 两次结果一致、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（30 个包）通过；宿主机模式 `make e2e` 通过（新增通话 3 项），六个服务日志无 ERROR；重建镜像后 `make cluster-test` 17 项通过，新增跨实例通话（offer 转发 0.5 毫秒）和通话中杀掉接听方 access 的故障实验（主叫下一次发信令 1 毫秒内收到 `DISCONNECTED`，忙线标记释放）。媒体能否连通要等前端重构后用浏览器验证。
+
+下一步：步骤 8（可观测与压测）。开始前先写设计文档，重点是指标的选取、OpenTelemetry 的接入方式和压测场景；监控组件的内存占用要在 Docker Desktop 上实测。
 
 核对代码时新发现 TD-34（节点号租约丢失后不会重新获取），列入本步骤修复。Compose 全栈内存已初步评估：Docker Desktop 虚拟机 3.8 GiB，现有占用约 2.1 GiB（Kafka 1.06 GiB），加上多实例与 APISIX 估计约 2.0 GiB（Kafka 堆限制为 512 MiB 后），第一阶段实测。
 
@@ -288,6 +294,7 @@
 | 暂停 Kafka 30 秒 | 暂停期间 30 次发送全部确认（事件留在 Outbox）；恢复后 1.5～4.3 秒追平，按顺序推送 |
 | 停掉 Redis 20 秒 | 停机期间 18～19 次发送全部确认（限流、吊销检查放行）；25 条中 22 条经推送到达（Redis 恢复后积压的事件发布），3 条只经补拉（停机期间 delivery 查不到在线路由） |
 | 停掉 Redis 60 秒 | 已有会话的 62 次发送全部成功，它们不需要发号。需要发号的写操作（给新好友发第一条消息，要新建会话）最后一次成功在停机后 27.9 秒，第一次失败在 30.3 秒（节点号租约 TTL 30 秒），失败返回 `500 INTERNAL`（TD-35，2026-11-20 改为 `503 DEPENDENCY_UNAVAILABLE`）；两个 message 实例分别拒绝 8 次和 7 次。Redis 恢复后 3.8 秒恢复发号，两个 message 实例、account、social 各换用一次新节点号（TD-34 的修复）；恢复后注册和好友申请正常 |
+| 通话中杀掉接听方的 access（2026-11-21，步骤 7，`TestFaultKillAccessDuringCall`） | 主叫与接听设备在不同实例上，通话中 `docker kill` 接听方所在实例。主叫在 kill 后 173 毫秒发出 ICE 信令，先收到 `CallAck`，1 毫秒内收到 `CallEnded{DISCONNECTED}`（到被杀实例的 gRPC 连接已断开，转发立即失败）；通话状态与双方忙线标记已删除；被叫经网关重连到存活实例后可以再次被呼叫 |
 
 问题与处理：
 

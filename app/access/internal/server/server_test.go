@@ -17,6 +17,7 @@ import (
 	"github.com/Mars-08042/MarsChat/app/access/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/access/internal/conf"
 	"github.com/Mars-08042/MarsChat/pkg/auth"
+	"github.com/Mars-08042/MarsChat/pkg/route"
 )
 
 type allowAll struct{}
@@ -30,6 +31,10 @@ type noRoutes struct{}
 
 func (noRoutes) Register(context.Context, int64, int64, int64, time.Duration) error { return nil }
 func (noRoutes) Unregister(context.Context, int64, int64) error                   { return nil }
+func (noRoutes) List(context.Context, []int64) (map[int64][]route.Entry, error) {
+	return nil, nil
+}
+func (noRoutes) Addr() string { return "127.0.0.1:19100" }
 
 type noSender struct{}
 
@@ -40,15 +45,19 @@ func (noSender) Send(context.Context, auth.Principal, int64, *messagev1.Outgoing
 // Kratos HTTP 服务给每个请求的 context 加了服务端超时。WebSocket 挂在 Kratos 的路由上，
 // 连接的生命周期必须与它无关：超时过后连接仍然可用。
 func TestWebSocketOutlivesHTTPTimeout(t *testing.T) {
-	hub := biz.NewHub(&conf.WebSocket{
+	wsConf := &conf.WebSocket{
 		AuthTimeout:       durationpb.New(2 * time.Second),
 		HeartbeatInterval: durationpb.New(30 * time.Second),
 		HeartbeatTimeout:  durationpb.New(90 * time.Second),
 		SendQueue:         16,
 		WriteTimeout:      durationpb.New(2 * time.Second),
 		MaxFrameBytes:     65536,
-	}, biz.NewPolicyHolder(&conf.Policy{FramesPerSecond: 30}), allowAll{}, noRoutes{}, noSender{},
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// 本测试不发通话帧，通话依赖留空
+	calls := biz.NewCalls(&conf.Call{RingTimeout: durationpb.New(time.Minute)}, wsConf, nil, nil, noRoutes{}, nil, logger)
+	hub := biz.NewHub(wsConf, biz.NewPolicyHolder(&conf.Policy{FramesPerSecond: 30}), allowAll{}, noRoutes{}, noSender{},
+		calls, logger)
 
 	const timeout = 50 * time.Millisecond
 	srv := http.NewServer(http.Address("127.0.0.1:0"), http.Timeout(timeout))

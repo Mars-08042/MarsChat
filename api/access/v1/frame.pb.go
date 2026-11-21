@@ -34,6 +34,7 @@ type ClientFrame struct {
 	//	*ClientFrame_Auth
 	//	*ClientFrame_Ping
 	//	*ClientFrame_SendMessage
+	//	*ClientFrame_Call
 	Body          isClientFrame_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -110,6 +111,15 @@ func (x *ClientFrame) GetSendMessage() *v1.OutgoingMessage {
 	return nil
 }
 
+func (x *ClientFrame) GetCall() *CallRequest {
+	if x != nil {
+		if x, ok := x.Body.(*ClientFrame_Call); ok {
+			return x.Call
+		}
+	}
+	return nil
+}
+
 type isClientFrame_Body interface {
 	isClientFrame_Body()
 }
@@ -128,11 +138,18 @@ type ClientFrame_SendMessage struct {
 	SendMessage *v1.OutgoingMessage `protobuf:"bytes,4,opt,name=send_message,json=sendMessage,proto3,oneof"`
 }
 
+type ClientFrame_Call struct {
+	// 通话操作，回复 CallAck 或带同一 request_id 的 Error
+	Call *CallRequest `protobuf:"bytes,5,opt,name=call,proto3,oneof"`
+}
+
 func (*ClientFrame_Auth) isClientFrame_Body() {}
 
 func (*ClientFrame_Ping) isClientFrame_Body() {}
 
 func (*ClientFrame_SendMessage) isClientFrame_Body() {}
+
+func (*ClientFrame_Call) isClientFrame_Body() {}
 
 // Auth 携带访问令牌。令牌不放在 URL 里：URL 会进入网关和代理的访问日志。
 type Auth struct {
@@ -231,6 +248,8 @@ type ServerFrame struct {
 	//	*ServerFrame_Read
 	//	*ServerFrame_Kicked
 	//	*ServerFrame_Notification
+	//	*ServerFrame_CallAck
+	//	*ServerFrame_CallEvent
 	Body          isServerFrame_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -352,6 +371,24 @@ func (x *ServerFrame) GetNotification() *Notification {
 	return nil
 }
 
+func (x *ServerFrame) GetCallAck() *CallAck {
+	if x != nil {
+		if x, ok := x.Body.(*ServerFrame_CallAck); ok {
+			return x.CallAck
+		}
+	}
+	return nil
+}
+
+func (x *ServerFrame) GetCallEvent() *CallEvent {
+	if x != nil {
+		if x, ok := x.Body.(*ServerFrame_CallEvent); ok {
+			return x.CallEvent
+		}
+	}
+	return nil
+}
+
 type isServerFrame_Body interface {
 	isServerFrame_Body()
 }
@@ -393,6 +430,16 @@ type ServerFrame_Notification struct {
 	Notification *Notification `protobuf:"bytes,9,opt,name=notification,proto3,oneof"`
 }
 
+type ServerFrame_CallAck struct {
+	// 通话请求已被接受
+	CallAck *CallAck `protobuf:"bytes,10,opt,name=call_ack,json=callAck,proto3,oneof"`
+}
+
+type ServerFrame_CallEvent struct {
+	// 通话事件推送：来电、已接听、结束、对方的 SDP 与 ICE
+	CallEvent *CallEvent `protobuf:"bytes,11,opt,name=call_event,json=callEvent,proto3,oneof"`
+}
+
 func (*ServerFrame_AuthOk) isServerFrame_Body() {}
 
 func (*ServerFrame_Pong) isServerFrame_Body() {}
@@ -408,6 +455,10 @@ func (*ServerFrame_Read) isServerFrame_Body() {}
 func (*ServerFrame_Kicked) isServerFrame_Body() {}
 
 func (*ServerFrame_Notification) isServerFrame_Body() {}
+
+func (*ServerFrame_CallAck) isServerFrame_Body() {}
+
+func (*ServerFrame_CallEvent) isServerFrame_Body() {}
 
 // AuthOk 表示认证成功，连接开始接收推送。
 type AuthOk struct {
@@ -519,7 +570,7 @@ func (*Pong) Descriptor() ([]byte, []int) {
 
 // Error 与 HTTP 接口的 Kratos 错误一一对应：code 为 HTTP 状态码，reason 为错误原因。
 // 发消息的错误原样来自 message 服务（例如 RATE_LIMITED、NOT_FRIENDS、VALIDATOR），
-// access 自身的错误见 access.v1.ErrorReason。
+// 呼叫的权限错误原样来自 social 服务（例如 NOT_FRIENDS、BLOCKED），access 自身的错误见 access.v1.ErrorReason。
 type Error struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
@@ -869,17 +920,18 @@ var File_access_v1_frame_proto protoreflect.FileDescriptor
 
 const file_access_v1_frame_proto_rawDesc = "" +
 	"\n" +
-	"\x15access/v1/frame.proto\x12\taccess.v1\x1a\x17account/v1/events.proto\x1a\x18message/v1/message.proto\x1a\x16social/v1/events.proto\"\xc4\x01\n" +
+	"\x15access/v1/frame.proto\x12\taccess.v1\x1a\x14access/v1/call.proto\x1a\x17account/v1/events.proto\x1a\x18message/v1/message.proto\x1a\x16social/v1/events.proto\"\xf2\x01\n" +
 	"\vClientFrame\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12%\n" +
 	"\x04auth\x18\x02 \x01(\v2\x0f.access.v1.AuthH\x00R\x04auth\x12%\n" +
 	"\x04ping\x18\x03 \x01(\v2\x0f.access.v1.PingH\x00R\x04ping\x12@\n" +
-	"\fsend_message\x18\x04 \x01(\v2\x1b.message.v1.OutgoingMessageH\x00R\vsendMessageB\x06\n" +
+	"\fsend_message\x18\x04 \x01(\v2\x1b.message.v1.OutgoingMessageH\x00R\vsendMessage\x12,\n" +
+	"\x04call\x18\x05 \x01(\v2\x16.access.v1.CallRequestH\x00R\x04callB\x06\n" +
 	"\x04body\")\n" +
 	"\x04Auth\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\"\x06\n" +
-	"\x04Ping\"\xb5\x03\n" +
+	"\x04Ping\"\x9d\x04\n" +
 	"\vServerFrame\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12,\n" +
@@ -890,7 +942,11 @@ const file_access_v1_frame_proto_rawDesc = "" +
 	"\amessage\x18\x06 \x01(\v2\x13.message.v1.MessageH\x00R\amessage\x12.\n" +
 	"\x04read\x18\a \x01(\v2\x18.message.v1.ReadPositionH\x00R\x04read\x12+\n" +
 	"\x06kicked\x18\b \x01(\v2\x11.access.v1.KickedH\x00R\x06kicked\x12=\n" +
-	"\fnotification\x18\t \x01(\v2\x17.access.v1.NotificationH\x00R\fnotificationB\x06\n" +
+	"\fnotification\x18\t \x01(\v2\x17.access.v1.NotificationH\x00R\fnotification\x12/\n" +
+	"\bcall_ack\x18\n" +
+	" \x01(\v2\x12.access.v1.CallAckH\x00R\acallAck\x125\n" +
+	"\n" +
+	"call_event\x18\v \x01(\v2\x14.access.v1.CallEventH\x00R\tcallEventB\x06\n" +
 	"\x04body\"\xa3\x01\n" +
 	"\x06AuthOk\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1d\n" +
@@ -949,50 +1005,56 @@ var file_access_v1_frame_proto_goTypes = []any{
 	(*Notification)(nil),                // 8: access.v1.Notification
 	nil,                                 // 9: access.v1.Error.MetadataEntry
 	(*v1.OutgoingMessage)(nil),          // 10: message.v1.OutgoingMessage
-	(*v1.SendResult)(nil),               // 11: message.v1.SendResult
-	(*v1.Message)(nil),                  // 12: message.v1.Message
-	(*v1.ReadPosition)(nil),             // 13: message.v1.ReadPosition
-	(v11.RevokeReason)(0),               // 14: account.v1.RevokeReason
-	(*v12.FriendRequestCreated)(nil),    // 15: social.v1.FriendRequestCreated
-	(*v12.FriendAdded)(nil),             // 16: social.v1.FriendAdded
-	(*v12.FriendDeleted)(nil),           // 17: social.v1.FriendDeleted
-	(*v12.GroupCreated)(nil),            // 18: social.v1.GroupCreated
-	(*v12.GroupMembersJoined)(nil),      // 19: social.v1.GroupMembersJoined
-	(*v12.GroupMemberLeft)(nil),         // 20: social.v1.GroupMemberLeft
-	(*v12.GroupMemberUpdated)(nil),      // 21: social.v1.GroupMemberUpdated
-	(*v12.GroupUpdated)(nil),            // 22: social.v1.GroupUpdated
-	(*v12.GroupDismissed)(nil),          // 23: social.v1.GroupDismissed
-	(*v12.GroupJoinRequestCreated)(nil), // 24: social.v1.GroupJoinRequestCreated
+	(*CallRequest)(nil),                 // 11: access.v1.CallRequest
+	(*v1.SendResult)(nil),               // 12: message.v1.SendResult
+	(*v1.Message)(nil),                  // 13: message.v1.Message
+	(*v1.ReadPosition)(nil),             // 14: message.v1.ReadPosition
+	(*CallAck)(nil),                     // 15: access.v1.CallAck
+	(*CallEvent)(nil),                   // 16: access.v1.CallEvent
+	(v11.RevokeReason)(0),               // 17: account.v1.RevokeReason
+	(*v12.FriendRequestCreated)(nil),    // 18: social.v1.FriendRequestCreated
+	(*v12.FriendAdded)(nil),             // 19: social.v1.FriendAdded
+	(*v12.FriendDeleted)(nil),           // 20: social.v1.FriendDeleted
+	(*v12.GroupCreated)(nil),            // 21: social.v1.GroupCreated
+	(*v12.GroupMembersJoined)(nil),      // 22: social.v1.GroupMembersJoined
+	(*v12.GroupMemberLeft)(nil),         // 23: social.v1.GroupMemberLeft
+	(*v12.GroupMemberUpdated)(nil),      // 24: social.v1.GroupMemberUpdated
+	(*v12.GroupUpdated)(nil),            // 25: social.v1.GroupUpdated
+	(*v12.GroupDismissed)(nil),          // 26: social.v1.GroupDismissed
+	(*v12.GroupJoinRequestCreated)(nil), // 27: social.v1.GroupJoinRequestCreated
 }
 var file_access_v1_frame_proto_depIdxs = []int32{
 	1,  // 0: access.v1.ClientFrame.auth:type_name -> access.v1.Auth
 	2,  // 1: access.v1.ClientFrame.ping:type_name -> access.v1.Ping
 	10, // 2: access.v1.ClientFrame.send_message:type_name -> message.v1.OutgoingMessage
-	4,  // 3: access.v1.ServerFrame.auth_ok:type_name -> access.v1.AuthOk
-	5,  // 4: access.v1.ServerFrame.pong:type_name -> access.v1.Pong
-	11, // 5: access.v1.ServerFrame.send_ack:type_name -> message.v1.SendResult
-	6,  // 6: access.v1.ServerFrame.error:type_name -> access.v1.Error
-	12, // 7: access.v1.ServerFrame.message:type_name -> message.v1.Message
-	13, // 8: access.v1.ServerFrame.read:type_name -> message.v1.ReadPosition
-	7,  // 9: access.v1.ServerFrame.kicked:type_name -> access.v1.Kicked
-	8,  // 10: access.v1.ServerFrame.notification:type_name -> access.v1.Notification
-	9,  // 11: access.v1.Error.metadata:type_name -> access.v1.Error.MetadataEntry
-	14, // 12: access.v1.Kicked.reason:type_name -> account.v1.RevokeReason
-	15, // 13: access.v1.Notification.friend_request_created:type_name -> social.v1.FriendRequestCreated
-	16, // 14: access.v1.Notification.friend_added:type_name -> social.v1.FriendAdded
-	17, // 15: access.v1.Notification.friend_deleted:type_name -> social.v1.FriendDeleted
-	18, // 16: access.v1.Notification.group_created:type_name -> social.v1.GroupCreated
-	19, // 17: access.v1.Notification.group_members_joined:type_name -> social.v1.GroupMembersJoined
-	20, // 18: access.v1.Notification.group_member_left:type_name -> social.v1.GroupMemberLeft
-	21, // 19: access.v1.Notification.group_member_updated:type_name -> social.v1.GroupMemberUpdated
-	22, // 20: access.v1.Notification.group_updated:type_name -> social.v1.GroupUpdated
-	23, // 21: access.v1.Notification.group_dismissed:type_name -> social.v1.GroupDismissed
-	24, // 22: access.v1.Notification.group_join_request_created:type_name -> social.v1.GroupJoinRequestCreated
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	11, // 3: access.v1.ClientFrame.call:type_name -> access.v1.CallRequest
+	4,  // 4: access.v1.ServerFrame.auth_ok:type_name -> access.v1.AuthOk
+	5,  // 5: access.v1.ServerFrame.pong:type_name -> access.v1.Pong
+	12, // 6: access.v1.ServerFrame.send_ack:type_name -> message.v1.SendResult
+	6,  // 7: access.v1.ServerFrame.error:type_name -> access.v1.Error
+	13, // 8: access.v1.ServerFrame.message:type_name -> message.v1.Message
+	14, // 9: access.v1.ServerFrame.read:type_name -> message.v1.ReadPosition
+	7,  // 10: access.v1.ServerFrame.kicked:type_name -> access.v1.Kicked
+	8,  // 11: access.v1.ServerFrame.notification:type_name -> access.v1.Notification
+	15, // 12: access.v1.ServerFrame.call_ack:type_name -> access.v1.CallAck
+	16, // 13: access.v1.ServerFrame.call_event:type_name -> access.v1.CallEvent
+	9,  // 14: access.v1.Error.metadata:type_name -> access.v1.Error.MetadataEntry
+	17, // 15: access.v1.Kicked.reason:type_name -> account.v1.RevokeReason
+	18, // 16: access.v1.Notification.friend_request_created:type_name -> social.v1.FriendRequestCreated
+	19, // 17: access.v1.Notification.friend_added:type_name -> social.v1.FriendAdded
+	20, // 18: access.v1.Notification.friend_deleted:type_name -> social.v1.FriendDeleted
+	21, // 19: access.v1.Notification.group_created:type_name -> social.v1.GroupCreated
+	22, // 20: access.v1.Notification.group_members_joined:type_name -> social.v1.GroupMembersJoined
+	23, // 21: access.v1.Notification.group_member_left:type_name -> social.v1.GroupMemberLeft
+	24, // 22: access.v1.Notification.group_member_updated:type_name -> social.v1.GroupMemberUpdated
+	25, // 23: access.v1.Notification.group_updated:type_name -> social.v1.GroupUpdated
+	26, // 24: access.v1.Notification.group_dismissed:type_name -> social.v1.GroupDismissed
+	27, // 25: access.v1.Notification.group_join_request_created:type_name -> social.v1.GroupJoinRequestCreated
+	26, // [26:26] is the sub-list for method output_type
+	26, // [26:26] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_access_v1_frame_proto_init() }
@@ -1000,10 +1062,12 @@ func file_access_v1_frame_proto_init() {
 	if File_access_v1_frame_proto != nil {
 		return
 	}
+	file_access_v1_call_proto_init()
 	file_access_v1_frame_proto_msgTypes[0].OneofWrappers = []any{
 		(*ClientFrame_Auth)(nil),
 		(*ClientFrame_Ping)(nil),
 		(*ClientFrame_SendMessage)(nil),
+		(*ClientFrame_Call)(nil),
 	}
 	file_access_v1_frame_proto_msgTypes[3].OneofWrappers = []any{
 		(*ServerFrame_AuthOk)(nil),
@@ -1014,6 +1078,8 @@ func file_access_v1_frame_proto_init() {
 		(*ServerFrame_Read)(nil),
 		(*ServerFrame_Kicked)(nil),
 		(*ServerFrame_Notification)(nil),
+		(*ServerFrame_CallAck)(nil),
+		(*ServerFrame_CallEvent)(nil),
 	}
 	file_access_v1_frame_proto_msgTypes[8].OneofWrappers = []any{
 		(*Notification_FriendRequestCreated)(nil),

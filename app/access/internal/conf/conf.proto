@@ -23,6 +23,9 @@ message Bootstrap {
   // 留空时取 Kratos 注册到 Consul 的 gRPC 端点：监听 0.0.0.0 时是网卡 IP，多副本部署不用逐个配置。
   // 只有其他服务要经 NAT 等不同地址访问本实例时才需要填写。
   string advertise_addr = 9;
+  // 呼叫前校验权限（好友且未拉黑）
+  Upstream social = 10 [(buf.validate.field).required = true];
+  Call call = 11 [(buf.validate.field).required = true];
 }
 
 // Upstream 是调用其他服务的配置，修改后需要重启。
@@ -82,6 +85,28 @@ message WebSocket {
       gte: {seconds: 0}
       lte: {seconds: 10}
     }
+  ];
+}
+
+// Call 是通话信令的参数，修改后需要重启。
+message Call {
+  // 振铃超时，到期无人接听自动结束
+  google.protobuf.Duration ring_timeout = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {seconds: 5}
+      lte: {seconds: 300}
+    }
+  ];
+  // access 之间转发信令的单次超时
+  google.protobuf.Duration forward_timeout = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gt = {seconds: 0}
+  ];
+  // 对端 access 实例不可达后跳过它的时长，0 表示只摘除连接、不冷却
+  google.protobuf.Duration forward_cooldown = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration.gte = {seconds: 0}
   ];
 }
 

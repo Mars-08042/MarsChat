@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 6（2026-11-21）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
+> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 7（2026-11-21）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
 
 ## 运行依赖
 
@@ -96,10 +96,10 @@ make run-media      # HTTP 127.0.0.1:18050，gRPC 127.0.0.1:19050；文件默认
 | 不可用 | 影响 |
 |---|---|
 | account | social 申请好友返回 `503 DEPENDENCY_UNAVAILABLE`；social、message 的列表不带昵称和头像，记 WARN |
-| social | 发消息返回 `503 DEPENDENCY_UNAVAILABLE`（无法校验发言权限）；会话列表不带群资料；群消息不推送 |
+| social | 发消息返回 `503 DEPENDENCY_UNAVAILABLE`（无法校验发言权限）；发起呼叫返回 `503 UPSTREAM_UNAVAILABLE`，进行中的通话不受影响；会话列表不带群资料；群消息不推送 |
 | media | 无法上传文件和换取下载地址；发送图片、文件消息返回 `503 DEPENDENCY_UNAVAILABLE`（无法核实文件），文本消息不受影响；使用 OSS 时已签发的下载地址在有效期内仍可下载 |
 | message | WebSocket 连接照常建立和接收推送，发消息返回 `503 UPSTREAM_UNAVAILABLE` |
-| access | 客户端无法建立长连接，HTTP 接口不受影响 |
+| access | 客户端无法建立长连接，HTTP 接口不受影响；单个 access 实例停机或崩溃会结束其上连接参与的通话（见 [data-flow.md](architecture/data-flow.md#94-超时与清理)） |
 | delivery 或 Kafka | 消息照常写入、可以补拉，但没有实时推送和事件踢线（心跳兜底，最迟 30 秒断开被吊销的连接）；事件积压在 Outbox 表中，恢复后补发 |
 
 在终端按 Ctrl+C 停止服务。按 Kratos 的停机流程，服务会先从 Consul 注销再退出（宿主机上未在 Windows 终端中实测；容器模式下 `docker stop` 发送 SIGTERM，已确认会先注销）。进程被强制结束时来不及注销，Consul 中的实例在 20 秒内变为 critical、不再被发现，10 分钟后自动删除。
@@ -228,7 +228,7 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 | `MARSCHAT_MAIL_FIXED_CODE` | `000000` | 开发与 e2e 用的固定验证码，只允许和 `log` 发送方一起使用；置空则随机生成 6 位（`log` 发送方写入日志） |
 | `MARSCHAT_SMTP_ADDR` / `MARSCHAT_SMTP_USERNAME` / `MARSCHAT_SMTP_PASSWORD` | 空 | SMTP 服务器 `host:port`、发件邮箱（同时是登录名）、SMTP 授权码，`smtp` 发送方必填 |
 | `MARSCHAT_ACCOUNT_ENDPOINT` | `discovery:///marschat-account` | social、message 调用 account 的 gRPC 地址；也可以写 `127.0.0.1:19010` 这样的直连地址 |
-| `MARSCHAT_SOCIAL_ENDPOINT` | `discovery:///marschat-social` | message、delivery 调用 social 的地址 |
+| `MARSCHAT_SOCIAL_ENDPOINT` | `discovery:///marschat-social` | message、delivery、access 调用 social 的地址 |
 | `MARSCHAT_MESSAGE_ENDPOINT` | `discovery:///marschat-message` | access 调用 message 的地址 |
 | `MARSCHAT_MEDIA_ENDPOINT` | `discovery:///marschat-media` | message 调用 media 的地址 |
 | `MARSCHAT_STORAGE_PROVIDER` | `local` | media 的文件存储：`local` 或 `oss`，见“文件存储” |
@@ -277,6 +277,8 @@ access 的主要配置段（默认值见 [config.yaml](../app/access/configs/con
 | `auth` | 同 account | 重启 |
 | `advertise_addr` | 写入在线路由的本实例 gRPC 地址，默认留空，取注册的 gRPC 端点 | 重启 |
 | `message` | 地址、调用超时 3 秒 | 重启 |
+| `social` | 地址、调用超时 1 秒，发起呼叫前校验权限 | 重启 |
+| `call` | 通话信令：`ring_timeout` 振铃超时 60 秒（5～300 秒）；`forward_timeout` access 之间转发信令的超时 2 秒；`forward_cooldown` 对端 access 实例不可达后的冷却期 5 秒（0 表示只摘除连接） | 重启 |
 | `websocket` | 认证超时 10 秒、心跳间隔 30 秒、心跳超时 90 秒（必须大于心跳间隔，同时是路由 TTL）、发送队列 256、写超时 10 秒、最大帧 64 KiB；`drain_window` 停机时分批关闭连接的窗口 5 秒（0～10 秒，0 表示一次全部关闭；进程停机超时固定为 15 秒） | 重启 |
 | `policy` | 每个连接每秒最多 30 个上行帧 | **热更新** |
 

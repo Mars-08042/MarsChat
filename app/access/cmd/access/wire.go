@@ -19,9 +19,9 @@ import (
 	pkgconf "github.com/Mars-08042/MarsChat/pkg/conf"
 )
 
-// *conf.Bootstrap 用于 message 客户端和 advertise_addr 这类只有 access 才有的字段。
+// *conf.Bootstrap 用于 message、social 客户端和 advertise_addr 这类只有 access 才有的字段。
 func wireApp(*pkgconf.Server, *pkgconf.Registry, *pkgconf.Redis, *pkgconf.Auth,
-	*conf.WebSocket, *conf.Bootstrap, *biz.PolicyHolder, *slog.Logger) (*kratos.App, func(), error) {
+	*conf.WebSocket, *conf.Call, *conf.Bootstrap, *biz.PolicyHolder, *slog.Logger) (*kratos.App, func(), error) {
 	panic(wire.Build(server.ProviderSet, service.ProviderSet, biz.ProviderSet, data.ProviderSet,
 		bootstrap.NewConsulRegistry, newApp))
 }

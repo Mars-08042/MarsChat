@@ -81,7 +81,7 @@ func run() error {
 	}
 
 	app, cleanup, err := wireApp(bc.GetServer(), bc.GetRegistry(), bc.GetRedis(), bc.GetAuth(),
-		bc.GetWebsocket(), &bc, policy, logger)
+		bc.GetWebsocket(), bc.GetCall(), &bc, policy, logger)
 	if err != nil {
 		return fmt.Errorf("init app: %w", err)
 	}
