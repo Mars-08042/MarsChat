@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1500" viewBox="0 0 1800 1500" role="img" aria-labelledby="title desc" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif">
-<title id="title">MarsChat 目标架构：React、Kratos、Consul 与 Apache APISIX</title><desc id="desc">提议中的目标架构，尚未实施。聊天客户端与管理界面拟重构为 React + TypeScript + Vite + pnpm。浏览器经 Apache APISIX 进入系统：WebSocket 连接转发到只承载长连接的接入服务 access，HTTP 接口按路径直达账户、社交、文件和消息等 Kratos 业务服务，令牌由 Kratos 中间件校验。APISIX 使用 Standalone 文件配置并从 Consul 发现上游；Kratos 服务通过 Consul 注册与发现。access 在握手时校验令牌，在 Redis 登记用户、设备与实例的在线路由，并按路由把通话信令直接转给对端 access。消息服务按会话存储消息（读扩散）并分配会话内序号，消息与待发布事件同事务落库，经 Kafka 异步分发；投递服务消费事件后查询在线路由，定向推送到目标 access 实例。实时推送尽力而为，客户端断线后比对游标按序号补拉。WebRTC 媒体由浏览器直连或经 coturn 中继。</desc>
+<title id="title">MarsChat 当前架构：Kratos、Consul 与 Apache APISIX，前端拟用 React 重构</title><desc id="desc">后端已按此架构实施（2026-11-21）。聊天客户端与管理界面拟重构为 React + TypeScript + Vite + pnpm。浏览器经 Apache APISIX 进入系统：WebSocket 连接转发到只承载长连接的接入服务 access，HTTP 接口按路径直达账户、社交、文件和消息等 Kratos 业务服务，令牌由 Kratos 中间件校验。APISIX 使用 Standalone 文件配置并从 Consul 发现上游；Kratos 服务通过 Consul 注册与发现。access 在握手时校验令牌，在 Redis 登记用户、设备与实例的在线路由，并按路由把通话信令直接转给对端 access。消息服务按会话存储消息（读扩散）并分配会话内序号，消息与待发布事件同事务落库，经 Kafka 异步分发；投递服务消费事件后查询在线路由，定向推送到目标 access 实例。实时推送尽力而为，客户端断线后比对游标按序号补拉。WebRTC 媒体由浏览器直连，coturn 中继随前端重构部署。</desc>
 <rect width="1800" height="1500" fill="white"/><defs><marker id="gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b4b2a9"/></marker><marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2c6fd1"/></marker></defs>
 <text x="40" y="49" font-size="30" font-weight="600" fill="#1f1e1c" text-anchor="start">MarsChat 通过可靠消息、多端同步与跨节点投递演进为分布式 IM</text>
-<text x="40" y="86" font-size="20" font-weight="400" fill="#6b6964" text-anchor="start">目标架构 · 提议中／尚未实施 · Go + Kratos · Consul 服务发现 · Apache APISIX 入口网关</text>
+<text x="40" y="86" font-size="20" font-weight="400" fill="#6b6964" text-anchor="start">当前架构 · 后端已实施（2026-11-21） · Go + Kratos · Consul 服务发现 · Apache APISIX 入口网关</text>
 <rect x="40" y="120" width="1320" height="160" rx="15" fill="white" stroke="#b4b2a9" stroke-width="2"/>
 <text x="62" y="153" font-size="23" font-weight="600" fill="#6b6964" text-anchor="start">用户与产品入口 · 前端拟重构</text>
 <rect x="65" y="170" width="810" height="85" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
@@ -10,10 +10,10 @@
 <text x="470.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">单聊／群聊 · 多设备 · 未读与已读 · 断线补拉 · 文件 · 一对一音视频</text>
 <rect x="905" y="170" width="430" height="85" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
 <text x="1120.0" y="205" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">管理界面 · React + TypeScript</text>
-<text x="1120.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">用户／群管理 · 封禁 · 操作审计</text>
+<text x="1120.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">用户／群管理 · 封禁</text>
 <rect x="1400" y="170" width="360" height="110" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
 <text x="1580.0" y="205" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">WebRTC / coturn</text>
-<text x="1580.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">浏览器间直连，必要时中继</text>
+<text x="1580.0" y="235" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">浏览器间直连，中继随前端部署</text>
 <text x="1580.0" y="262" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">媒体不经过聊天业务服务</text>
 <path d="M875 205H895V140H1580V168" fill="none" stroke="#b4b2a9" stroke-width="2" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#gray)"/>
 <text x="1100" y="135" font-size="18" font-weight="400" fill="#6b6964" text-anchor="start">音视频媒体</text>
@@ -129,7 +129,7 @@
 <rect x="1420" y="865" width="320" height="115" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
 <text x="1580.0" y="900" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">链路追踪</text>
 <text x="1580.0" y="930" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">OpenTelemetry + Jaeger</text>
-<text x="1580.0" y="957" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">消息 ID 贯穿日志与 Trace</text>
+<text x="1580.0" y="957" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">日志带 trace_id，经 Kafka 传播</text>
 <rect x="1420" y="1010" width="320" height="115" rx="12" fill="white" stroke="#b4b2a9" stroke-width="2"/>
 <text x="1580.0" y="1045" font-size="22" font-weight="600" fill="#1f1e1c" text-anchor="middle">Docker Compose</text>
 <text x="1580.0" y="1075" font-size="19" font-weight="400" fill="#1f1e1c" text-anchor="middle">服务多实例／依赖编排</text>

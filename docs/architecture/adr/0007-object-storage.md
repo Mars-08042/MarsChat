@@ -2,7 +2,7 @@
 
 - 状态：已采纳（2026-11-20 开发者确认）
 - 日期：2026-11-20
-- 关联：[ADR-0005](0005-distributed-architecture.md) 决策 6（本 ADR 替代其中“MinIO 存文件”）、[media 服务设计](../../design/media-service.md)、[重构计划步骤 6](../../plans/active/backend-refactor.md#6-media-服务)
+- 关联：[ADR-0005](0005-distributed-architecture.md) 决策 6（本 ADR 替代其中“MinIO 存文件”）、[media 服务设计](../../design/media-service.md)、[重构计划步骤 6](../../plans/completed/backend-refactor.md#6-media-服务)
 
 ## 背景
 

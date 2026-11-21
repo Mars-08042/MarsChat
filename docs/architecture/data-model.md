@@ -1,6 +1,6 @@
 # 数据模型
 
-> 本文记录**新后端**的库、表、索引和 Redis 键，随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。设计原则见 [后端重构计划](../plans/active/backend-refactor.md#数据库与缓存设计原则)。旧基线的表结构放在文末附录，只作功能参考。
+> 本文记录当前代码的库、表、索引和 Redis 键，最近一次更新于 2026-11-21（后端重构完成）。设计原则见 [后端重构计划](../plans/completed/backend-refactor.md#数据库与缓存设计原则)。
 
 ## 1. 数据库与账号
 
@@ -29,7 +29,9 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 - 时间列为 `DATETIME(3)`，按 UTC 读写；应用写入前把时间截断到毫秒，与列精度一致。
 - 状态类列直接存 proto 枚举的数值，0 保留给 `UNSPECIFIED`。
 
-### 2.1 account（`marschat_account`，迁移 `000001_init`、`000002_email`、`000003_outbox_trace_parent`）
+### 2.1 account（`marschat_account`）
+
+迁移：`000001_init`、`000002_email`、`000003_outbox_trace_parent`。
 
 **users**
 
@@ -77,7 +79,9 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 事务边界见 [account 设计 3.6](../design/account-service.md#36-事务与事件)。登录事务先 `SELECT ... FOR UPDATE` 锁住用户行，与封禁互斥。
 
-### 2.2 social（`marschat_social`，迁移 `000001_init`、`000002_outbox_trace_parent`）
+### 2.2 social（`marschat_social`）
+
+迁移：`000001_init`、`000002_outbox_trace_parent`。
 
 **friendships**：一段好友关系存两行（A→B 与 B→A），在同一事务中插入（`INSERT IGNORE`）和删除。
 
@@ -144,7 +148,9 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 单聊发言权限是 2 次主键查询（拉黑、好友），群聊发言权限读群资料缓存和成员列表缓存。事务边界与并发控制见 [social 设计 3.4、3.9](../design/social-service.md#34-群)。
 
-### 2.3 message（`marschat_message`，迁移 `000001_init`、`000002_outbox_trace_parent`）
+### 2.3 message（`marschat_message`）
+
+迁移：`000001_init`、`000002_outbox_trace_parent`。
 
 读扩散：消息按会话只存一份，会话内 seq 连续递增，每个成员只记录自己的已读位置（[ADR-0006](adr/0006-message-sync-model.md)）。主键与索引都以会话 ID 开头，将来可以按会话分片。
 
@@ -194,7 +200,9 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 图片与文件消息（步骤 6）的 `content` 为 `ImageContent` / `FileContent`，只引用 media 的文件 ID 与访问密钥，名称、大小、类型、尺寸由 message 按 media 的记录填写，见 [media 服务设计 3.8](../design/media-service.md#38-图片消息与文件消息)。
 
-### 2.4 media（`marschat_media`，迁移 `000001_init`）
+### 2.4 media（`marschat_media`）
+
+迁移：`000001_init`。
 
 文件内容在文件存储中（默认仓库下的 `data/media/`，可切换为阿里云 OSS，见 [ADR-0007](adr/0007-object-storage.md)），数据库只存元数据。对象键由 ID 推出：原文件 `files/{id}`，缩略图 `thumbs/{id}.jpg`；本地存储再按文件名哈希分到 256 个子目录；OSS 的对象名为 `{key_prefix}files/{yyyy}/{mm}/{id}`，年、月取自 ID 中的生成时间（UTC）。
 
@@ -259,31 +267,3 @@ media 不发事件，没有 `outbox_events` 表。用户与群的头像字段（
 | `access:call_user:{uid}` | String，值为 `call_id` | 与所在通话相同 | 创建通话时与 Hash 一起写入（任一方已存在则创建失败）；与 Hash 一起续期、删除，但只在值仍等于本通话时才续期或删除 | 忙线标记：一个用户（包括全部设备）同时只能处于一通通话中。三个键总在同一脚本中处理，不会单独残留 |
 | `delivery:done:{event_id}` | String | 1 小时 | 推送前 `SET NX` | 推送去重：已存在就跳过，覆盖消费者重启、再均衡后的重复投递 |
 | `outbox:lease:{service}` | String，值为实例 ID | 10 秒，每 3 秒续期 | 发布器 `SET NX PX` 抢占，续期与释放都校验持有者 | 每个服务同时只有一个实例发布 Outbox（account、social、message） |
-
-## 附录：旧基线表结构（已移除）
-
-旧单体使用单库 `marschat`，6 张表由 GORM `AutoMigrate` 创建，代码已在步骤 0 删除（最后版本见提交 `6624cea` 中的 `internal/model/`）。下表只用于对照功能，新设计不沿用这些结构。
-
-| 表 | 关键字段 | 说明 |
-|---|---|---|
-| `user_info` | `uuid`、`telephone`、`password`（明文）、`nickname`、`avatar`、`gender`、`birthday`、`signature`、`is_admin`、`status`、`deleted_at` | 手机号是登录名 |
-| `group_info` | `uuid`、`name`、`notice`、`members`（JSON 数组）、`member_cnt`、`owner_id`、`add_mode`、`avatar`、`status`、`deleted_at` | 成员存在 JSON 列里 |
-| `user_contact` | `user_id`、`contact_id`、`contact_type`、`status`、`deleted_at` | 好友关系双向各一条；群关系只有“用户→群”一条 |
-| `contact_apply` | `uuid`、`user_id`、`contact_id`、`contact_type`、`status`、`message`、`last_apply_at` | 同一对（申请人，目标）复用一条记录 |
-| `session` | `uuid`、`send_id`、`receive_id`、`receive_name`、`avatar`、`deleted_at` | 会话按所有者单向存储 |
-| `message` | `uuid`、`session_id`、`type`、`content`、`url`、`send_id`、`receive_id`、`file_*`、`status`、`av_data`、`created_at` | 单聊按（send_id，receive_id）双向查询 |
-
-### 旧基线枚举
-
-| 枚举 | 取值 |
-|---|---|
-| 用户状态 `user_info.status` | 0 正常、1 禁用 |
-| 群状态 `group_info.status` | 0 正常、1 禁用、2 解散（未使用） |
-| 加群方式 `group_info.add_mode` | 0 直接加入、1 需审核 |
-| 联系类型 `contact_type` | 0 用户、1 群聊 |
-| 联系状态 `user_contact.status` | 0 正常、1 被拉黑、2 拉黑、3 被删除、4 删除、5 被禁言（未使用）、6 退出群聊、7 被踢出群聊（未使用） |
-| 申请状态 `contact_apply.status` | 0 申请中、1 通过、2 拒绝、3 拉黑 |
-| 消息类型 `message.type` | 0 文本、1 语音（未实现）、2 文件、3 音视频通话信令 |
-| 消息状态 `message.status` | 0 未发送、1 已发送 |
-
-旧基线的业务规则见 `docs/product/modules/` 下的模块文档，旧的 Redis 键设计见提交 `6624cea` 中本文的第 4 节。

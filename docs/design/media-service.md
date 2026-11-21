@@ -1,6 +1,6 @@
 # 设计：media 服务（重构步骤 6）
 
-- 状态：已采纳（2026-11-20 开发者确认：存储改为可切换的本地目录与阿里云 OSS，默认本地目录；聊天文件上限 100 MB；其余按第 9 节的推荐方案） | 日期：2026-11-20 | 关联：[重构计划步骤 6](../plans/active/backend-refactor.md#6-media-服务)、[ADR-0007](../architecture/adr/0007-object-storage.md)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[网关与多实例设计](gateway-multi-instance.md)、[消息链路设计](message-pipeline.md)、旧基线 [chat-message.md](../product/modules/chat-message.md)、[lessons/static-path-normalization.md](../lessons/static-path-normalization.md)
+- 状态：已采纳（2026-11-20 开发者确认：存储改为可切换的本地目录与阿里云 OSS，默认本地目录；聊天文件上限 100 MB；其余按第 9 节的推荐方案） | 日期：2026-11-20 | 关联：[重构计划步骤 6](../plans/completed/backend-refactor.md#6-media-服务)、[ADR-0007](../architecture/adr/0007-object-storage.md)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[网关与多实例设计](gateway-multi-instance.md)、[消息链路设计](message-pipeline.md)、[chat-message.md](../product/modules/chat-message.md)
 
 ## 1. 背景与目标
 
@@ -79,7 +79,7 @@ type Storage interface {
 - 对象名：`{key_prefix}files/{yyyy}/{mm}/{file_id}`、`{key_prefix}thumbs/{yyyy}/{mm}/{file_id}.jpg`，年、月取自文件 ID 中的生成时间（UTC），在控制台中按年、月分目录浏览。对象名仍然只由 ID 推出，数据库不另存路径。
 - 写入：`PutObject`，传入读取器与长度，Bucket 保持私有。
 - 下载：`Presign(GetObjectRequest)` 本地计算签名，不访问网络；通过 `ResponseContentDisposition` 覆盖 `Content-Disposition`。`Content-Type` 取上传时写入的对象元数据：OSS 不允许 GET 请求覆盖 `Content-Type`，见第 10 节。
-- 已知限制：2019 年 9 月 23 日之后创建的 Bucket，用默认域名（`<bucket>.oss-<region>.aliyuncs.com`）直接打开图片或 HTML 时，OSS 强制加上 `Content-Disposition: attachment`。实测（2026-11-21）原图与缩略图的预签名地址都返回 `Content-Disposition: attachment`，覆盖的文件名也被丢弃；`<img>` 嵌入预计不受影响，尚未在浏览器中验证；要在浏览器标签页中直接预览，需要为 Bucket 绑定已备案的自定义域名并配置 `public_endpoint`。来源见第 5 节。
+- 已知限制：2019 年 9 月 23 日之后创建的 Bucket，用默认域名（`<bucket>.oss-<region>.aliyuncs.com`）直接打开图片或 HTML 时，OSS 强制加上 `Content-Disposition: attachment`。实测（2026-11-21）原图与缩略图的预签名地址都返回 `Content-Disposition: attachment`，覆盖的文件名也被丢弃；`<img>` 嵌入不受影响（2026-11-21 在 Chrome 中验证，原图与缩略图都正常显示）；要在浏览器标签页中直接预览，需要为 Bucket 绑定已备案的自定义域名并配置 `public_endpoint`。来源见第 5 节。
 - 启动时只校验配置是否完整，不访问 OSS：网络暂时不通不应阻止服务启动，与 SMTP 发送方一致。上传时 OSS 不可用返回 `503`。
 
 切换存储不会迁移已有文件：两种存储的文件互不可见，切换前的文件在新存储中找不到，签发下载地址时按不存在省略。
@@ -158,7 +158,7 @@ type Storage interface {
 
 1. 调 media 内部接口 `GetFiles`（经 Consul，超时 1 秒，只读接口可以重试，带熔断，与调用 social、account 相同）。
 2. 校验：文件存在、访问密钥匹配、用途是聊天；图片消息还要求文件是带缩略图的图片。任一不满足返回 `400 FILE_INVALID`，不区分原因。
-3. 用 media 返回的名称、大小、类型、宽高覆盖客户端上送的值，再落库。旧基线的 lesson 说明过：展示字段不能信任客户端。
+3. 用 media 返回的名称、大小、类型、宽高覆盖客户端上送的值，再落库：展示字段不能信任客户端。
 4. media 不可用时返回 `503 DEPENDENCY_UNAVAILABLE`；文本消息不调用 media，不受影响。
 
 接收方从消息内容拿到文件 ID 和访问密钥，调下载地址接口取缩略图和原文件。
@@ -326,7 +326,7 @@ OSS 默认域名强制下载的来源：[阿里云开发者社区：绑定自定
 | 上传与数据库写入之间进程退出留下孤儿对象 | 记为技术债；影响只是占用空间，不影响正确性 |
 | 访问密钥泄露 | 仍需登录才能换到下载地址，地址 10 分钟有效；需要撤销时改用 5.3 的方案 B |
 | 恶意文件当作页面执行 | 非图片一律以 `attachment` 和 `application/octet-stream` 下载；SVG 不内联 |
-| OSS 默认域名直接打开图片时被强制下载 | 已实测默认域名返回 `attachment`；`<img>` 嵌入预计不受影响，尚未在浏览器中验证；需要预览时绑定自定义域名并配置 `public_endpoint` |
+| OSS 默认域名直接打开图片时被强制下载 | 已实测默认域名返回 `attachment`，`<img>` 嵌入不受影响（2026-11-21 在 Chrome 中验证，原图与缩略图都正常显示）；需要预览时绑定自定义域名并配置 `public_endpoint` |
 | OSS 凭据泄露 | 使用只授权单个 Bucket 的 RAM 用户 AccessKey，只放在 `.env`；日志不打印配置 |
 | 经网关上传的大请求被缓冲到 APISIX 磁盘 | 100 MB 可以接受；必要时对 media 路由关闭请求缓冲。是否落盘尚未核实；集群测试中 20 MiB 经网关上传约 0.6 秒、下载约 0.14 秒 |
 
@@ -335,7 +335,7 @@ OSS 默认域名强制下载的来源：[阿里云开发者社区：绑定自定
 - 单元测试：大小与类型规则、文件名清理、访问密钥比较、头像公开规则、缩略图生成（测试内生成 PNG、JPEG、GIF、WebP）、超像素与损坏图片按普通文件处理、`Content-Disposition` 的编码与 inline/attachment 选择、本地签名的生成与校验（篡改、过期）、本地存储的原子写入、OSS 预签名地址的参数（离线计算）与 `PutObject` 请求（对接测试内的假服务器）、message 对文件内容的核实与字段覆盖。
 - e2e（宿主机模式，本地存储）：上传普通文件与图片；用下载地址取回原文件与缩略图，比对字节和响应头；`Range` 请求；篡改签名或过期返回 `403`；错误密钥的项被省略；头像对其他用户可读；超限 `413`；头像传非图片 `415`；发送图片消息与文件消息，客户端伪造的元数据被覆盖；伪造文件 ID 返回 `FILE_INVALID`。
 - 集群测试（容器模式，只经网关）：经网关上传与下载。
-- OSS 手动验证：开发者配置 Bucket 与 AccessKey 后，上传、经预签名地址下载、`<img>` 显示，记录耗时。
+- OSS 手动验证：开发者配置 Bucket 与 AccessKey 后，上传、经预签名地址下载、`<img>` 显示，记录耗时。（2026-11-21 完成：容器模式经网关上传 20 MiB 约 3.8 秒、从 OSS 下载约 3.0 秒，受开发机公网带宽限制；上传 640×480 的 PNG 并生成缩略图约 0.2 秒；Range、篡改签名、`<img>` 显示均符合预期）
 - `EXPLAIN` 核对主键批量查询；记录上传 100 MB 与生成缩略图的耗时、media 内存。
 
 ## 8. 实施顺序

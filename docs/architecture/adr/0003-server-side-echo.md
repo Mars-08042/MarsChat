@@ -18,7 +18,7 @@
 
 采用方案 2。文本和文件消息推送给接收方的同时，也写入发送方连接的 `SendBack` 通道；前端发送后不在本地插入。
 
-例外：音视频通话信令不回显，见 [lessons/av-signaling-no-echo.md](../../lessons/av-signaling-no-echo.md)。
+例外：音视频通话信令不回显（原因记录在提交 `6624cea` 的 `docs/lessons/av-signaling-no-echo.md`，该文已随旧基线描述删除）。
 
 ## 原因
 

@@ -103,6 +103,13 @@ monitoring-down: ## 停止并删除监控组件容器，保留 Prometheus 数据
 mysql-slow: ## 查看 MySQL 慢查询日志的最后 50 行（超过 200 毫秒的语句，含参数值，只在本机查看）
 	docker compose exec mysql sh -c 'tail -n 50 /var/lib/mysql/mysql-slow.log'
 
+# KafkaDeadLetter 告警的说明指向这里；值是 protobuf 编码，按头 event_type 解码
+.PHONY: dlq
+dlq: ## 查看死信队列 marschat.dlq 的全部记录（带键、头与时间戳，5 秒内没有新记录即退出）
+	MSYS_NO_PATHCONV=1 docker compose exec -T kafka /opt/kafka/bin/kafka-console-consumer.sh \
+		--bootstrap-server kafka:29092 --topic marschat.dlq --from-beginning --timeout-ms 5000 \
+		--property print.headers=true --property print.key=true --property print.timestamp=true
+
 # 压测（profile loadtest）：k6 在 Compose 网络中经网关压测容器模式的服务，脚本见 test/load/k6，
 # 准备的数据和结果摘要写入 tmp/load。流程：load-up → load-seed → load-ws / load-read → load-restore。
 # load-up 把 account 临时切到 log 发送方（注册用固定验证码，不发真实邮件）并调低 Trace 采样比例，.env 不改；

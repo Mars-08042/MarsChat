@@ -1,6 +1,6 @@
 # 设计：可观测与压测（重构步骤 8）
 
-- 状态：已采纳 | 日期：2026-11-21（2026-11-21 开发者确认第 9 节全部问题按推荐方案实施；实施中的调整见第 10 节） | 关联：[重构计划步骤 8](../plans/active/backend-refactor.md#8-可观测与压测)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[网关与多实例设计](gateway-multi-instance.md)、[消息链路设计](message-pipeline.md)、[通话信令设计](call-signaling.md)
+- 状态：已采纳 | 日期：2026-11-21（2026-11-21 开发者确认第 9 节全部问题按推荐方案实施；实施中的调整见第 10 节） | 关联：[重构计划步骤 8](../plans/completed/backend-refactor.md#8-可观测与压测)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[网关与多实例设计](gateway-multi-instance.md)、[消息链路设计](message-pipeline.md)、[通话信令设计](call-signaling.md)
 
 ## 1. 背景与目标
 
@@ -437,5 +437,6 @@ ALTER TABLE outbox_events ADD COLUMN trace_parent VARCHAR(64) NOT NULL DEFAULT '
 **压测中发现的问题**
 
 23. **并发注册死锁**（TD-40，已修复）：注册事务中吊销设备旧会话的加锁查询查不到行时加间隙锁，新用户都落在会话唯一索引末尾的同一个间隙。注册改为直接创建会话，见 [lessons/innodb-gap-lock-register-deadlock.md](../lessons/innodb-gap-lock-register-deadlock.md)。登录的残留风险记为 TD-43。
-24. **连接池上限之和超过 MySQL 最大连接数**（TD-41，已修复）：MySQL 启动参数加 `--max-connections=300`。缩小连接池的方案试过，会让请求排队超时并触发熔断，数据见[重构计划的压测结果](../plans/active/backend-refactor.md#压测结果)。
+24. **连接池上限之和超过 MySQL 最大连接数**（TD-41，已修复）：MySQL 启动参数加 `--max-connections=300`。缩小连接池的方案试过，会让请求排队超时并触发熔断，数据见[重构计划的压测结果](../plans/completed/backend-refactor.md#压测结果)。
 25. **delivery 全部停止后没有告警**（TD-42，未处理）：积压指标随 delivery 一起消失，实例注销后 `InstanceDown` 也会结束。
+26. **补上 `make dlq`**（2026-11-21，后端收尾复核时发现）：3.5 节的告警表和 `KafkaDeadLetter` 规则的说明都指向 `make dlq`，实施时漏了这个命令，排查的人会被引到不存在的目标。Makefile 补上该目标，命令与 deployment.md“死信队列”一节原来手写的一致。

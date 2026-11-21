@@ -1,58 +1,70 @@
 # MarsChat
 
-MarsChat 是一个前后端分离的 Web 即时通讯系统，提供联系人、单聊群聊、文件传输、一对一音视频通话和后台管理。后端为 Go 单体服务，前端为 Vue 3 单页应用。
+MarsChat 是一个 Web 即时通讯系统。后端用 Go + Kratos v3 拆分为六个微服务，实现了可靠消息（幂等、会话内有序、事务 Outbox、断线补拉）、多端同步、跨节点投递和慢连接隔离，并用端到端测试、故障实验和压测验证。前端正在用 React + pnpm 重写，目前仓库中只有后端。
 
-> **重构说明（2026-11-18）**：除“快速开始”和“开发检查”两节已按新后端更新外，本文描述的是已移除的旧基线（截至提交 `6624cea`）。后端正在 `dev` 分支按 [后端重构计划](docs/plans/active/backend-refactor.md) 用 Kratos v3 重写为微服务，前端之后用 React 重写；目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)。本文将在重构完成时重写。
+> 当前代码在 `dev` 分支。旧版本（Gin 单体 + Vue 3 前端）已在重构中移除，需要时查看提交 `6624cea`。
 
-## 核心功能
+## 功能
 
-- 手机号 + 短信验证码注册，密码或验证码登录
-- 好友与群的申请、审批、拉黑、删除
-- 群聊管理：建群、改资料、移除成员、退群、解散
-- 基于 WebSocket 的单聊、群聊实时消息与文件消息，离线消息落库
-- 基于 WebRTC 的单聊音视频通话
-- 管理员启用 / 禁用 / 删除用户和群聊，设置管理员
+- 邮箱验证码注册，密码或验证码登录；访问令牌与刷新令牌轮换，多设备管理，退出、踢设备、封禁后立即失效
+- 好友申请与审批、拉黑；群聊的创建、加入审批、邀请、成员角色、禁言、转让、解散
+- WebSocket 单聊、群聊：文本、图片、文件消息；未读数、已读回执、多端同步、断线补拉
+- 文件上传与缩略图，限时签名下载地址；存储可切换为本地目录或阿里云 OSS
+- 一对一音视频通话信令（媒体为 WebRTC 点对点），多端响铃、接听互斥
+- 指标、告警、链路追踪和慢查询日志；k6 压测与故障实验
 
-各功能的实现状态见 [docs/product/features.md](docs/product/features.md)。
+各功能的实现状态与验证情况见 [features.md](docs/product/features.md)。
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 后端 | Go 1.27.3、Gin、GORM、go-redis、gorilla/websocket、kafka-go（可选）、zap |
-| 前端 | Vue 3、Vue Router、Vuex、Element Plus、axios、Vue CLI 5、pnpm |
-| 存储与中间件 | MySQL、Redis、Kafka（可选） |
-| 外部服务 | 阿里云短信；TURN 服务（公网音视频，可选） |
+| 服务 | Go 1.27.3、Kratos v3（HTTP + gRPC，protobuf 契约）、wire、GORM、go-redis、franz-go、gorilla/websocket |
+| 组件 | MySQL、Redis 8（含布隆过滤器）、Kafka、Consul、Apache APISIX，全部由 Docker Compose 提供 |
+| 可观测 | OpenTelemetry、Prometheus、Alertmanager、Grafana、Jaeger；压测用 k6 |
+| 存储 | 本地目录或阿里云 OSS |
+| 工具 | buf、golang-migrate、GitHub Actions |
+
+## 架构
+
+![当前架构](docs/images/proposed-distributed-architecture.svg)
+
+服务划分、数据流和可靠性设计见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 目录结构
 
 ```
-cmd/mars_chat_server/   后端入口 main.go
-api/v1/                 HTTP / WebSocket 控制器
-internal/               配置、数据访问、模型、DTO、业务服务、聊天转发
-pkg/                    常量、枚举、日志、HTTPS 中间件、工具
-configs/config.toml     配置模板
-test/                   测试（目前无法运行，见 TD-12）
-web/chat-server/        Vue 3 前端
-docs/                   项目文档
+app/<服务>/        access、account、social、message、delivery、media，按 Kratos 分层（server → service → biz → data）
+api/<服务>/v1/     接口契约 *.proto 与生成代码
+pkg/              跨服务公共组件：启动、鉴权、ID、缓存、布隆过滤器、限流、Outbox、Kafka、遥测等
+deploy/           MySQL、APISIX、Prometheus、Alertmanager、Grafana、Jaeger 的配置与初始化脚本
+test/             e2e（需要 Compose 环境）、cluster（容器模式的集群测试与故障实验）、load（k6 压测）
+docs/             项目文档
 ```
+
+完整说明见 [system.md](docs/architecture/system.md#2-仓库结构)。
 
 ## 快速开始
 
-重构中的后端需要 Go 1.27.3、Docker Desktop 和 buf 1.71.0，在 Git Bash 中执行：
+需要 Go 1.27.3、Docker Desktop、buf 1.71.0，在 Git Bash 中执行：
 
 ```bash
-cp .env.example .env    # 填入本地密码
+cp .env.example .env    # 把 change-me 换成随机密码
+make keys               # 生成 JWT 密钥与下载地址签名密钥，写入 .env
 make up                 # 启动 MySQL、Redis、Kafka、Consul
-make run-account        # 另开终端运行 make run-social
+make migrate-account migrate-social migrate-message migrate-media
+make images             # 构建服务镜像
+make cluster-up         # 容器模式：多实例服务 + 网关，入口 https://127.0.0.1:19443
 ```
 
-完整步骤、端口和配置说明见 [deployment.md](docs/deployment.md)。前端尚未重写，暂无启动方式。
+也可以在宿主机逐个运行服务（`make run-account` 等，每个服务一个终端）。两种方式不能同时运行。端口、配置、监控与压测见 [deployment.md](docs/deployment.md)。
 
 ## 开发检查
 
 ```bash
-make lint vet test build
+make lint vet test build   # buf lint、go vet、单元测试、构建
+make e2e                   # 端到端测试，需要先启动依赖并在宿主机运行全部服务
+make cluster-test          # 集群测试与故障实验，需要先 make cluster-up
 ```
 
 ## 文档

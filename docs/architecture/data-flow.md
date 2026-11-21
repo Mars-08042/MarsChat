@@ -1,6 +1,6 @@
 # 数据流
 
-> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
+> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准，最近一次更新于 2026-11-21（后端重构完成）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，消息链路的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
 >
 > 文件上传与下载见第 8 节，音视频通话信令见第 9 节，链路追踪（Trace 上下文如何跨 WebSocket、gRPC 和 Kafka 传递）见第 10 节。
 
@@ -215,7 +215,7 @@ social 发布器 ─→ marschat.social.events ─→ delivery
   - 收到 1001 或连接异常断开（1006）后，随机等待 0～2 秒再重连，避免同时重连；
   - 重连认证成功后，按第 5.2 节对每个会话从本地 `max_seq` 补拉；
   - 补拉与推送可能重叠，按 `(conversation_id, seq)` 去重。
-  - 按这套约定实现的测试客户端在杀掉 access、滚动重启 access 的故障实验中没有丢失和重复，见[重构计划的故障实验结果](../plans/active/backend-refactor.md#故障实验结果)。
+  - 按这套约定实现的测试客户端在杀掉 access、滚动重启 access 的故障实验中没有丢失和重复，见[重构计划的故障实验结果](../plans/completed/backend-refactor.md#故障实验结果)。
 - Outbox 发布器：发完当前批次后释放租约，其他实例下一次抢占时接手。
 - Kafka 消费者：处理完当前记录、提交位点后离开消费组。
 
@@ -318,7 +318,7 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 - **振铃超时**：主叫所在 access 的进程内定时器到期时，通话仍在振铃就结束。接听、拒绝、取消先发生时什么也不做。
 - **断线**：连接关闭（心跳超时、被踢、停机排空、客户端断开）时，如果它是主叫连接或接听连接，就按断线结束通话。access 滚动重启也会因此结束正在进行的通话。
 - **续期**：通话中状态的 TTL 为心跳超时（90 秒），主叫连接与接听连接每次心跳续期；振铃中的 TTL 为振铃超时加 15 秒。
-- **access 崩溃**：没有机会清理，状态按 TTL 过期。主叫所在实例崩溃时没有人发出 `CallEnded`；接听方所在实例崩溃时，主叫下一次发信令失败，通话按断线结束（集群故障实验见[重构计划](../plans/active/backend-refactor.md#故障实验结果)）。
+- **access 崩溃**：没有机会清理，状态按 TTL 过期。主叫所在实例崩溃时没有人发出 `CallEnded`；接听方所在实例崩溃时，主叫下一次发信令失败，通话按断线结束（集群故障实验见[重构计划](../plans/completed/backend-refactor.md#故障实验结果)）。
 
 客户端约定：
 

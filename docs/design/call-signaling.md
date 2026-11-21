@@ -1,6 +1,6 @@
 # 设计：通话信令（重构步骤 7）
 
-- 状态：已采纳（2026-11-21 开发者确认：第 8 节的 7 个问题均按推荐方案） | 日期：2026-11-21 | 关联：[重构计划步骤 7](../plans/active/backend-refactor.md#7-通话信令)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[网关与多实例设计](gateway-multi-instance.md)、[消息链路设计](message-pipeline.md)、旧基线 [av-call.md](../product/modules/av-call.md)、[lessons/av-signaling-no-echo.md](../lessons/av-signaling-no-echo.md)
+- 状态：已采纳（2026-11-21 开发者确认：第 8 节的 7 个问题均按推荐方案） | 日期：2026-11-21 | 关联：[重构计划步骤 7](../plans/completed/backend-refactor.md#7-通话信令)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[网关与多实例设计](gateway-multi-instance.md)、[消息链路设计](message-pipeline.md)、[av-call.md](../product/modules/av-call.md)
 
 ## 1. 背景与目标
 
@@ -12,7 +12,7 @@
 - 多端来电时，一端接听后其他端提示“已在其他设备接听”；
 - coturn 推迟到前端重构时部署。
 
-旧基线的做法与问题（提交 `6624cea` 之前，见 av-call.md）：
+旧基线的做法与问题（提交 `6624cea` 之前）：
 
 - 通话是浏览器之间的 WebRTC 点对点连接，后端只转发信令。信令作为 `type=3` 的消息，与聊天消息共用一条 WSS 通道。
 - 对方不在线时信令被丢弃，主叫既没有超时，也收不到“对方不在线”的提示。

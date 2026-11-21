@@ -1,6 +1,6 @@
 # 设计：account 服务（重构步骤 2）
 
-- 状态：已实施（2026-11-18 开发者确认，同日实现，实施中的调整见第 8 节）；2026-11-20 起账号标识从手机号改为邮箱、验证码改经 SMTP 发到邮箱，见 [email-verification.md](email-verification.md)，本文中的手机号与短信按邮箱与邮件理解 | 日期：2026-11-18 | 关联：[重构计划步骤 2](../plans/active/backend-refactor.md#2-account-服务)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、旧基线 [user-auth.md](../product/modules/user-auth.md)、[admin.md](../product/modules/admin.md)
+- 状态：已实施（2026-11-18 开发者确认，同日实现，实施中的调整见第 8 节）；2026-11-20 起账号标识从手机号改为邮箱、验证码改经 SMTP 发到邮箱，见 [email-verification.md](email-verification.md)，本文中的手机号与短信按邮箱与邮件理解 | 日期：2026-11-18 | 关联：[重构计划步骤 2](../plans/completed/backend-refactor.md#2-account-服务)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、旧基线 [user-auth.md](../product/modules/user-auth.md)、[admin.md](../product/modules/admin.md)
 
 ## 1. 背景与目标
 

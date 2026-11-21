@@ -1,6 +1,6 @@
 # 设计：核心消息链路（重构步骤 4）
 
-- 状态：已采纳（2026-11-19 开发者确认；实施差异见第 9 节） | 日期：2026-11-19 | 关联：[重构计划步骤 4](../plans/active/backend-refactor.md#4-核心消息链路各服务单实例)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../architecture/adr/0006-message-sync-model.md)、[social 设计](social-service.md)、旧基线 [chat-message.md](../product/modules/chat-message.md)
+- 状态：已采纳（2026-11-19 开发者确认；实施差异见第 9 节） | 日期：2026-11-19 | 关联：[重构计划步骤 4](../plans/completed/backend-refactor.md#4-核心消息链路各服务单实例)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../architecture/adr/0006-message-sync-model.md)、[social 设计](social-service.md)、旧基线 [chat-message.md](../product/modules/chat-message.md)
 
 ## 1. 背景与目标
 
@@ -570,5 +570,5 @@ message ServerFrame {
   - delivery：发起连接只收到确认、同一用户的另一条连接和对方收到推送、已读推送到三条连接；群消息推给全体在线成员，被移除的成员收不到；封禁后经事件立即踢线（原因 `BANNED`）；
   - social 缓存：投递一条 `GroupUpdated` 后，残留的群资料和成员列表缓存被删除。
   - 未覆盖：`TOO_LONG` 只有单元测试（e2e 中要发 1000 条以上消息，与每人每 10 秒 30 条的限流冲突）；跨 access 实例推送要等步骤 5 多实例部署后验证。
-- `EXPLAIN`：在临时库中造数据后核对，所有关键查询都走预期索引、没有排序，结果记录在 [data-model.md](../architecture/data-model.md#23-messagemarschat_message迁移-000001_init)。
+- `EXPLAIN`：在临时库中造数据后核对，所有关键查询都走预期索引、没有排序，结果记录在 [data-model.md](../architecture/data-model.md#23-messagemarschat_message)。
 - 其他：`buf lint`、`make gen` 后生成代码不变、`go mod tidy -diff`、`go vet`（含 e2e 标签）、`go build` 均通过；各服务日志在 e2e 期间没有 ERROR。

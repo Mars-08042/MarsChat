@@ -2,7 +2,7 @@
 
 - 状态：已采纳（2026-11-18 开发者确认）
 - 日期：2026-11-18
-- 关联：[ADR-0005](0005-distributed-architecture.md)、[后端重构计划](../../plans/active/backend-refactor.md)
+- 关联：[ADR-0005](0005-distributed-architecture.md)、[后端重构计划](../../plans/completed/backend-refactor.md)
 
 ## 背景
 

@@ -4,22 +4,22 @@
 
 ## 项目速览
 
-- MarsChat：Web 即时通讯系统，正在 `dev` 分支重构。后端用 Kratos v3 重写为微服务（access、account、social、message、delivery、media），接口用 protobuf 定义；旧的 Gin 单体和 Vue 前端已移除，前端之后用 React + pnpm 重写。
-- 重构步骤与进度见 [docs/plans/active/backend-refactor.md](docs/plans/active/backend-refactor.md)，目标架构见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)、[ADR-0006](docs/architecture/adr/0006-message-sync-model.md) 和 [架构图](docs/images/proposed-distributed-architecture.svg)。
+- MarsChat：Web 即时通讯系统，代码在 `dev` 分支。后端是 Kratos v3 微服务（access、account、social、message、delivery、media），接口用 protobuf 定义，2026-11-21 按后端重构计划完成；前端尚无代码，之后用 React + pnpm 重写。
+- 架构总览见 [ARCHITECTURE.md](ARCHITECTURE.md)，选型见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)、[ADR-0006](docs/architecture/adr/0006-message-sync-model.md) 和 [架构图](docs/images/proposed-distributed-architecture.svg)；后端重构的过程、实测数据与遗留项见 [docs/plans/completed/backend-refactor.md](docs/plans/completed/backend-refactor.md)。
 - Go module 为 `github.com/Mars-08042/MarsChat`。依赖组件由 Compose 提供：MySQL、Redis、Kafka、Consul、APISIX；监控组件（Prometheus、Alertmanager、Grafana、Jaeger）和压测工具 k6 在单独的 profile 中，见 [deployment.md](docs/deployment.md)。文件存储默认用仓库下的本地目录，可切换为阿里云 OSS（[ADR-0007](docs/architecture/adr/0007-object-storage.md)）。
-- 标有“重构说明”的文档描述的是已移除的旧基线，只作功能参考，不代表当前代码。
+- 文档只描述当前代码。旧版本（Gin 单体 + Vue 前端）的描述已删除，需要时查看提交 `6624cea`；设计文档与 ADR 中提到的旧基线只是决策背景。
 
 ## 文档导航
 
 | 任务涉及 | 先读 |
 |---|---|
-| 任何任务 | [重构计划](docs/plans/active/backend-refactor.md)、[docs/README.md](docs/README.md) |
+| 任何任务 | [docs/README.md](docs/README.md)、`docs/plans/active/` 中进行中的计划；后端的来龙去脉见 [后端重构计划](docs/plans/completed/backend-refactor.md) |
 | 架构与选型 | [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)、[ADR 索引](docs/architecture/adr/README.md) |
-| 消息、WebSocket、多端同步、通话信令 | [ADR-0006](docs/architecture/adr/0006-message-sync-model.md)；[data-flow.md](docs/architecture/data-flow.md) 按重构步骤重写 |
-| 某个业务功能 | [features.md](docs/product/features.md) → `docs/product/modules/`（旧基线，作为功能基线） |
-| 表、索引、Redis 键 | [data-model.md](docs/architecture/data-model.md)（按重构步骤重写），设计原则见重构计划 |
-| 分层与横切约定 | [system.md](docs/architecture/system.md)（描述当前代码，按重构步骤更新） |
-| 运行、配置、部署 | [deployment.md](docs/deployment.md)（按重构步骤更新），完整端口表见重构计划 |
+| 消息、WebSocket、多端同步、通话信令 | [ADR-0006](docs/architecture/adr/0006-message-sync-model.md)；[data-flow.md](docs/architecture/data-flow.md) |
+| 某个业务功能 | [features.md](docs/product/features.md) → `docs/product/modules/` |
+| 表、索引、Redis 键 | [data-model.md](docs/architecture/data-model.md)，设计原则见重构计划 |
+| 分层与横切约定 | [system.md](docs/architecture/system.md) |
+| 运行、配置、部署 | [deployment.md](docs/deployment.md)，完整端口表见[重构计划](docs/plans/completed/backend-refactor.md#端口) |
 | 参考实现 | `tmp/teamgram-server/`（只读参考，被 git 忽略），对照清单见重构计划。需要阅读其他第三方源码时同样克隆到 `tmp/`，并切到 `go.mod` 中使用的版本，例如 `tmp/kratos` |
 
 ## 工作规则
@@ -67,7 +67,7 @@ go test ./...
 | 分层、组件、约定变化 | `docs/architecture/system.md`、`ARCHITECTURE.md`；重要选型新增 ADR，旧 ADR 标注“已被替代”而不是删除 |
 | 消息流转或协议变化 | `docs/architecture/data-flow.md` |
 | 配置项、端口、部署方式变化 | `docs/deployment.md` |
-| 重构步骤进展 | `docs/plans/active/backend-refactor.md` |
+| 计划进展 | `docs/plans/active/` 中对应的计划，完成后移到 `docs/plans/completed/` |
 | 修复或新发现技术债 | `docs/plans/tech-debt.md`（编号不复用，新问题接着文件中最大的编号往后排） |
 | 解决了难定位的问题 | 在 `docs/lessons/` 新增经验文档 |
 

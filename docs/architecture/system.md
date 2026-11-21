@@ -1,6 +1,6 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，最近一次更新于 2026-11-21（后端重构完成）。总览见 [ARCHITECTURE.md](../../ARCHITECTURE.md)，选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，重构过程与实测结果见 [后端重构计划](../plans/completed/backend-refactor.md)。
 
 ## 1. 部署形态
 
@@ -224,7 +224,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - miniredis 不支持 RedisBloom，`pkg/bloom` 的测试在 `test/e2e/bloom_test.go`，连真实 Redis，用“把过滤器的键改成字符串”注入 `BF.INSERT` 失败。
 - 依赖 compose 环境和已启动服务的测试放在 `test/e2e`，带 `e2e` 构建标签，用 `make e2e` 运行；它会加载 `.env`，测试用其中的密码直接连 Redis、MySQL 做准备工作（清理本机 IP 的限流计数、设置管理员）。
 - 容器模式的集群测试与故障实验放在 `test/cluster`，带 `cluster` 构建标签，用 `make cluster-test` 运行，客户端只经网关访问。两组测试共用 `test/testkit` 中的 HTTP 调用、注册、WebSocket 收发和 Redis 读取函数，区别只在地址。
-- 故障实验（`test/cluster/fault_test.go`）在持续收发时用 `docker kill`、`restart`、`pause`、`stop` 注入故障，只操作 `marschat-` 前缀的容器，结束时（包括失败）恢复容器并等待其在 Consul 中恢复 passing 或健康检查通过。测试客户端（`session_test.go`）按客户端约定处理断线：随机等待 0～2 秒后经网关重连，从本地连续的最大 seq 补拉，按 seq 去重。每个实验最后检查历史消息恰好是 1..N、`client_msg_id` 不重复，接收方经推送和补拉拿到的 seq 连续。实验结果记在[重构计划](../plans/active/backend-refactor.md#故障实验结果)；`go test -short` 跳过这些实验。
+- 故障实验（`test/cluster/fault_test.go`）在持续收发时用 `docker kill`、`restart`、`pause`、`stop` 注入故障，只操作 `marschat-` 前缀的容器，结束时（包括失败）恢复容器并等待其在 Consul 中恢复 passing 或健康检查通过。测试客户端（`session_test.go`）按客户端约定处理断线：随机等待 0～2 秒后经网关重连，从本地连续的最大 seq 补拉，按 seq 去重。每个实验最后检查历史消息恰好是 1..N、`client_msg_id` 不重复，接收方经推送和补拉拿到的 seq 连续。实验结果记在[重构计划](../plans/completed/backend-refactor.md#故障实验结果)；`go test -short` 跳过这些实验。
 - 指标与 Trace 的单元测试：`pkg/telemetry/telemetrytest` 把全局 MeterProvider 换成 ManualReader（每个测试二进制只设置一次，用例按增量比较），Span 用 SDK 的内存导出器读取。
 - 压测脚本在 `test/load/k6`（k6，经网关），用 `make load-*` 运行，做法见 [deployment.md](../deployment.md#压测)，结果记在重构计划。
 

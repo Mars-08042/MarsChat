@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 8（2026-11-21）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
+> 本文描述后端的运行方式，最近一次更新于 2026-11-21（后端重构完成）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。
 
 ## 运行依赖
 
@@ -26,7 +26,7 @@
 | Consul | `hashicorp/consul:2.1.0` | `127.0.0.1:18500` | 单节点 server，带 Web UI |
 | 迁移任务 | `migrate/migrate:v4.20.1` | — | `migrate-<服务>` 一次性任务，带 profile，`make up` 不启动，见“数据库迁移” |
 
-监控组件（profile `monitoring`）见“监控”，压测工具 k6（profile `loadtest`）见“压测”；全部应用端口见 [重构计划的端口表](plans/active/backend-refactor.md#端口)。
+监控组件（profile `monitoring`）见“监控”，压测工具 k6（profile `loadtest`）见“压测”；全部应用端口见 [重构计划的端口表](plans/completed/backend-refactor.md#端口)。
 
 ## 首次配置
 
@@ -164,10 +164,10 @@ make cluster-down       # 只删除应用服务和网关的容器，依赖组件
 - **镜像**：运行镜像为 `gcr.io/distroless/static-debian13:nonroot`，按 digest 锁定（见 [Dockerfile](../deploy/docker/Dockerfile)），没有 shell，不能 `docker exec` 进去排查；需要在网络内发请求时，临时起一个带 curl 的容器加入 `marschat_default` 网络。二进制默认按 amd64 编译，ARM 机器用 `make images IMAGE_ARCH=arm64`。
 - **注册与健康检查**：容器内开启 Consul 的 TCP 检查，间隔 3 秒（`MARSCHAT_CONSUL_TCP_CHECK_INTERVAL`），TTL 心跳超时 6 秒，实例被杀后几秒内从发现结果中消失。HTTP 端点排在第一个，Consul 中服务的 `Address:Port` 是 HTTP 端口，网关按它转发。
 - **资源**：每个应用容器限制 256 MiB 内存；media 解码图片占内存较多，限制为 384 MiB，并设置 `GOMEMLIMIT=320MiB`，让 GC 在接近上限前回收。2026-11-21 实测：media 空闲约 18 MiB，并发上传 1590 万像素的 16 位 PNG 时进程峰值 335 MiB（设计 [media-service.md](design/media-service.md) 第 10 节）；包括 media 在内，MarsChat 全部容器空闲时合计约 1.2 GiB。2026-11-19 实测：应用容器各 15～56 MiB，Kafka 512 MiB、MySQL 452 MiB，MarsChat 合计约 1.2 GiB。
-- **数据库连接预算**：所有服务共用一个 MySQL，各实例连接池上限（`mysql.max_open_conns`）之和为 230：account 50、social 50、message 50 × 2、media 30。MySQL 最大连接数设为 300，留出余量给迁移和排查。增加实例或调大连接池时要同步核对：超过上限时 MySQL 直接拒绝连接（`Error 1040: Too many connections`），请求返回 500。2026-11-21 压测 1000 条连接时 MySQL 峰值用到 158 条，默认的 151 已经不够；把连接池缩小到合计 120 反而让 message 排队超时，触发 access 的熔断，见[重构计划的压测结果](plans/active/backend-refactor.md#压测结果)。
+- **数据库连接预算**：所有服务共用一个 MySQL，各实例连接池上限（`mysql.max_open_conns`）之和为 230：account 50、social 50、message 50 × 2、media 30。MySQL 最大连接数设为 300，留出余量给迁移和排查。增加实例或调大连接池时要同步核对：超过上限时 MySQL 直接拒绝连接（`Error 1040: Too many connections`），请求返回 500。2026-11-21 压测 1000 条连接时 MySQL 峰值用到 158 条，默认的 151 已经不够；把连接池缩小到合计 120 反而让 message 排队超时，触发 access 的熔断，见[重构计划的压测结果](plans/completed/backend-refactor.md#压测结果)。
 - **日志**：JSON 格式，`docker compose logs -f access` 查看；同一服务的多个实例日志会合并输出，容器名区分实例。日志带 `trace_id`、`span_id` 时可以到 Jaeger 中查看整条链路，见“监控”。
 - **配置热更新**：配置目录挂载自宿主机，修改 `policy` 段后容器内同样自动生效（2026-11-19 验证，0.5 秒内出现 `config reloaded`）。
-- **故障实验**：`make cluster-test` 包含 7 项故障实验，全部运行约 4 分钟。实验会对 MarsChat 自己的容器执行 `docker kill`、`restart`、`pause`、`stop`（access、delivery、message、Kafka、Redis），结束时（包括失败）恢复并等待其在 Consul 中恢复 passing 或健康检查通过。实验期间不要同时使用这套环境。只跑集群测试时加 `-short`：`set -a && . ./.env && set +a && go test -tags cluster -short -v ./test/cluster/...`。实验结果见[重构计划](plans/active/backend-refactor.md#故障实验结果)。
+- **故障实验**：`make cluster-test` 包含 7 项故障实验，全部运行约 4 分钟。实验会对 MarsChat 自己的容器执行 `docker kill`、`restart`、`pause`、`stop`（access、delivery、message、Kafka、Redis），结束时（包括失败）恢复并等待其在 Consul 中恢复 passing 或健康检查通过。实验期间不要同时使用这套环境。只跑集群测试时加 `-short`：`set -a && . ./.env && set +a && go test -tags cluster -short -v ./test/cluster/...`。实验结果见[重构计划](plans/completed/backend-refactor.md#故障实验结果)。
 
 ### 网关
 
@@ -254,7 +254,7 @@ make load-restore                # 按 .env 重建应用容器，恢复邮件发
 - 服务端的数据（连接数、投递延迟、Outbox 延迟、Kafka 积压、缓存命中与回源、各容器的 CPU 与内存）在 Grafana 总览面板中查看。
 - 积压告警实验：`docker compose stop message` 后运行 `MSYS_NO_PATHCONV=1 docker compose run --rm k6 run /scripts/lag_events.js`，产生 2000 条 social 事件，5 分钟后 `KafkaConsumerLag` 触发；`docker compose start message` 后积压消化、告警结束。
 - 压测会在数据库中留下用户、好友关系和消息（1000 个连接 60 秒约 6.5 万条），需要清理时见“停止与重置”。
-- 结果与环境基线见[重构计划](plans/active/backend-refactor.md#压测结果)。
+- 结果与环境基线见[重构计划](plans/completed/backend-refactor.md#压测结果)。
 
 ## 服务配置
 
@@ -439,7 +439,7 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 
 - 对象名为 `marschat/files/<年>/<月>/<文件 ID>`（原文件）和 `marschat/thumbs/<年>/<月>/<文件 ID>.jpg`（缩略图），年、月取自文件 ID 中的生成时间（UTC），北京时间每月 1 日 0～8 点上传的文件在上个月的目录中。OSS 的“目录”只是对象名中的 `/`，不需要预先创建。
 - `MARSCHAT_OSS_ENDPOINT` 留空时按地域使用公网地址；部署在同地域 ECS 上时可以填内网地址，节省流量费用。`MARSCHAT_OSS_KEY_PREFIX` 是对象键前缀（默认 `marschat/`），多个环境共用一个 Bucket 时用它区分。
-- 2019 年 9 月 23 日之后创建的 Bucket，用默认域名在浏览器标签页中直接打开图片会被强制下载；要预览时为 Bucket 绑定已备案的自定义域名，填入 `MARSCHAT_OSS_PUBLIC_ENDPOINT`（例如 `https://files.example.com`），预签名地址改用该域名。实测原图与缩略图的下载响应都是 `Content-Disposition: attachment`；`<img>` 嵌入预计不受影响，尚未在浏览器中验证。
+- 2019 年 9 月 23 日之后创建的 Bucket，用默认域名在浏览器标签页中直接打开图片会被强制下载；要预览时为 Bucket 绑定已备案的自定义域名，填入 `MARSCHAT_OSS_PUBLIC_ENDPOINT`（例如 `https://files.example.com`），预签名地址改用该域名。实测原图与缩略图的下载响应都是 `Content-Disposition: attachment`；`<img>` 嵌入不受影响（2026-11-21 在 Chrome 中验证，原图与缩略图都正常显示）。
 - 前端以后用 `fetch` 读取文件内容（而不只是 `<img>` 显示、链接下载）时，需要在 Bucket 上配置跨域（CORS）规则。
 - OSS 按存储量、请求次数和公网下行流量计费。开发时用完记得清理 Bucket，或者切回 `local`。
 - **切换存储不迁移已有文件**：每个文件记录了它写入时的存储，切换后，写在另一种存储中的文件在换取下载地址时被省略（客户端看到的是文件不可用），新上传的文件写入新存储。切回原来的存储，这些文件恢复可用。
@@ -462,6 +462,7 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 | `make monitoring-up` / `make monitoring-down` | 启动监控组件 / 删除它们的容器（保留 Prometheus 数据卷），见“监控” |
 | `make rules-test` | 用 Prometheus 镜像中的 promtool 校验配置、运行告警规则的单元测试，不需要启动监控组件 |
 | `make mysql-slow` | 查看慢查询日志的最后 50 行 |
+| `make dlq` | 查看死信队列的全部记录，见“死信队列” |
 | `make load-up`、`load-seed`、`load-token`、`load-ws`、`load-read`、`load-bust`、`load-restore` | 压测，见“压测” |
 | `make grant-admin EMAIL=…` | 设置管理员 |
 
@@ -469,13 +470,7 @@ CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时�
 
 ## 死信队列
 
-消费者处理不了的记录写入 `marschat.dlq`，保留 14 天，目前没有重新投递工具。用 Kafka 自带的命令带头部查看（Git Bash 中需要 `MSYS_NO_PATHCONV=1`）：
-
-```bash
-MSYS_NO_PATHCONV=1 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server kafka:29092 --topic marschat.dlq --from-beginning --timeout-ms 5000 \
-  --property print.headers=true --property print.key=true --property print.timestamp=true
-```
+消费者处理不了的记录写入 `marschat.dlq`，保留 14 天，目前没有重新投递工具。`make dlq` 用 Kafka 自带的 `kafka-console-consumer.sh` 从头读出全部记录，带键、头和时间戳，5 秒内没有新记录即退出；结尾打印的 `TimeoutException` 是这种退出方式的正常输出。`KafkaDeadLetter` 告警的说明指向这个命令。
 
 - 头 `x-dlq-group` 是写入的消费组，`x-dlq-topic`、`x-dlq-partition`、`x-dlq-offset` 是原记录的位置，`x-dlq-error` 是失败原因（最长 4 KiB）；`event_type`、`event_id` 等原始头保留。
 - 值是事件的 protobuf 编码，控制台中显示为乱码，按 `event_type` 解码。

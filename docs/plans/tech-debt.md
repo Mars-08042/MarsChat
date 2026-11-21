@@ -85,7 +85,7 @@
 - 发现：2026-11-21，重构步骤 8 压测 1000 个连接，0.25% 的发送失败，日志 `Error 1040: Too many connections`
 - 解决：2026-11-21，重构步骤 8
 - 原因：所有服务共用一个 MySQL，容器模式下各实例 `max_open_conns` 之和为 230（account 50、social 50、message 50 × 2、media 30），MySQL 默认最大连接数 151，峰值用到 152 条时新连接被拒绝。
-- 处理：先尝试把连接池缩小到合计 120，结果 message 每实例 30 条连接不够用，请求排队到超时，access 的熔断器打开，失败反而达到 2.7 万次。最终保留原来的连接池，MySQL 最大连接数调到 300（`compose.yaml` 的启动参数），再测峰值用到 158 条，没有错误。连接预算写进 [deployment.md](../deployment.md#容器模式)，增加实例或调大连接池时要同步核对。数据见[重构计划的压测结果](active/backend-refactor.md#压测结果)。
+- 处理：先尝试把连接池缩小到合计 120，结果 message 每实例 30 条连接不够用，请求排队到超时，access 的熔断器打开，失败反而达到 2.7 万次。最终保留原来的连接池，MySQL 最大连接数调到 300（`compose.yaml` 的启动参数），再测峰值用到 158 条，没有错误。连接预算写进 [deployment.md](../deployment.md#容器模式)，增加实例或调大连接池时要同步核对。数据见[重构计划的压测结果](completed/backend-refactor.md#压测结果)。
 
 ### TD-40 并发注册在会话唯一索引的间隙上死锁
 

@@ -1,6 +1,6 @@
 # 设计：social 服务（重构步骤 3）
 
-- 状态：已采纳（2026-11-19 开发者确认） | 日期：2026-11-19 | 关联：[重构计划步骤 3](../plans/active/backend-refactor.md#3-social-服务)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../architecture/adr/0006-message-sync-model.md)、[account 设计](account-service.md)、旧基线 [contact.md](../product/modules/contact.md)、[group.md](../product/modules/group.md)
+- 状态：已采纳（2026-11-19 开发者确认） | 日期：2026-11-19 | 关联：[重构计划步骤 3](../plans/completed/backend-refactor.md#3-social-服务)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../architecture/adr/0006-message-sync-model.md)、[account 设计](account-service.md)、旧基线 [contact.md](../product/modules/contact.md)、[group.md](../product/modules/group.md)
 
 ## 1. 背景与目标
 
@@ -397,4 +397,4 @@ topic `marschat.social.events`。事件只写在事务内的 Outbox 表，发布
 
 - 单元测试：`app/social/internal/biz`（申请规则表每一行、互相申请、并发重试、拉黑效果、权限矩阵 36 种组合、满员、乐观锁、转让与退群、解散、发言权限的各种拒绝原因），`pkg/cache` 重建锁（抢锁、等待别的实例回填、等到空值标记、超时回源、释放时校验持有者）。把权限判断故意改坏后测试失败，确认测试有效。
 - 集成测试与 e2e（`make e2e`，account 与 social 同时运行）：`bloom_test.go` 7 项、`social_test.go` 4 项（好友完整流程、拉黑、建群（带初始成员）、审核入群、角色与禁言、内部发言权限、乐观锁冲突、满员、转让、解散），连同 account 与服务发现共 17 项通过，连续运行两次结果一致。
-- `EXPLAIN`：在临时库中造数据后核对，结果记录在 [data-model.md](../architecture/data-model.md#22-socialmarschat_social迁移-000001_init)。
+- `EXPLAIN`：在临时库中造数据后核对，结果记录在 [data-model.md](../architecture/data-model.md#22-socialmarschat_social)。

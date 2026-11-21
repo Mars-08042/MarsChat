@@ -1,6 +1,6 @@
 # 设计：网关与多实例（重构步骤 5）
 
-- 状态：已采纳（2026-11-19 开发者确认，第 8 节的 5 个问题均按推荐方案） | 日期：2026-11-19 | 关联：[重构计划步骤 5](../plans/active/backend-refactor.md#5-网关与多实例)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../architecture/adr/0006-message-sync-model.md)、[消息链路设计](message-pipeline.md)、[技术债](../plans/tech-debt.md)
+- 状态：已采纳（2026-11-19 开发者确认，第 8 节的 5 个问题均按推荐方案） | 日期：2026-11-19 | 关联：[重构计划步骤 5](../plans/completed/backend-refactor.md#5-网关与多实例)、[ADR-0005](../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../architecture/adr/0006-message-sync-model.md)、[消息链路设计](message-pipeline.md)、[技术债](../plans/tech-debt.md)
 
 ## 1. 背景与目标
 
@@ -600,5 +600,5 @@ message Notification {
   - 调用方取消不触发标记；
   - miniredis 关闭再重启后，客户端在探测间隔内恢复；
   - 去掉快速失败分支后用例失败。
-- 故障实验 7 项与集群测试 6 项通过（`make cluster-test`），各项数据记在[重构计划的故障实验结果](../plans/active/backend-refactor.md#故障实验结果)。首次运行时两项 Redis 实验失败，见上表第 5 段第一行；修复后通过。
+- 故障实验 7 项与集群测试 6 项通过（`make cluster-test`），各项数据记在[重构计划的故障实验结果](../plans/completed/backend-refactor.md#故障实验结果)。首次运行时两项 Redis 实验失败，见上表第 5 段第一行；修复后通过。
 - 每次 Redis 故障，各服务只在开始和恢复时各记一条日志（`redis unreachable, failing dials fast until a probe succeeds`、`redis reachable again`）。60 秒实验中，message 的 ERROR 只有发号失败的访问日志（TD-35）。go-redis 内部的纯文本拨号失败日志仍然逐次输出（TD-36）。两项均已于 2026-11-20 解决：发号失败返回 503、访问日志记 WARN；go-redis 内部日志转到 `slog`，拨号失败记 DEBUG。

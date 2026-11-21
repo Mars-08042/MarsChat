@@ -1,6 +1,6 @@
 # 设计：用邮箱验证码替代手机短信
 
-- 状态：已采纳（2026-11-20 开发者确认，第 8 节 5 个问题均按推荐方案；同日实现，实施中的调整见第 9 节） | 日期：2026-11-20 | 关联：[account 设计](account-service.md)、[user-auth.md](../product/modules/user-auth.md#新实现重构步骤-2)、[技术债](../plans/tech-debt.md)（TD-24、TD-29、TD-35、TD-36）、[重构计划](../plans/active/backend-refactor.md)
+- 状态：已采纳（2026-11-20 开发者确认，第 8 节 5 个问题均按推荐方案；同日实现，实施中的调整见第 9 节） | 日期：2026-11-20 | 关联：[account 设计](account-service.md)、[user-auth.md](../product/modules/user-auth.md)、[技术债](../plans/tech-debt.md)（TD-24、TD-29、TD-35、TD-36）、[重构计划](../plans/completed/backend-refactor.md)
 
 ## 1. 背景与目标
 
@@ -229,4 +229,4 @@ Redis 键（同步更新 data-model.md）：
 | 示例端口 | 3.1 节以 465 为常见配置 | `.env.example` 与 deployment 改为 `smtp.qq.com:587`：开发机到 465 端口的 TLS 连接被截获（证书被替换为自签证书），587 正常，见 [lessons/smtp-465-tls-interception.md](../lessons/smtp-465-tls-interception.md)。发送方拒绝了被替换的证书，授权码没有发出 |
 | 同步发送的耗时 | 第 6 节：经常超过 2 秒再改为异步 | 实测 1.2～1.5 秒（QQ 邮箱，587），保持同步发送 |
 
-验证结果见[重构计划](../plans/active/backend-refactor.md#当前进度与下一步)的“插入任务：邮箱验证码”。
+验证结果见[重构计划](../plans/completed/backend-refactor.md#进度记录)的“插入任务：邮箱验证码”。

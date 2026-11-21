@@ -1,6 +1,6 @@
 # 计划：后端重构
 
-- 状态：进行中 | 开始：2026-11-18 | 分支：`dev` | 关联设计：[目标架构图](../../images/proposed-distributed-architecture.svg)、[ADR-0005](../../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../../architecture/adr/0006-message-sync-model.md)
+- 状态：已完成 | 开始：2026-11-18 | 完成：2026-11-21 | 分支：`dev` | 关联设计：[目标架构图](../../images/proposed-distributed-architecture.svg)、[ADR-0005](../../architecture/adr/0005-distributed-architecture.md)、[ADR-0006](../../architecture/adr/0006-message-sync-model.md)
 
 ## 目标
 
@@ -9,6 +9,32 @@
 项目用于求职展示，适合本项目的生产环境技术会引入，每项都要对应一个实际要解决的问题（见“生产环境技术点”）。
 
 前端重构另立计划（React + pnpm），本计划只负责移除旧的 Vue 前端。
+
+## 结果
+
+2026-11-21 完成。六个服务、通话信令、网关与多实例、可观测与压测全部实现并验证，当前架构见 [ARCHITECTURE.md](../../../ARCHITECTURE.md)，功能状态见 [features.md](../../product/features.md)。前端重构另立计划。
+
+| 步骤 | 提交 |
+|---|---|
+| 0. 准备与清理 | `6624cea`（计划与目标架构图）、`041559f`（移除旧代码） |
+| 1. 基础设施与工程骨架 | `6685aae` |
+| 2. account 服务 | `bfe2778` |
+| 3. social 服务 | `edf0492` |
+| 4. 核心消息链路 | `7f36418` |
+| 5. 网关与多实例 | `1f8e77e`、`52eb184`、`7d20975` |
+| 插入任务：邮箱验证码 | `0749b90` |
+| 6. media 服务 | `f1ade90`；OSS 手动验证与修复 `452b2a9` |
+| 7. 通话信令 | `66ea720` |
+| 8. 可观测与压测 | `21389c8` |
+| 9. 收尾 | 本计划移到 `completed/` 的提交 |
+
+最终验证（2026-11-21，收尾之后）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（31 个包）、`make rules-test` 通过；文档中的相对链接全部可达。宿主机模式 `make e2e` 与容器模式 `make cluster-test`（17 项，含 7 项故障实验）最后一次全量通过是步骤 8（收尾只改了文档和 Makefile 的 `dlq` 目标）。可靠性与性能数据见[故障实验结果](#故障实验结果)和[压测结果](#压测结果)。
+
+遗留：
+
+- **随前端重构**：coturn 部署、ICE 服务器与 TURN 临时凭据下发、群通话（步骤 7）；WebRTC 媒体在浏览器中的连通验证；通话记录。后端尚未实现的功能见 [features.md](../../product/features.md#未实现)。
+- **步骤 10 的可选扩展**未实施：MySQL 主从与读写分离、Consul KV 配置中心、testcontainers 数据层集成测试。
+- **未关闭的技术债**（见 [tech-debt.md](../tech-debt.md)）：中优先级 TD-42（delivery 全部停止后没有告警）、TD-26（服务间 gRPC 没有认证）；低优先级 TD-25、TD-28、TD-32、TD-33、TD-37、TD-38、TD-43。
 
 ## 范围与约定
 
@@ -166,14 +192,14 @@
 
 ### 6. media 服务
 
-- [ ] ~~MinIO（S3 兼容）存储~~ 可切换的存储（默认仓库下的本地目录，可选阿里云 OSS）；上传时由服务端生成文件 ID 并限制大小和类型；下载前校验权限；文件消息引用文件 ID；图片生成缩略图。
+- [x] ~~MinIO（S3 兼容）存储~~ 可切换的存储（默认仓库下的本地目录，可选阿里云 OSS）；上传时由服务端生成文件 ID 并限制大小和类型；下载前校验权限；文件消息引用文件 ID；图片生成缩略图。
   - 2026-11-20 核实：MinIO 社区版已归档，Docker Hub 镜像已删除。开发者决定存储可切换，默认本地目录 `data/media/`，实现阿里云 OSS 集成，聊天文件上限 100 MB，见 [ADR-0007](../../architecture/adr/0007-object-storage.md) 与设计 [media-service.md](../../design/media-service.md)（已采纳）。
   - [x] 1. media 骨架：proto、配置、迁移、wire、Consul 注册、镜像与 Compose、Makefile；验证容器内挂载目录的写权限（2026-11-21：迁移 up → down 1 → up 往返通过；Docker Desktop 下 nonroot 用户可写挂载目录）
   - [x] 2. 存储接口与 local、oss 两种实现，单元测试（2026-11-21：OSS 预签名离线校验、上传与删除对接假服务器）
   - [x] 3. 上传、缩略图、下载地址、本地下载、内部 `GetFiles`、元数据缓存，单元测试与 e2e（2026-11-21：`EXPLAIN` 记在 data-model.md）
   - [x] 4. message 接入图片与文件消息，e2e（2026-11-21）
   - [x] 5. 网关路由、集群测试、文档（2026-11-21：宿主机模式 `make e2e` 通过；`make cluster-test` 15 项中 14 项首次通过，图片消息用例因测试未注册 JPEG 解码器失败，补上后单独重跑通过；内存实测后调整缩略图并发与内存预算，见设计第 10 节；调整后全量检查、e2e、集群测试 15 项通过，验收中发现并修复 TD-39）
-  - [ ] 6. OSS 手动验证（需要开发者的 Bucket 与 AccessKey）。2026-11-21 部分完成：容器模式经网关向开发者的 Bucket 上传图片与普通文件，对象名按年、月分目录；预签名地址下载的内容一致，Range 返回 206，篡改签名返回 403。验证中发现并修复预签名地址覆盖 `Content-Type` 被 OSS 拒绝（400）的问题，见设计第 10 节。未完成：浏览器中的 `<img>` 显示、耗时记录
+  - [x] 6. OSS 手动验证（需要开发者的 Bucket 与 AccessKey）。2026-11-21：容器模式经网关向开发者的 Bucket 上传图片与普通文件，对象名按年、月分目录；预签名地址下载的内容一致，Range 返回 206，篡改签名返回 403。验证中发现并修复预签名地址覆盖 `Content-Type` 被 OSS 拒绝（400）的问题，见设计第 10 节。Chrome 中 `<img>` 正常显示（默认域名强制 `attachment` 不影响嵌入）；上传 20 MiB 约 3.8 秒、从 OSS 下载约 3.0 秒（开发机公网带宽）
 
 ### 7. 通话信令
 
@@ -192,9 +218,17 @@
 
 ### 9. 收尾
 
-- [ ] 复核 `ARCHITECTURE.md`、`system.md`、`data-model.md`、`data-flow.md`、`deployment.md`、`features.md` 和模块文档；本计划补上结果后移到 `plans/completed/`。
+- [x] 复核 `ARCHITECTURE.md`、`system.md`、`data-model.md`、`data-flow.md`、`deployment.md`、`features.md` 和模块文档；本计划补上结果后移到 `plans/completed/`。
+  - [x] 1. 遗留验证：OSS 手动验证剩余的浏览器 `<img>` 显示与耗时记录（2026-11-21，容器模式临时切到 oss，验证后已按 `.env` 恢复为 local）
+  - [x] 2. 总览文档：重写 `README.md`、`ARCHITECTURE.md`、`overview.md`，更新 `docs/README.md`；目标架构图改为当前架构并与代码核对
+  - [x] 3. 产品文档：按开发者要求（2026-11-21）直接删除旧基线描述，避免歧义：`features.md` 的旧基线功能表、6 篇模块文档的旧章节、4 张旧基线插图和 2 篇只针对旧代码的经验文档；设计文档与 ADR 中作为背景的旧基线说明保留
+  - [x] 4. 架构与部署文档：`system.md`、`data-model.md`（删除旧基线附录）、`data-flow.md`、`deployment.md` 与代码核对（文档中的 `make` 命令、宿主机端口）；发现告警说明与可观测设计引用的 `make dlq` 不存在，补上该目标
+  - [x] 5. 计划收尾：补上结果与遗留项（推迟到前端的 coturn 等、步骤 10 的可选扩展、未关闭的技术债），移到 `plans/completed/` 并更新引用
+  - [x] 6. 验证：`buf lint`、`make gen` 后无差异、`go vet`、`go build`、`go test -race ./...`，文档内相对链接全部可达
 
-### 10. 可选扩展（主线完成后再定）
+### 10. 可选扩展（未实施）
+
+主线完成后没有选择实施，留作后续候选。
 
 - [ ] MySQL 主从复制与读写分离（GORM dbresolver），处理复制延迟下的“写后读”。
 - [ ] Consul KV 作为配置中心，支持动态配置。
@@ -225,12 +259,12 @@
 
 ## 已确认的决定（2026-11-18）
 
-- 保留手机号加短信验证码注册，以及短信验证码登录。（2026-11-20 已改为邮箱验证码，见[插入任务：邮箱验证码](#当前进度与下一步)）
+- 保留手机号加短信验证码注册，以及短信验证码登录。（2026-11-20 已改为邮箱验证码，见[插入任务：邮箱验证码](#进度记录)）
 - 应用服务端口按 HTTP `18xx0`、gRPC `19xx0` 编排。
 - 数据库表按新项目重新设计，考虑事务、索引和缓存三类问题。
 - 适合本项目的生产环境技术可以引入。
 
-## 当前进度与下一步
+## 进度记录
 
 步骤 0 已完成（2026-11-18）。旧的本地配置（含阿里云短信 AccessKey）未保留，步骤 2 接入短信时重新配置。
 
@@ -289,6 +323,10 @@
 验证（2026-11-21，全部修改之后）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（31 个包）、`make rules-test`（8 条规则）通过；宿主机模式 `make e2e` 通过，新增 `TestConcurrentRegister`（恢复旧的注册路径时 8 个并发注册有 2 个死锁，用例能发现问题）和 `TestMetricsEndpoints`；容器模式 `make cluster-test` 17 项通过（含 7 项故障实验）。验证结束后容器模式已按 `.env` 恢复（account 为 smtp 发送方，采样比例 1）。
 
 核对代码时新发现 TD-34（节点号租约丢失后不会重新获取），列入本步骤修复。Compose 全栈内存已初步评估：Docker Desktop 虚拟机 3.8 GiB，现有占用约 2.1 GiB（Kafka 1.06 GiB），加上多实例与 APISIX 估计约 2.0 GiB（Kafka 堆限制为 512 MiB 后），第一阶段实测。
+
+步骤 6 第 6 段（OSS 手动验证）完成（2026-11-21），提交 `452b2a9`。验证中发现并修复预签名地址覆盖 `Content-Type` 被 OSS 拒绝的问题；同时按开发者要求把 OSS 对象名改为按年、月分目录，整理了 `.env.example`。浏览器中的 `<img>` 显示与耗时在步骤 9 第 1 段补测。
+
+步骤 9 完成（2026-11-21）。重写 `README.md`、`ARCHITECTURE.md`、`overview.md`，目标架构图改为当前架构（PNG 重新渲染）；按开发者要求删除旧基线描述；计划移到 `plans/completed/`。复核中补上了缺失的 `make dlq`。
 
 ## 故障实验结果
 
