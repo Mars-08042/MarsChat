@@ -157,5 +157,6 @@
 ## 计划中
 
 - [后端重构](../plans/active/backend-refactor.md)：用 Kratos v3 重写为微服务后端并移除旧前端，进行中（步骤 0 已完成代码与容器清理）。
+- [React 前端重写](../plans/active/frontend-rewrite.md)：React + pnpm 新前端，设计 [frontend.md](../design/frontend.md) 已采纳（[ADR-0008](../architecture/adr/0008-react-frontend.md)），进行中。
 
 新计划请在 `docs/plans/active/` 中建立计划文档（目录按需创建，规则见 [docs/README.md](../README.md#计划文档)），并在此登记。
