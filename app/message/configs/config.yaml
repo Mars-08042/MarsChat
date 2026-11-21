@@ -58,6 +58,10 @@ account:
   endpoint: ${ACCOUNT_ENDPOINT:discovery:///marschat-account}
   timeout: 1s
 
+media:
+  endpoint: ${MEDIA_ENDPOINT:discovery:///marschat-media}
+  timeout: 1s
+
 # 限额策略：修改后自动热更新，无需重启；校验不通过时保留旧值并记录错误日志
 policy:
   send_message:

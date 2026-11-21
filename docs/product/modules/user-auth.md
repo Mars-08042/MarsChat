@@ -31,6 +31,8 @@ account 服务，设计与规则细节见 [account-service.md](../../design/acco
 
 `email` 最长 254 个字符，服务端去掉首尾空白并转为小写后使用，大小写不同的写法视为同一个邮箱；`code` 为 6 位数字。`device` 为 `deviceId`（客户端生成并持久保存，8～64 位字母数字、`_`、`-`）、`platform`、`deviceName`。错误原因与 HTTP 状态码见 [system.md](../../architecture/system.md#58-错误)。
 
+头像：先经 media 上传（`POST /v1/files?purpose=PURPOSE_AVATAR`，见 [chat-message.md](chat-message.md#新实现文件与图片重构步骤-6)），再用 `UpdateMe` 把返回的文件 ID（十进制字符串）写入 `avatar`。account 不调用 media 校验；显示时用 `GetDownloadUrls` 换取地址，用途为头像的文件对所有登录用户可读，填入别人的聊天文件 ID 换不到地址。群头像（social 的 `avatar` 字段）规则相同。
+
 ## 职责
 
 手机号注册、登录（密码 / 短信验证码）、个人资料维护、退出登录。

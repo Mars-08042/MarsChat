@@ -35,6 +35,8 @@ var ProviderSet = wire.NewSet(
 	NewGroupService,
 	NewAccountClient,
 	NewUserService,
+	NewMediaClient,
+	NewFileService,
 	NewIDGenerator,
 	NewRateLimiter,
 )

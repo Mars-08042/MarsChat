@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	accountv1 "github.com/Mars-08042/MarsChat/api/account/v1"
+	mediav1 "github.com/Mars-08042/MarsChat/api/media/v1"
 	socialv1 "github.com/Mars-08042/MarsChat/api/social/v1"
 	"github.com/Mars-08042/MarsChat/app/message/internal/biz"
 	"github.com/Mars-08042/MarsChat/app/message/internal/conf"
@@ -66,6 +67,47 @@ func NewAccountClient(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logge
 		return nil, nil, err
 	}
 	return &AccountClient{accountv1.NewAccountInternalServiceClient(conn)}, cleanup, nil
+}
+
+// MediaClient 是 media 内部接口的客户端。
+type MediaClient struct{ mediav1.MediaInternalServiceClient }
+
+// NewMediaClient 创建 media 客户端，默认地址 discovery:///marschat-media。只在发送图片和文件消息时调用。
+func NewMediaClient(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (*MediaClient, func(), error) {
+	conn, cleanup, err := dial("media", bc.GetMedia(), r, logger,
+		mediav1.MediaInternalService_GetFiles_FullMethodName,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &MediaClient{mediav1.NewMediaInternalServiceClient(conn)}, cleanup, nil
+}
+
+type fileService struct{ c *MediaClient }
+
+// NewFileService 用 media 的 GetFiles 实现文件核实。
+func NewFileService(c *MediaClient) biz.FileService {
+	return &fileService{c: c}
+}
+
+// GetFiles 的参数由 message 构造（ID 为正、数量不超过上限），media 返回的任何错误都按依赖不可用处理。
+func (s *fileService) GetFiles(ctx context.Context, ids []int64) (map[int64]*biz.FileMeta, error) {
+	out := make(map[int64]*biz.FileMeta, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	resp, err := s.c.GetFiles(ctx, &mediav1.GetFilesRequest{Ids: ids})
+	if err != nil {
+		return nil, fmt.Errorf("%w: media GetFiles: %w", biz.ErrUnavailable, err)
+	}
+	for _, f := range resp.GetFiles() {
+		out[f.GetId()] = &biz.FileMeta{
+			ID: f.GetId(), AccessKey: f.GetAccessKey(), Purpose: int32(f.GetPurpose()), Kind: int32(f.GetKind()),
+			Name: f.GetName(), Size: f.GetSize(), MimeType: f.GetMimeType(), Width: f.GetWidth(), Height: f.GetHeight(),
+			HasThumbnail: f.GetHasThumbnail(),
+		}
+	}
+	return out, nil
 }
 
 type permissionChecker struct{ c *SocialClient }

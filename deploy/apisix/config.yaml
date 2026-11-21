@@ -48,6 +48,8 @@ plugins:
   - limit-req
   - limit-count
   - limit-conn
+  # 按路由限制请求体大小（media 上传）
+  - client-control
 
 # 不使用 TCP/UDP 代理。默认的 stream 插件列表中 syslog 依赖 prometheus 的共享内存，
 # 只列出上面的 HTTP 插件时它会加载失败并报错

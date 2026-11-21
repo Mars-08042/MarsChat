@@ -363,6 +363,27 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/message.v1.MarkReadResponse'
+    /v1/files/download-urls:
+        post:
+            tags:
+                - MediaService
+            description: |-
+                换取文件的限时下载地址，需要访问令牌。头像文件所有登录用户都可以下载；聊天文件需要访问密钥匹配，
+                 或者当前用户就是上传者。文件不存在或无权访问的项直接省略，不区分原因。
+            operationId: MediaService_GetDownloadUrls
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/media.v1.GetDownloadUrlsRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/media.v1.GetDownloadUrlsResponse'
     /v1/friend-requests:
         post:
             tags:
@@ -1237,6 +1258,46 @@ components:
                     type: integer
                     format: enum
             description: UserProfile 是其他用户可见的公开资料，不含邮箱。
+        media.v1.DownloadUrl:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                variant:
+                    type: integer
+                    format: enum
+                url:
+                    type: string
+                    description: 限时有效的下载地址，可以直接用于 <img src> 或下载链接
+                expiresAt:
+                    type: string
+                    format: date-time
+        media.v1.DownloadUrlRequest:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                accessKey:
+                    type: string
+                    description: 聊天文件必填；头像文件和自己上传的文件可以不填
+                variant:
+                    type: integer
+                    format: enum
+        media.v1.GetDownloadUrlsRequest:
+            type: object
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/media.v1.DownloadUrlRequest'
+        media.v1.GetDownloadUrlsResponse:
+            type: object
+            properties:
+                urls:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/media.v1.DownloadUrl'
+                    description: 与请求的顺序一致，校验不通过的项被省略
         message.v1.Conversation:
             type: object
             properties:
@@ -1269,6 +1330,20 @@ components:
                     allOf:
                         - $ref: '#/components/schemas/message.v1.Message'
                     description: 最新一条消息，会话还没有消息时为空
+        message.v1.FileContent:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                accessKey:
+                    type: string
+                name:
+                    type: string
+                size:
+                    type: string
+                mimeType:
+                    type: string
+            description: FileContent 是文件消息，规则同 ImageContent，任意类型的聊天文件都可以发送。
         message.v1.GetConversationResponse:
             type: object
             properties:
@@ -1306,6 +1381,29 @@ components:
                     type: integer
                     format: int32
             description: GroupBrief 是会话列表中展示的群资料。
+        message.v1.ImageContent:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                accessKey:
+                    type: string
+                name:
+                    type: string
+                size:
+                    type: string
+                mimeType:
+                    type: string
+                width:
+                    type: integer
+                    format: int32
+                height:
+                    type: integer
+                    format: int32
+            description: |-
+                ImageContent 是图片消息。文件先经 media 上传（用途 PURPOSE_CHAT），发送时只需填 file_id 和 access_key；
+                 其余字段由 message 按 media 的记录填写，客户端上送的值被覆盖。文件必须是已生成缩略图的图片，
+                 否则返回 FILE_INVALID。接收方凭 file_id 和 access_key 调用 media 的 GetDownloadUrls 换取缩略图与原图地址。
         message.v1.ListConversationsResponse:
             type: object
             properties:
@@ -1363,7 +1461,11 @@ components:
             properties:
                 text:
                     $ref: '#/components/schemas/message.v1.TextContent'
-            description: MessageContent 是消息正文，按类型取其中一种。文件、图片等类型在 media 服务就绪后加入。
+                image:
+                    $ref: '#/components/schemas/message.v1.ImageContent'
+                file:
+                    $ref: '#/components/schemas/message.v1.FileContent'
+            description: MessageContent 是消息正文，按类型取其中一种。
         message.v1.TextContent:
             type: object
             properties:
@@ -1784,6 +1886,16 @@ tags:
       description: |-
         AccountService 是面向客户端的账号接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
          除发送验证码、注册、登录和刷新令牌外，都需要在 Authorization 头携带 Bearer 访问令牌。
+    - name: MediaService
+      description: |-
+        MediaService 是面向客户端的文件接口。
+
+         上传与本地存储的下载内容是二进制流，不适合 protobuf JSON，由自定义的 HTTP 处理函数提供，
+         不在本 service 中声明（也不出现在 OpenAPI 文档里），但同样经过访问日志、鉴权与参数校验：
+           - 上传：POST /v1/files?purpose=PURPOSE_CHAT&name=<URL 编码的文件名>，请求体为文件的原始字节，
+             必须带 Content-Length，需要 Bearer 访问令牌，成功返回 FileInfo（参数见 UploadFileRequest）；
+           - 下载内容（仅本地存储）：GET /v1/files/{file_id}/content?variant=&expires=&signature=，
+             地址由 GetDownloadUrls 签发，签名即授权，不需要访问令牌（参数见 DownloadContentRequest）。
     - name: MessageService
       description: |-
         MessageService 是面向客户端的会话与消息接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。

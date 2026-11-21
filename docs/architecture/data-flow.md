@@ -1,22 +1,24 @@
 # 数据流
 
-> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 5（2026-11-20）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
+> 描述请求、消息和事件在服务之间如何流转，WebSocket 帧协议以本文为准。随重构步骤更新，最近一次更新于步骤 6（2026-11-21）。服务内分层见 [system.md](system.md)，表与缓存键见 [data-model.md](data-model.md)，同步模型的选型见 [ADR-0006](adr/0006-message-sync-model.md)，步骤 4 的设计与取舍见 [message-pipeline.md](../design/message-pipeline.md)。
 >
-> 文件上传（步骤 6）和音视频通话信令（步骤 7）尚未重写，旧基线的流程见提交 `6624cea` 中本文的第 5、6 节。
+> 文件上传与下载见第 8 节。音视频通话信令（步骤 7）尚未重写，旧基线的流程见提交 `6624cea` 中本文的第 6 节。
 
 ## 1. 服务与通道
 
 ```
-                 HTTP（登录、资料、好友、群、会话、历史、补拉、已读）
-客户端 ──────────────────────────────────────────→ account / social / message
+                 HTTP（登录、资料、好友、群、会话、历史、补拉、已读、上传文件、下载地址）
+客户端 ──────────────────────────────────────────→ account / social / message / media
    │
-   └── WebSocket（认证、心跳、发消息、接收推送）──→ access ──gRPC SendMessage──→ message
+   ├── GET 下载地址（签名即授权）──→ media（本地存储）或阿里云 OSS
+   │
+   └── WebSocket（认证、心跳、发消息、接收推送）──→ access ──gRPC SendMessage──→ message ──gRPC GetFiles──→ media
                                                     ↑                              │ 事务内写 Outbox
                                                     │ gRPC Push / Kick             ↓
                                                  delivery ←── Kafka ←── Outbox 发布器（account、social、message）
 ```
 
-- 容器模式下客户端只经网关（APISIX）访问：HTTP 接口按路径转发到 account、social、message，`/ws` 转发到 access，上游节点经 Consul 发现；网关负责 TLS 和按 IP 的入口限流（超限返回 429，响应体为 `{"error_msg": ...}`，不是 Kratos 错误格式）。宿主机运行时客户端直连各服务端口。路由与端口见 [deployment.md](../deployment.md#网关)。
+- 容器模式下客户端只经网关（APISIX）访问：HTTP 接口按路径转发到 account、social、message、media，`/ws` 转发到 access，上游节点经 Consul 发现；网关负责 TLS 和按 IP 的入口限流（超限返回 429，响应体为 `{"error_msg": ...}`，不是 Kratos 错误格式）。宿主机运行时客户端直连各服务端口。路由与端口见 [deployment.md](../deployment.md#网关)。
 - **发送只走 WebSocket，读取只走 HTTP**：只有一条写入路径，限流、排除发起连接、按连接顺序确认都只需实现一次。
 - 服务间同步调用用 gRPC，经 Consul 发现；delivery 调用 access 例外，按在线路由中的地址直连持有连接的实例。
 - 服务间异步通知用 Kafka，事件经事务 Outbox 发布，见第 6 节。
@@ -86,13 +88,14 @@
            → 查找或创建会话（单聊按两人 ID 唯一，群聊会话 ID 即群 ID）
            → 已存在同一 client_msg_id 时直接返回首次的结果
            → social CheckSendPermission（好友、拉黑、群成员、禁言、解散）
+           → 图片、文件消息：media GetFiles 核实文件，用 media 的记录覆盖名称、大小、类型、尺寸（见第 8.3 节）
            → 事务：锁会话行分配 seq → 写消息 → 推进发送者已读 → 写 Outbox MessageCreated
 客户端 ←─SendAck{request_id, conversation_id, seq, created_at}── access ←─┘
 ```
 
 - `client_msg_id` 由客户端为每条消息生成（建议 UUID），超时未确认时用同一个值重发，服务端只存一条，重发返回首次的 seq。
 - 失败时返回带同一 `request_id` 的 `Error`：
-  - message 的业务错误原样返回：`429 RATE_LIMITED`（metadata 带 `retry_after_seconds`）、`400 VALIDATOR`、social 的拒绝原因（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）、`503 DEPENDENCY_UNAVAILABLE`（social 不可用，无法校验权限）；
+  - message 的业务错误原样返回：`429 RATE_LIMITED`（metadata 带 `retry_after_seconds`）、`400 VALIDATOR`、social 的拒绝原因（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）、`400 FILE_INVALID`（图片、文件消息引用的文件不存在、访问密钥不匹配、不是聊天文件，或图片消息引用的不是图片）、`503 DEPENDENCY_UNAVAILABLE`（social 或 media 不可用，无法校验）；
   - 调用 message 失败或超时：`503 UPSTREAM_UNAVAILABLE`。结果未知，消息可能已经写入，客户端用同一个 `client_msg_id` 重发即可；
   - access 到 message 的熔断打开：`503 CIRCUITBREAKER`。请求没有发出，消息确定没有写入，客户端稍后用同一个 `client_msg_id` 重发；
   - 单聊的第一条消息要为新会话生成 ID。Redis 停机超过节点号租约（30 秒）后发号失败，返回 `503 DEPENDENCY_UNAVAILABLE`，消息没有写入，客户端稍后用同一个 `client_msg_id` 重发；已有会话的发送不受影响。
@@ -213,3 +216,43 @@ social 发布器 ─→ marschat.social.events ─→ delivery
   - 按这套约定实现的测试客户端在杀掉 access、滚动重启 access 的故障实验中没有丢失和重复，见[重构计划的故障实验结果](../plans/active/backend-refactor.md#故障实验结果)。
 - Outbox 发布器：发完当前批次后释放租约，其他实例下一次抢占时接手。
 - Kafka 消费者：处理完当前记录、提交位点后离开消费组。
+
+## 8. 文件上传与下载
+
+设计见 [media-service.md](../design/media-service.md)，存储选型见 [ADR-0007](adr/0007-object-storage.md)。
+
+### 8.1 上传
+
+```
+客户端 ─POST /v1/files?purpose=PURPOSE_CHAT&name=<文件名>（Authorization，请求体为文件原始字节，带 Content-Length）─→ media
+  media：令牌校验 → 参数校验 → 每人每小时 60 次限流（Redis，故障时放行）
+       → 检查 Content-Length（缺失 411、为 0 返回 400、超过用途上限 413，都不读请求体）
+       → 读前 512 字节按内容识别类型（头像不是 JPEG/PNG/GIF/WebP 时 415）
+       → 不超过 10 MiB 的光栅图片：整体读入，解码（不超过 1600 万像素）并生成 320 像素的 JPEG 缩略图；解码失败按普通文件
+         其他文件：边读边写入存储，同时计算 SHA-256
+       → 写入存储（local：临时文件 + rename；oss：PutObject）→ 插入 files 记录（失败时删除刚写入的对象）
+客户端 ←─FileInfo{id, accessKey, purpose, kind, name, size, mimeType, width, height, hasThumbnail}──┘
+```
+
+- 请求体没读完（客户端中断、超过 300 秒的服务器超时）返回 `400 UPLOAD_INCOMPLETE`，不留下记录；存储不可用、图片处理排队超过 5 秒返回 `503 DEPENDENCY_UNAVAILABLE`。
+- 容器模式下网关对 `/v1/files` 限制请求体 101 MiB，超过时网关直接返回 413，不转发。
+
+### 8.2 下载
+
+```
+客户端 ─POST /v1/files/download-urls{items: [{fileId, accessKey, variant}]}（Authorization，最多 100 项）─→ media
+  media：批量读元数据（缓存）→ 逐项校验：头像所有登录用户可读；聊天文件需要访问密钥匹配或是上传者；
+         缩略图只有图片才有；写在切换前另一种存储中的文件跳过 → 本地计算签名地址（有效期 10 分钟）
+客户端 ←─urls: [{fileId, variant, url, expiresAt}]（校验不通过的项省略，不区分原因）──┘
+
+客户端 ─GET <url>（不需要访问令牌，可以直接用于 <img src>）─→
+  local：media GET /v1/files/{id}/content?variant=&expires=&signature= 校验 HMAC 签名与过期时间后返回文件（支持 Range）
+  oss：  阿里云 OSS 校验 V4 预签名后返回对象
+```
+
+- 光栅图片与缩略图以 `inline` 和识别出的类型返回；其他文件（包括 SVG、HTML）一律 `attachment` 加 `application/octet-stream`，local 另加 `X-Content-Type-Options: nosniff`。OSS 的响应头由预签名中的 `response-content-type`、`response-content-disposition` 决定，它们参与签名，客户端改不了。
+- local 的签名错误或过期返回 `403 DOWNLOAD_URL_INVALID`，客户端重新换取地址。
+
+### 8.3 图片与文件消息
+
+客户端上传后，把 `FileInfo` 中的 `id` 和 `accessKey` 放进 `ImageContent` / `FileContent`，经 WebSocket 发送（第 4 节）。message 调 media 的 `GetFiles` 核实，用 media 的记录覆盖名称、大小、类型和尺寸后落库。接收方从推送或历史中拿到文件 ID 和访问密钥，按 8.2 换取缩略图与原文件的地址。转发时访问密钥随消息一起转发，不需要额外授权。

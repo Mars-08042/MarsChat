@@ -20,6 +20,9 @@ deploy/apisix/certs/
 *.pem
 *.key
 
+# 运行数据（media 本地存储的文件默认写在 data/media）
+/data/
+
 # 日志
 *.log
 logs/

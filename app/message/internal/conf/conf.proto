@@ -23,6 +23,8 @@ message Bootstrap {
   Upstream account = 10 [(buf.validate.field).required = true];
   // 可热更新，见 Policy
   Policy policy = 11 [(buf.validate.field).required = true];
+  // 发送图片和文件消息时核实文件
+  Upstream media = 12 [(buf.validate.field).required = true];
 }
 
 // Upstream 是调用其他服务的配置，修改后需要重启。

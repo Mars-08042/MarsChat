@@ -155,6 +155,32 @@ type PermissionChecker interface {
 	CheckSend(ctx context.Context, senderID int64, peerType int32, peerID int64) error
 }
 
+// FileMeta 是 media 中的文件记录，发送图片和文件消息时用来核实与填写内容。
+type FileMeta struct {
+	ID           int64
+	AccessKey    string
+	Purpose      int32
+	Kind         int32
+	Name         string
+	Size         int64
+	MimeType     string
+	Width        int32
+	Height       int32
+	HasThumbnail bool
+}
+
+// 取值与 media.v1 中的枚举一致。
+const (
+	FilePurposeChat int32 = 1
+	FileKindImage   int32 = 2
+)
+
+// FileService 批量获取文件记录（media GetFiles），不存在的 ID 不在结果中。
+// media 不可用时返回包装了 ErrUnavailable 的错误。
+type FileService interface {
+	GetFiles(ctx context.Context, ids []int64) (map[int64]*FileMeta, error)
+}
+
 // UserService 批量获取用户资料（account）。
 type UserService interface {
 	BatchGetUsers(ctx context.Context, ids []int64) (map[int64]*accountv1.UserProfile, error)

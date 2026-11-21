@@ -15,6 +15,10 @@ func newErr(code int, reason v1.ErrorReason, message string) *errors.Error {
 }
 
 // ErrConversationNotFound 同时表示会话不存在和当前用户不是成员，不让客户端借此探测会话 ID。
+func ErrFileInvalid() error {
+	return newErr(400, v1.ErrorReason_FILE_INVALID, "文件无效或无权使用")
+}
+
 func ErrConversationNotFound() error {
 	return newErr(404, v1.ErrorReason_CONVERSATION_NOT_FOUND, "会话不存在")
 }

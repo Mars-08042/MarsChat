@@ -327,6 +327,27 @@ func (p *fakePerm) CheckSend(context.Context, int64, int32, int64) error {
 	return p.deny
 }
 
+// fakeFiles 是 media 的文件记录；calls 统计调用次数，验证文本消息不调用 media。
+type fakeFiles struct {
+	files map[int64]*FileMeta
+	err   error
+	calls int
+}
+
+func (f *fakeFiles) GetFiles(_ context.Context, ids []int64) (map[int64]*FileMeta, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[int64]*FileMeta{}
+	for _, id := range ids {
+		if m, ok := f.files[id]; ok {
+			out[id] = m
+		}
+	}
+	return out, nil
+}
+
 type fakeUsers struct{ err error }
 
 func (u fakeUsers) BatchGetUsers(_ context.Context, ids []int64) (map[int64]*accountv1.UserProfile, error) {
@@ -384,6 +405,7 @@ func (g *fakeIDs) NextID() (int64, error) {
 type env struct {
 	s       *store
 	perm    *fakePerm
+	files   *fakeFiles
 	limiter *fakeLimiter
 	users   *fakeUsers
 	groups  *fakeGroups
@@ -405,11 +427,11 @@ func testPolicy() *conf.Policy {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	s := newStore()
-	e := &env{s: s, perm: &fakePerm{}, limiter: &fakeLimiter{}, users: &fakeUsers{}, groups: &fakeGroups{},
-		policy: NewPolicyHolder(testPolicy()), ids: &fakeIDs{}}
+	e := &env{s: s, perm: &fakePerm{}, files: &fakeFiles{files: map[int64]*FileMeta{}}, limiter: &fakeLimiter{},
+		users: &fakeUsers{}, groups: &fakeGroups{}, policy: NewPolicyHolder(testPolicy()), ids: &fakeIDs{}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	tx, convs, members, msgs, events := fakeTx{s}, fakeConvs{s}, fakeMembers{s}, fakeMsgs{s}, fakeEvents{s}
-	e.msg = NewMessageUsecase(tx, convs, members, msgs, events, e.perm, limiterAdapter{e.limiter}, e.ids, e.policy, logger)
+	e.msg = NewMessageUsecase(tx, convs, members, msgs, events, e.perm, e.files, limiterAdapter{e.limiter}, e.ids, e.policy, logger)
 	e.conv = NewConversationUsecase(tx, convs, members, msgs, events, usersAdapter{e.users}, groupsAdapter{e.groups}, e.policy, logger)
 	e.members = NewMembershipUsecase(tx, convs, members)
 	return e

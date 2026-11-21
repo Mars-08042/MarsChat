@@ -39,7 +39,9 @@ type Bootstrap struct {
 	// 会话列表补全对方资料
 	Account *Upstream `protobuf:"bytes,10,opt,name=account,proto3" json:"account,omitempty"`
 	// 可热更新，见 Policy
-	Policy        *Policy `protobuf:"bytes,11,opt,name=policy,proto3" json:"policy,omitempty"`
+	Policy *Policy `protobuf:"bytes,11,opt,name=policy,proto3" json:"policy,omitempty"`
+	// 发送图片和文件消息时核实文件
+	Media         *Upstream `protobuf:"bytes,12,opt,name=media,proto3" json:"media,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -147,6 +149,13 @@ func (x *Bootstrap) GetAccount() *Upstream {
 func (x *Bootstrap) GetPolicy() *Policy {
 	if x != nil {
 		return x.Policy
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetMedia() *Upstream {
+	if x != nil {
+		return x.Media
 	}
 	return nil
 }
@@ -274,7 +283,7 @@ var File_message_internal_conf_conf_proto protoreflect.FileDescriptor
 
 const file_message_internal_conf_conf_proto_rawDesc = "" +
 	"\n" +
-	" message/internal/conf/conf.proto\x12\x15marschat.message.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\xcc\x04\n" +
+	" message/internal/conf/conf.proto\x12\x15marschat.message.conf\x1a\x1bbuf/validate/validate.proto\x1a\x0fconf/conf.proto\x1a\x1egoogle/protobuf/duration.proto\"\x8b\x05\n" +
 	"\tBootstrap\x12-\n" +
 	"\x06server\x18\x01 \x01(\v2\x15.marschat.conf.ServerR\x06server\x123\n" +
 	"\bregistry\x18\x02 \x01(\v2\x17.marschat.conf.RegistryR\bregistry\x12*\n" +
@@ -287,7 +296,8 @@ const file_message_internal_conf_conf_proto_rawDesc = "" +
 	"\x06social\x18\t \x01(\v2\x1f.marschat.message.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\x06social\x12A\n" +
 	"\aaccount\x18\n" +
 	" \x01(\v2\x1f.marschat.message.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\aaccount\x12=\n" +
-	"\x06policy\x18\v \x01(\v2\x1d.marschat.message.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\"q\n" +
+	"\x06policy\x18\v \x01(\v2\x1d.marschat.message.conf.PolicyB\x06\xbaH\x03\xc8\x01\x01R\x06policy\x12=\n" +
+	"\x05media\x18\f \x01(\v2\x1f.marschat.message.conf.UpstreamB\x06\xbaH\x03\xc8\x01\x01R\x05media\"q\n" +
 	"\bUpstream\x12#\n" +
 	"\bendpoint\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bendpoint\x12@\n" +
 	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\v\xbaH\b\xc8\x01\x01\xaa\x01\x02*\x00R\atimeout\"\xc8\x01\n" +
@@ -337,13 +347,14 @@ var file_message_internal_conf_conf_proto_depIdxs = []int32{
 	1,  // 8: marschat.message.conf.Bootstrap.social:type_name -> marschat.message.conf.Upstream
 	1,  // 9: marschat.message.conf.Bootstrap.account:type_name -> marschat.message.conf.Upstream
 	2,  // 10: marschat.message.conf.Bootstrap.policy:type_name -> marschat.message.conf.Policy
-	11, // 11: marschat.message.conf.Upstream.timeout:type_name -> google.protobuf.Duration
-	12, // 12: marschat.message.conf.Policy.send_message:type_name -> marschat.conf.RateLimit
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	1,  // 11: marschat.message.conf.Bootstrap.media:type_name -> marschat.message.conf.Upstream
+	11, // 12: marschat.message.conf.Upstream.timeout:type_name -> google.protobuf.Duration
+	12, // 13: marschat.message.conf.Policy.send_message:type_name -> marschat.conf.RateLimit
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_message_internal_conf_conf_proto_init() }

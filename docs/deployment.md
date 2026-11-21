@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 5（2026-11-20）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
+> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 6（2026-11-21）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
 
 ## 运行依赖
 
@@ -34,7 +34,7 @@
 
 ```bash
 cp .env.example .env
-make keys    # 生成 JWT 密钥对并追加到 .env，已有时不覆盖，不打印密钥
+make keys    # 生成 JWT 密钥对和 media 下载地址签名密钥并追加到 .env，已有时不覆盖，不打印密钥
 ```
 
 把 `.env` 中的 `change-me` 换成随机密码，只用字母和数字，避免在 SQL 和 DSN 中转义。`.env` 被 Git 忽略，同时供 Compose 和本机运行的服务使用。
@@ -46,10 +46,11 @@ make keys    # 生成 JWT 密钥对并追加到 .env，已有时不覆盖，不�
 | `MARSCHAT_REDIS_PASSWORD` | Redis 密码 |
 | `MARSCHAT_JWT_PRIVATE_KEY` | Ed25519 私钥种子（32 字节）的 base64，只有 account 使用。由 `make keys` 生成，更换后已签发的令牌全部失效 |
 | `MARSCHAT_JWT_PUBLIC_KEY` | 对应的公钥 base64，所有服务用来校验访问令牌；account 启动时检查它与私钥匹配 |
+| `MARSCHAT_MEDIA_URL_SECRET` | media 本地存储下载地址的 HMAC 签名密钥（32 字节随机数的 base64），由 `make keys` 生成。使用 OSS 时不需要，见“文件存储” |
 
 MySQL 的建库脚本和 root 密码只在数据卷**首次初始化**时生效，之后修改 `.env` 不会改变已有账号的密码。需要重置时见“停止与重置”。
 
-**Docker Desktop 文件共享**：本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录前需要在 Settings → Resources → File sharing 中加入该目录，否则 Docker Desktop 会弹窗询问，确认前 `docker compose up` 会一直卡住。建议直接加入项目根目录，后续 APISIX、Prometheus 的配置挂载也会用到。WSL 2 后端不需要这一步。排查过程见 [lessons/docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md)。
+**Docker Desktop 文件共享**：本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录前需要在 Settings → Resources → File sharing 中加入该目录，否则 Docker Desktop 会弹窗询问，确认前 `docker compose up` 会一直卡住。建议直接加入项目根目录，APISIX 的配置、media 的 `data/media` 目录和后续 Prometheus 的配置挂载都会用到。WSL 2 后端不需要这一步。排查过程见 [lessons/docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md)。
 
 ## 启动依赖组件
 
@@ -68,6 +69,7 @@ Consul UI：<http://127.0.0.1:18500>。
 make migrate-account                    # 执行全部未执行的迁移（up）
 make migrate-social
 make migrate-message
+make migrate-media
 make migrate-account ARGS="down 1"      # 回滚一步
 make migrate-account ARGS="version"     # 查看当前版本
 ```
@@ -84,6 +86,7 @@ make run-social     # HTTP 127.0.0.1:18020，gRPC 127.0.0.1:19020
 make run-message    # HTTP 127.0.0.1:18030，gRPC 127.0.0.1:19030
 make run-access     # WebSocket ws://127.0.0.1:18000/ws，内部 gRPC 127.0.0.1:19100
 make run-delivery   # gRPC 127.0.0.1:19040（只用于注册和健康检查）
+make run-media      # HTTP 127.0.0.1:18050，gRPC 127.0.0.1:19050；文件默认存放在仓库下的 data/media/
 ```
 
 `make run-<服务>` 会加载 `.env`，再执行 `go run ./app/<服务>/cmd/<服务> -conf app/<服务>/configs`。服务启动时连接本服务的 MySQL（access、delivery 没有）、Redis 并注册到 Consul，任一依赖不可用会直接退出。首次启动前要先执行对应的 `make migrate-<服务>`。
@@ -94,6 +97,7 @@ make run-delivery   # gRPC 127.0.0.1:19040（只用于注册和健康检查）
 |---|---|
 | account | social 申请好友返回 `503 DEPENDENCY_UNAVAILABLE`；social、message 的列表不带昵称和头像，记 WARN |
 | social | 发消息返回 `503 DEPENDENCY_UNAVAILABLE`（无法校验发言权限）；会话列表不带群资料；群消息不推送 |
+| media | 无法上传文件和换取下载地址；发送图片、文件消息返回 `503 DEPENDENCY_UNAVAILABLE`（无法核实文件），文本消息不受影响；使用 OSS 时已签发的下载地址在有效期内仍可下载 |
 | message | WebSocket 连接照常建立和接收推送，发消息返回 `503 UPSTREAM_UNAVAILABLE` |
 | access | 客户端无法建立长连接，HTTP 接口不受影响 |
 | delivery 或 Kafka | 消息照常写入、可以补拉，但没有实时推送和事件踢线（心跳兜底，最迟 30 秒断开被吊销的连接）；事件积压在 Outbox 表中，恢复后补发 |
@@ -149,13 +153,14 @@ make cluster-down       # 只删除应用服务和网关的容器，依赖组件
 | message | 2 | HTTP 18030、gRPC 19030 |
 | delivery | 2 | gRPC 19040 |
 | access | 2 | HTTP 18000（WebSocket）、gRPC 19100 |
+| media | 1 | HTTP 18050、gRPC 19050；挂载仓库的 `data/media`（本地存储） |
 | apisix（网关） | 1 | 9080、9443，发布到宿主机 `127.0.0.1:19080`、`127.0.0.1:19443`；固定 IP `172.30.0.10` |
 
 - **与宿主机运行互斥**：两种模式共用 Consul 且服务名相同，宿主机实例注册 `127.0.0.1`，容器访问不到；容器实例注册容器 IP，宿主机访问不到。切换前先停掉另一种。宿主机进程被强制结束时，它在 Consul 中的实例要 20 秒后才变为 critical，这段时间内不要启动容器模式。
 - **不发布宿主机端口**：应用容器只在 Compose 网络内可访问，客户端入口是网关（见下节）。依赖组件的宿主机端口照常可用。
 - **镜像**：运行镜像为 `gcr.io/distroless/static-debian13:nonroot`，按 digest 锁定（见 [Dockerfile](../deploy/docker/Dockerfile)），没有 shell，不能 `docker exec` 进去排查；需要在网络内发请求时，临时起一个带 curl 的容器加入 `marschat_default` 网络。二进制默认按 amd64 编译，ARM 机器用 `make images IMAGE_ARCH=arm64`。
 - **注册与健康检查**：容器内开启 Consul 的 TCP 检查，间隔 3 秒（`MARSCHAT_CONSUL_TCP_CHECK_INTERVAL`），TTL 心跳超时 6 秒，实例被杀后几秒内从发现结果中消失。HTTP 端点排在第一个，Consul 中服务的 `Address:Port` 是 HTTP 端口，网关按它转发。
-- **资源**：每个应用容器限制 256 MiB 内存。2026-11-19 实测：应用容器各 15～56 MiB，Kafka 512 MiB、MySQL 452 MiB，MarsChat 合计约 1.2 GiB。
+- **资源**：每个应用容器限制 256 MiB 内存；media 解码图片占内存较多，限制为 384 MiB，并设置 `GOMEMLIMIT=320MiB`，让 GC 在接近上限前回收。2026-11-21 实测：media 空闲约 18 MiB，并发上传 1590 万像素的 16 位 PNG 时进程峰值 335 MiB（设计 [media-service.md](design/media-service.md) 第 10 节）；包括 media 在内，MarsChat 全部容器空闲时合计约 1.2 GiB。2026-11-19 实测：应用容器各 15～56 MiB，Kafka 512 MiB、MySQL 452 MiB，MarsChat 合计约 1.2 GiB。
 - **日志**：JSON 格式，`docker compose logs -f access` 查看；同一服务的多个实例日志会合并输出，容器名区分实例。
 - **配置热更新**：配置目录挂载自宿主机，修改 `policy` 段后容器内同样自动生效（2026-11-19 验证，0.5 秒内出现 `config reloaded`）。
 - **故障实验**：`make cluster-test` 包含 7 项故障实验，全部运行约 4 分钟。实验会对 MarsChat 自己的容器执行 `docker kill`、`restart`、`pause`、`stop`（access、delivery、message、Kafka、Redis），结束时（包括失败）恢复并等待其在 Consul 中恢复 passing 或健康检查通过。实验期间不要同时使用这套环境。只跑集群测试时加 `-short`：`set -a && . ./.env && set +a && go test -tags cluster -short -v ./test/cluster/...`。实验结果见[重构计划](plans/active/backend-refactor.md#故障实验结果)。
@@ -177,6 +182,7 @@ APISIX `3.20.0`（镜像 `apache/apisix:3.20.0-debian`），Standalone 模式：
 | `/v1/auth/*`、`/v1/users/*`、`/v1/sessions`、`/v1/sessions/*`、`/v1/admin/*` | `marschat-account` |
 | `/v1/friend-requests[/*]`、`/v1/friends[/*]`、`/v1/blocks[/*]`、`/v1/groups[/*]`、`/v1/group-join-requests/*` | `marschat-social` |
 | `/v1/conversations[/*]` | `marschat-message` |
+| `/v1/files`、`/v1/files/*` | `marschat-media`（请求体上限 101 MiB，超过时网关直接返回 413；发送、读取超时 300 秒） |
 | `/ws`（WebSocket） | `marschat-access`（`least_conn`，读超时 120 秒） |
 
 - **服务发现**：按服务名取 Consul 中检查通过的实例，节点为服务的 `Address:Port`（HTTP 端口）。阻塞查询，实例变化约 1 秒内同步。HTTP 上游连接失败时换节点重试一次。2026-11-19 实测：杀掉一个 message 实例后连续请求没有失败，只有约 5 秒内的两个请求因 2 秒连接超时后重试而变慢；实例重启后约 2.5 秒重新接到流量。
@@ -188,6 +194,7 @@ APISIX `3.20.0`（镜像 `apache/apisix:3.20.0-debian`），Standalone 模式：
 curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 ```
 
+- **新增插件**：`config.yaml` 的插件列表要重启网关才生效（`docker compose --profile apps restart apisix`），而 `apisix.yaml` 是热更新的。在重启前就引用新插件的路由会被单独拒绝（错误日志 `unknown plugin`），其他路由不受影响；重启后正常。media 路由用到的 `client-control`（请求体上限）就是这样加入的。
 - **日志**：`docker compose logs -f apisix`，访问日志和错误日志都输出到容器的标准输出。
 
 ## 服务配置
@@ -204,9 +211,10 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 | `MARSCHAT_ACCOUNT_HTTP_ADDR` / `MARSCHAT_ACCOUNT_GRPC_ADDR` | `127.0.0.1:18010` / `127.0.0.1:19010` | account 监听地址 |
 | `MARSCHAT_SOCIAL_HTTP_ADDR` / `MARSCHAT_SOCIAL_GRPC_ADDR` | `127.0.0.1:18020` / `127.0.0.1:19020` | social 监听地址 |
 | `MARSCHAT_MESSAGE_HTTP_ADDR` / `MARSCHAT_MESSAGE_GRPC_ADDR` | `127.0.0.1:18030` / `127.0.0.1:19030` | message 监听地址 |
-| `MARSCHAT_ACCESS_HTTP_ADDR` / `MARSCHAT_ACCESS_GRPC_ADDR` | `127.0.0.1:18000` / `127.0.0.1:19100` | access 监听地址（WebSocket / 内部 gRPC）。gRPC 不用 19000：它留给步骤 6 的 MinIO |
+| `MARSCHAT_ACCESS_HTTP_ADDR` / `MARSCHAT_ACCESS_GRPC_ADDR` | `127.0.0.1:18000` / `127.0.0.1:19100` | access 监听地址（WebSocket / 内部 gRPC）。gRPC 不用 19000：它原本留给 MinIO，ADR-0007 后不再部署 MinIO，access 仍沿用 19100 |
 | `MARSCHAT_ACCESS_ADVERTISE_ADDR` | 空 | 写入在线路由的 access gRPC 地址，delivery 按它直连。留空时取注册到 Consul 的 gRPC 端点（宿主机为 `127.0.0.1:19100`，容器内为容器 IP），启动日志 `route address resolved` 中可以看到；只有经 NAT 等不同地址访问时才需要填写 |
 | `MARSCHAT_DELIVERY_GRPC_ADDR` | `127.0.0.1:19040` | delivery 监听地址 |
+| `MARSCHAT_MEDIA_HTTP_ADDR` / `MARSCHAT_MEDIA_GRPC_ADDR` | `127.0.0.1:18050` / `127.0.0.1:19050` | media 监听地址 |
 | `MARSCHAT_KAFKA_BROKERS` | `127.0.0.1:19092` | Kafka 地址，逗号分隔，`make e2e` 也读取它 |
 | `MARSCHAT_MYSQL_ADDR` | `127.0.0.1:13306` | MySQL 地址 |
 | `MARSCHAT_REDIS_ADDR` | `127.0.0.1:16379` | Redis 地址 |
@@ -222,6 +230,13 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 | `MARSCHAT_ACCOUNT_ENDPOINT` | `discovery:///marschat-account` | social、message 调用 account 的 gRPC 地址；也可以写 `127.0.0.1:19010` 这样的直连地址 |
 | `MARSCHAT_SOCIAL_ENDPOINT` | `discovery:///marschat-social` | message、delivery 调用 social 的地址 |
 | `MARSCHAT_MESSAGE_ENDPOINT` | `discovery:///marschat-message` | access 调用 message 的地址 |
+| `MARSCHAT_MEDIA_ENDPOINT` | `discovery:///marschat-media` | message 调用 media 的地址 |
+| `MARSCHAT_STORAGE_PROVIDER` | `local` | media 的文件存储：`local` 或 `oss`，见“文件存储” |
+| `MARSCHAT_MEDIA_LOCAL_DIR` | `data/media` | 本地存储目录，相对路径相对于工作目录；容器模式为 `/data/media` |
+| `MARSCHAT_MEDIA_PUBLIC_BASE_URL` | `http://127.0.0.1:18050` | 本地存储下载地址的前缀；容器模式为网关地址 `https://127.0.0.1:19443` |
+| `MARSCHAT_MEDIA_URL_SECRET` | 空 | 本地存储下载地址的签名密钥，`make keys` 生成 |
+| `MARSCHAT_OSS_REGION`、`MARSCHAT_OSS_BUCKET`、`MARSCHAT_OSS_ACCESS_KEY_ID`、`MARSCHAT_OSS_ACCESS_KEY_SECRET` | 空 | OSS 地域、Bucket 和 RAM 用户的 AccessKey，`oss` 存储必填 |
+| `MARSCHAT_OSS_ENDPOINT`、`MARSCHAT_OSS_KEY_PREFIX`、`MARSCHAT_OSS_PUBLIC_ENDPOINT` | 空、`marschat/`、空 | OSS 访问地址（留空按地域取公网地址）、对象键前缀、绑定的自定义域名 |
 
 宿主机运行时不做 TCP 探测（`registry.consul.tcp_check_interval` 为 `0s`），原因见 [system.md](architecture/system.md#53-服务注册与发现)。
 
@@ -252,7 +267,7 @@ message 的主要配置段（默认值见 [config.yaml](../app/message/configs/c
 | 配置段 | 内容 | 生效方式 |
 |---|---|---|
 | `auth`、`kafka`、`outbox` | 同 account；`kafka.session_timeout` 同 social | 重启 |
-| `social`、`account` | 地址、调用超时 1 秒 | 重启 |
+| `social`、`account`、`media` | 地址、调用超时 1 秒 | 重启 |
 | `policy` | 每人每 10 秒最多发 30 条消息（所有设备、所有会话合计）、`GetDifference` 一次最多 200 条、缺口超过 1000 条返回 `TOO_LONG` | **热更新** |
 
 access 的主要配置段（默认值见 [config.yaml](../app/access/configs/config.yaml)）：
@@ -273,6 +288,16 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `social` | 地址、调用超时 1 秒 | 重启 |
 | `push` | 调用 access `Push`、`Kick` 的超时 2 秒 | 重启 |
 | `policy` | `push_cooldown`：access 实例不可达（`Unavailable` 或超时）后的冷却期 5 秒（0～60 秒），期间发往它的推送直接跳过，日志出现 `access instance unreachable, connection evicted`；0 表示只摘除连接、下一次立即重新拨号 | **热更新** |
+
+media 的主要配置段（默认值见 [config.yaml](../app/media/configs/config.yaml)）：
+
+| 配置段 | 内容 | 生效方式 |
+|---|---|---|
+| `server` | HTTP 超时 300 秒（Kratos 对所有路由使用同一个超时，要覆盖 100 MB 上传） | 重启 |
+| `auth` | 同 account | 重启 |
+| `storage` | `provider`（`local` 或 `oss`）及对应的子段，见“文件存储” | 重启 |
+| `cache` | 文件元数据 1800 秒、空值标记 60 秒 | 重启 |
+| `policy` | 聊天文件上限 100 MiB、生成缩略图的图片上限 10 MiB、头像上限 5 MiB、图片像素上限 1600 万、缩略图最长边 320 像素、下载地址有效期 600 秒、每人每小时上传 60 次 | **热更新**；调大聊天文件上限超过 101 MiB 时，要同步调大网关 media 路由的 `client-control.max_body_size` |
 
 ### 验证码邮件
 
@@ -303,6 +328,41 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 - 发送失败（连接、认证、服务器拒收、超时）返回 `503 CODE_SEND_FAILED`，撤销本次的发送间隔和每日计数，可以立即重试；原因写在 account 的 ERROR 日志 `send verification code failed` 中（邮箱已脱敏）。
 - 运行 `make e2e`、`make cluster-test` 前把 `MARSCHAT_MAIL_PROVIDER` 改回 `log`（或注释掉），`MARSCHAT_MAIL_FIXED_CODE` 恢复为 `000000`：测试依赖固定验证码。
 
+### 文件存储
+
+media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md](design/media-service.md)，选型见 [ADR-0007](architecture/adr/0007-object-storage.md)。
+
+**本地目录（默认，`local`）**：文件写在仓库下的 `data/media/`（被 Git 忽略，media 启动时创建），下载经 media 的签名地址。
+
+- 目录结构：`files/<两位十六进制>/<文件 ID>` 为原文件，`thumbs/<两位十六进制>/<文件 ID>.jpg` 为缩略图，`tmp/` 为写入中的临时文件。
+- 签名密钥 `MARSCHAT_MEDIA_URL_SECRET` 由 `make keys` 生成（至少 32 个字符），缺失或过短时 media 启动失败。更换后已签发的下载地址失效，客户端重新换取即可，文件不受影响。
+- 下载地址前缀 `MARSCHAT_MEDIA_PUBLIC_BASE_URL`：宿主机运行为 `http://127.0.0.1:18050`（直连 media）；容器模式为 `https://127.0.0.1:19443`（经网关）。客户端访问的地址变化时要同步修改。
+- 容器模式把 `./data/media` 挂载到 media 容器的 `/data/media`，宿主机运行和容器模式共用同一份文件。media 只有一个实例；扩到多个实例时它们必须共享同一个目录。
+
+**阿里云 OSS（`oss`）**：上传经 media 写入 OSS，下载用 OSS 的 V4 预签名地址，客户端直连 OSS，不经过 media。
+
+1. 在 OSS 控制台创建 Bucket，读写权限选**私有**。
+2. 在 RAM 控制台创建 RAM 用户，只授予该 Bucket 的读写权限（`oss:PutObject`、`oss:GetObject`、`oss:DeleteObject`，资源限定为 `acs:oss:*:*:<bucket>/*`），生成 AccessKey。不要使用主账号的 AccessKey。
+3. 在 `.env` 中设置（变量名见 [.env.example](../.env.example)，AccessKey 只写在 `.env`）：
+
+   ```bash
+   MARSCHAT_STORAGE_PROVIDER=oss
+   MARSCHAT_OSS_REGION=cn-hangzhou          # Bucket 所在地域
+   MARSCHAT_OSS_BUCKET=<bucket 名称>
+   MARSCHAT_OSS_ACCESS_KEY_ID=<RAM 用户的 AccessKey ID>
+   MARSCHAT_OSS_ACCESS_KEY_SECRET=<RAM 用户的 AccessKey Secret>
+   ```
+
+4. 重启 media：宿主机重新 `make run-media`；容器模式 `docker compose --profile apps up -d media`。配置不完整时启动失败并列出缺少的项。启动时不访问 OSS，AccessKey 错误或 Bucket 不存在要到第一次上传时才会暴露（返回 `503 DEPENDENCY_UNAVAILABLE`，OSS 的错误码见 media 的请求日志）。
+
+说明：
+
+- `MARSCHAT_OSS_ENDPOINT` 留空时按地域使用公网地址；部署在同地域 ECS 上时可以填内网地址，节省流量费用。`MARSCHAT_OSS_KEY_PREFIX` 是对象键前缀（默认 `marschat/`），多个环境共用一个 Bucket 时用它区分。
+- 2019 年 9 月 23 日之后创建的 Bucket，用默认域名在浏览器标签页中直接打开图片会被强制下载；要预览时为 Bucket 绑定已备案的自定义域名，填入 `MARSCHAT_OSS_PUBLIC_ENDPOINT`（例如 `https://files.example.com`），预签名地址改用该域名。`<img>` 嵌入是否受影响在 OSS 手动验证中确认（尚未执行）。
+- 前端以后用 `fetch` 读取文件内容（而不只是 `<img>` 显示、链接下载）时，需要在 Bucket 上配置跨域（CORS）规则。
+- OSS 按存储量、请求次数和公网下行流量计费。开发时用完记得清理 Bucket，或者切回 `local`。
+- **切换存储不迁移已有文件**：每个文件记录了它写入时的存储，切换后，写在另一种存储中的文件在换取下载地址时被省略（客户端看到的是文件不可用），新上传的文件写入新存储。切回原来的存储，这些文件恢复可用。
+
 ## 开发命令
 
 | 命令 | 作用 |
@@ -311,14 +371,14 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `make lint` | `buf lint` |
 | `make vet` / `make test` | `go vet ./...` / `go test ./...` |
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |
-| `make e2e` | 端到端测试，需要依赖组件已启动、account、social、message 已迁移，五个服务都在运行；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理；`kafka_test.go` 使用专用 topic `marschat.e2e.events`、`marschat.e2e.retry` 和随机消费组，并在死信队列中查找本次写入的记录 |
+| `make e2e` | 端到端测试，需要依赖组件已启动、account、social、message、media 已迁移，六个服务都在运行（media 使用默认的本地存储，测试文件写入 `data/media/`）；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理；`kafka_test.go` 使用专用 topic `marschat.e2e.events`、`marschat.e2e.retry` 和随机消费组，并在死信队列中查找本次写入的记录 |
 | `make images` | 宿主机交叉编译全部服务并构建镜像 `marschat/<服务>:dev`，见“容器模式” |
 | `make certs` | 生成网关的自签证书到 `deploy/apisix/certs/`（已有时不覆盖） |
 | `make cluster-up` / `make cluster-down` | 启动容器模式的全部服务和网关 / 删除这些容器（依赖组件保持运行） |
 | `make cluster-test` | 集群测试与故障实验，需要容器模式已启动；客户端只经网关访问，清理网关来源 IP 的限流计数。故障实验会停止、暂停、重启 MarsChat 的容器，见“容器模式” |
-| `make keys` | 生成 JWT 密钥对写入 `.env` |
+| `make keys` | 生成 JWT 密钥对和 media 下载地址签名密钥写入 `.env`（已有的不覆盖） |
 | `make migrate-<服务>` | 数据库迁移，`ARGS` 传子命令 |
-| `make grant-admin PHONE=…` | 设置管理员 |
+| `make grant-admin EMAIL=…` | 设置管理员 |
 
 CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时执行：`buf lint`、`buf breaking`（PR 与基准分支比较，推送与上一次推送比较）、重新生成代码并检查与提交一致、`go mod tidy -diff`、`go vet`、`go build`、`go test -race`。e2e 需要 compose 环境，暂不在 CI 中运行。
 
@@ -350,3 +410,5 @@ make up
 ```
 
 `-v` 只删除 `compose.yaml` 中声明的 `marschat_*` 卷，不影响其他项目。
+
+media 本地存储的文件在仓库的 `data/media/` 目录中，不在数据卷里。清空数据库后这些文件不再有记录引用，确认不需要后手动删除该目录；使用 OSS 时在控制台清理 Bucket 中 `marschat/` 前缀下的对象。

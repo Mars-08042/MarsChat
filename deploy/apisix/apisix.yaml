@@ -30,6 +30,14 @@ upstreams:
     scheme: http
     retries: 1
     timeout: {connect: 2, send: 5, read: 5}
+  # 上传 100 MB 文件和下载本地存储的文件都可能很慢，读写超时与 media 的服务器超时（300 秒）一致
+  - id: media
+    discovery_type: consul
+    service_name: marschat-media
+    type: roundrobin
+    scheme: http
+    retries: 1
+    timeout: {connect: 2, send: 300, read: 300}
   # WebSocket 上游：长连接按当前连接数分配（least_conn）；读超时要大于客户端 30 秒的心跳间隔
   - id: access
     discovery_type: consul
@@ -95,6 +103,17 @@ routes:
       - /v1/conversations/*
     upstream_id: message
     plugin_config_id: http-default
+  # 上传、换取下载地址、本地存储的下载内容。请求体上限比 media 的文件上限（100 MiB）多 1 MiB，
+  # 超过时网关直接返回 413，不转发；精确的上限由 media 按用途检查
+  - id: media
+    uris:
+      - /v1/files
+      - /v1/files/*
+    upstream_id: media
+    plugin_config_id: http-default
+    plugins:
+      client-control:
+        max_body_size: 105906176
   # WebSocket：每个 IP 最多 50 条并发连接、每秒最多 10 次握手，防止大量建连和重连风暴
   - id: websocket
     uri: /ws

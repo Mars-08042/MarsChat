@@ -1,6 +1,6 @@
 # ADR-0005 分布式微服务目标架构与技术选型
 
-- 状态：已采纳（2026-11-18 开发者确认）
+- 状态：已采纳（2026-11-18 开发者确认）；决策 6 中的文件存储已被 [ADR-0007](0007-object-storage.md) 替代（2026-11-20）
 - 日期：2026-11-18
 - 关联：[后端重构计划](../../plans/active/backend-refactor.md)、[目标架构图](../../images/proposed-distributed-architecture.svg)
 
@@ -28,7 +28,7 @@
 3. **入口**：APISIX Standalone。HTTP 按路径直达业务服务，WebSocket 转发到 access。
 4. **服务发现与推送寻址**：服务注册发现用 Consul；delivery 推送时按 Redis 在线路由直连目标 access 实例，不经负载均衡。
 5. **消息**：Kafka 按会话分区；写库与发事件用事务 Outbox；消费至少一次加幂等；失败进重试队列，多次失败进死信队列。
-6. **存储**：MySQL 按服务分库；Redis 用于在线路由、缓存和限流；MinIO 存文件。
+6. **存储**：MySQL 按服务分库；Redis 用于在线路由、缓存和限流；MinIO 存文件。（2026-11-20 已被 ADR-0007 替代：MinIO 社区版已归档、镜像已删除，改为可切换的本地目录与阿里云 OSS。）
 7. **鉴权**：JWT 访问令牌加按设备签发的刷新令牌，Redis 吊销名单支持退出和封禁即时失效。
 8. **可观测**：OpenTelemetry + Jaeger；Prometheus + Grafana + Alertmanager。
 9. **仓库**：单仓库、单 Go module `github.com/Mars-08042/MarsChat`。

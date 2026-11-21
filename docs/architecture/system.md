@@ -1,11 +1,11 @@
 # 系统架构（当前状态）
 
-> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 5（2026-11-20）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
+> 本文描述**当前代码**的实际结构，随重构步骤更新，最近一次更新于步骤 6（2026-11-21）。目标架构与选型理由见 [ADR-0005](adr/0005-distributed-architecture.md)，进度见 [后端重构计划](../plans/active/backend-refactor.md)。旧的 Gin 单体结构已随步骤 0 删除，需要时查看提交 `6624cea`。
 
 ## 1. 部署形态
 
-- 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)。media 在步骤 6 实现。
-- 服务有两种运行方式：日常开发运行在宿主机，监听 `127.0.0.1`；容器模式（compose profile `apps`）中 access、message、delivery 各两个实例，客户端经 APISIX 网关（Standalone 模式，上游经 Consul 发现）访问。MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。设计见 [gateway-multi-instance.md](../design/gateway-multi-instance.md)。
+- 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)；media 提供文件上传、下载地址和给 message 用的内部文件查询，文件存储可切换（默认仓库下的本地目录 `data/media/`，可选阿里云 OSS，[ADR-0007](adr/0007-object-storage.md)），设计见 [media-service.md](../design/media-service.md)。
+- 服务有两种运行方式：日常开发运行在宿主机，监听 `127.0.0.1`；容器模式（compose profile `apps`）中 access、message、delivery 各两个实例（media 一个，本地存储挂载仓库的 `data/media`），客户端经 APISIX 网关（Standalone 模式，上游经 Consul 发现）访问。MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。设计见 [gateway-multi-instance.md](../design/gateway-multi-instance.md)。
 - 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
 ## 2. 仓库结构
@@ -38,10 +38,11 @@ pkg/outbox/              事务 Outbox：写入端与发布器（Redis 租约保
 pkg/kafka/               Kafka 生产者、消费者（按事件类型分发、手动提交、原地重试、重试队列、死信队列）与记录头约定
 pkg/route/               在线路由的 Redis 结构（access 写入、delivery 读取）
 pkg/clientip/            按可信代理解析客户端 IP
-tools/jwtkey/            生成开发用 JWT 密钥（make keys）
+tools/jwtkey/            生成开发用 JWT 密钥与 media 下载地址签名密钥（make keys）
 scripts/                 运维脚本（make grant-admin）
 deploy/                  依赖组件的初始化脚本
 test/e2e/                依赖 compose 环境的端到端测试（构建标签 e2e）
+data/media/              media 本地存储的文件（运行时创建，被 Git 忽略）
 ```
 
 `internal` 保证服务之间不能互相 import 实现代码，跨服务只能通过 `api/` 的接口或事件通信。
@@ -80,6 +81,7 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
   2. Kratos 并发停止各服务器：HTTP 服务器关闭监听（`http.Server.Shutdown` 不管已劫持的 WebSocket 连接）；Hub 拒绝新连接，把现有连接以 1001 分批关闭，分布在 `websocket.drain_window`（默认 5 秒）内，连接关闭时删除路由；gRPC 服务器由 `server.DrainingGRPCServer` 包装，等 Hub 排空后才停止，排空期间发往剩余连接的推送仍然有效；
   3. 每个服务器的停机超时为 15 秒（`kratos.StopTimeout`），超时后强制断开剩余连接。Compose 中 access 的 `stop_grace_period` 为 20 秒。
 - delivery 只有 gRPC 服务器（健康检查与注册）和消费者；`policy` 段（推送冷却期）热更新。
+- media 不连 Kafka、没有 Outbox。启动时按 `storage.provider` 创建文件存储：`local` 创建目录并试写一个临时文件，目录不可写或签名密钥少于 32 个字符时启动失败；`oss` 只检查配置是否完整，不访问网络。HTTP 服务器超时为 300 秒（Kratos 对所有路由使用同一个超时，要覆盖 100 MB 上传）。
 
 ## 5. 横切约定
 
@@ -89,7 +91,7 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
 - 配置文件中的 `${XXX}` 引用环境变量 `MARSCHAT_XXX`，`${XXX:默认值}` 在变量缺失时取默认值。默认值对应本地开发环境，密码只能来自环境变量。引用的变量缺失且没有默认值时会替换成空字符串，不会报错，密码缺失会在连接依赖时失败。
 - 时长字段按 protobuf `Duration` 的 JSON 格式书写，单位只能是秒（`0.5s`、`3600s`），写成 `500ms`、`1h` 会导致启动失败。每个服务都有解析真实配置文件的单元测试。
 - 配置结构用 protovalidate 规则约束（例如限额必须大于 0），加载时校验。
-- **热更新**：`bootstrap.WatchConfig` 监听某一段配置，文件变化后重新解析、校验，通过才原子替换，不通过时保留旧值并记录错误日志。目前热更新的有 account 的 `policy` 段（邮箱验证码与登录防护的限额）、social 的 `policy` 段（申请、建群频率与群成员上限）、message 的 `policy` 段（发消息频率、补拉上限与 `TOO_LONG` 阈值）和 access 的 `policy` 段（每连接上行帧频率），读取方每次使用时取一次快照；其余配置修改后需要重启。
+- **热更新**：`bootstrap.WatchConfig` 监听某一段配置，文件变化后重新解析、校验，通过才原子替换，不通过时保留旧值并记录错误日志。目前热更新的有 account 的 `policy` 段（邮箱验证码与登录防护的限额）、social 的 `policy` 段（申请、建群频率与群成员上限）、message 的 `policy` 段（发消息频率、补拉上限与 `TOO_LONG` 阈值）、access 的 `policy` 段（每连接上行帧频率）和 media 的 `policy` 段（各用途的大小上限、图片像素上限、缩略图尺寸、下载地址有效期、上传频率），读取方每次使用时取一次快照；其余配置修改后需要重启。
 
 ### 5.2 日志
 
@@ -112,6 +114,7 @@ test/e2e/                依赖 compose 环境的端到端测试（构建标签 
   | social → account | `BatchGetUsers`（好友、成员列表补全资料） | 1 秒 |
   | message → social | `CheckSendPermission`、`BatchGetGroups` | 1 秒 |
   | message → account | `BatchGetUsers`（会话列表补全对方资料） | 1 秒 |
+  | message → media | `GetFiles`（发送图片、文件消息时核实文件，文本消息不调用） | 1 秒 |
   | access → message | `SendMessage` | 3 秒 |
   | delivery → social | `ListAllGroupMembers` | 1 秒 |
   | delivery → access | `Push`、`Kick`，**按在线路由中的地址直连**，不经 Consul，每个地址缓存一条连接 | 2 秒 |
@@ -140,8 +143,10 @@ HTTP 与 gRPC 共用同一条中间件链，由 [bootstrap.ServerMiddlewares](..
 - 校验：解析阶段只接受 EdDSA（防算法混淆），检查签发方、受众、过期时间和签发时间；再用一次 `MGET` 查 Redis 吊销名单（会话级、用户级），最后把 `auth.Principal`（用户 ID、会话 ID、角色、签发时间）放进 context，业务代码用 `auth.FromContext` 取。
 - Redis 故障时吊销检查放行并记 WARN（开发者确认的取舍）。
 - 刷新令牌、吊销名单的细节见 [account 设计 3.2](../design/account-service.md#32-令牌)，键见 [data-model.md](data-model.md#3-redis-键)。
-- 内部接口（`AccountInternalService`、`SocialInternalService`、`MessageInternalService`、`AccessInternalService`）只注册在 gRPC 上，不经过令牌校验；服务网络不对外暴露，服务间认证见 TD-26。
+- 内部接口（`AccountInternalService`、`SocialInternalService`、`MessageInternalService`、`AccessInternalService`、`MediaInternalService`）只注册在 gRPC 上，不经过令牌校验；服务网络不对外暴露，服务间认证见 TD-26。
 - WebSocket 握手时浏览器不能带 `Authorization` 头，令牌放在第一帧，由 `pkg/auth.Verifier` 校验。它与中间件共用解析选项和吊销检查，单测让每个令牌用例同时经过两条路径并比对结论。连接建立后每次心跳用 `Verifier.IsRevoked` 复查吊销名单，见 [data-flow.md](data-flow.md#32-心跳与失效)。
+
+自定义 HTTP 处理函数：media 的上传（请求体是文件原始字节）和本地存储的下载内容不适合 protobuf JSON，不在 proto 中声明，用 `srv.Route("/").POST/GET` 注册。处理函数与生成代码的写法相同：先 `khttp.SetOperation` 设置操作名（`/media.v1.MediaService/UploadFile`、`/media.v1.MediaService/DownloadContent`），再把查询参数绑定到 proto 消息，经 `ctx.Middleware` 走同一条中间件链，访问日志、鉴权、参数校验和错误格式都与其他接口一致。下载内容由地址签名授权（浏览器的 `<img>` 带不了 `Authorization` 头），在 media 的鉴权白名单中。
 
 客户端 IP：`pkg/clientip` 只在请求来自 `security.trusted_proxies` 中的地址时才读取 `X-Forwarded-For`，并取最右边一个不可信的地址；默认不信任任何代理，步骤 5 填入网关地址。
 
@@ -152,7 +157,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 | 探针 | 位置 | 行为 |
 |---|---|---|
 | 存活 | HTTP `GET /healthz` | 进程能处理请求就返回 200，不检查依赖，依赖故障时重启进程没有意义 |
-| 就绪 | HTTP `GET /readyz` | 检查本服务的存储（account、social、message 为 MySQL 与 Redis，access 只有 Redis），全部可用返回 200，否则返回 503 和失败的依赖名；错误详情只写日志。被调用的其他服务和 Kafka 不在其中：它们故障时服务降级运行，不应被摘掉流量。delivery 没有 HTTP 服务器，只有 gRPC 健康检查 |
+| 就绪 | HTTP `GET /readyz` | 检查本服务的存储（account、social、message、media 为 MySQL 与 Redis，access 只有 Redis；media 不检查文件存储，OSS 暂时不可达时下载地址照常签发），全部可用返回 200，否则返回 503 和失败的依赖名；错误详情只写日志。被调用的其他服务和 Kafka 不在其中：它们故障时服务降级运行，不应被摘掉流量。delivery 没有 HTTP 服务器，只有 gRPC 健康检查 |
 | gRPC | `grpc.health.v1.Health` | Kratos 默认注册，服务启动后为 SERVING，停止时为 NOT_SERVING |
 
 ### 5.6 代码生成
@@ -176,12 +181,13 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 - Redis 客户端由 `pkg/bootstrap.NewRedis` 创建，带拨号保护：拨号失败后把 Redis 标记为不可达，期间的拨号直接返回上次的错误，后台每秒探测一次，探测成功后恢复；单次拨号不重试（`DialerRetries: 1`）。下面各处“Redis 故障时放行、回源、只记 WARN”的降级，都依赖命令在调用方的截止时间内失败。没有这层保护时，容器停止后解析服务名约 1 秒才失败，加上 go-redis 默认的拨号重试与命令重试，一条命令要耗几秒，见 [lessons/redis-dial-stall-docker-dns.md](../lessons/redis-dial-stall-docker-dns.md)。
 - 读缓存统一用 `pkg/cache`（Cache-Aside）：空值标记防穿透、singleflight 合并本实例的并发回源、TTL ±10% 抖动、Redis 故障时直接回源。写操作先提交数据库，再删除缓存；删除失败记 WARN。social 的群资料与成员列表还会在消费自己的群事件时再删一次（消费组 `marschat-social-cache`，Redis 故障时重试到成功）；account 的资料缓存没有对应事件，靠 TTL 兜底（TD-25）。
 - 热点键开启 `Options.RebuildLock`（目前只有群成员列表）：未命中时抢 `{key}:lock`（`SET NX PX 3000`），抢到的实例回源、回填后校验持有者再释放；没抢到的每 50 毫秒重读一次，最多 200 毫秒，仍未命中就直接回源。宁可多一次查询，也不让请求失败。
+- media 的文件元数据写入后不再修改，缓存只回填、不删除；文件 ID 不对外列举，只用空值标记防穿透，不加布隆过滤器。
 - 按 ID 查询、容易被随机 ID 穿透的数据（用户、群）在缓存未命中时先查 `pkg/bloom`。只有就绪标记和过滤器都在时才信任“不存在”；新 ID 在提交后加入，失败重试仍不成功则写脏标记并重建；多实例用 Redis 锁保证只有一个在重建。批量接口的 ID 来自内部数据，不查过滤器。
 - `BF.EXISTS` 在 go-redis v9 默认的 RESP3 下返回布尔值，读取用 `Cmd.Bool()`，见 [lessons/redis-resp3-reply-types.md](../lessons/redis-resp3-reply-types.md)。
 
 ### 5.8 错误
 
-- 业务错误用 Kratos errors，错误原因在各服务 proto 的 `ErrorReason` 枚举中定义（[account](../../api/account/v1/error_reason.proto)、[social](../../api/social/v1/error_reason.proto)、[message](../../api/message/v1/error_reason.proto)、[access](../../api/access/v1/error_reason.proto)），在 biz 层的 `errors.go` 中手写构造函数，不使用 errors 代码生成器。HTTP 状态码随错误类型确定：参数与验证码错误 400、凭据无效 401、封禁与无权限 403、不存在 404、冲突 409、限流 429、依赖故障 503。
+- 业务错误用 Kratos errors，错误原因在各服务 proto 的 `ErrorReason` 枚举中定义（[account](../../api/account/v1/error_reason.proto)、[social](../../api/social/v1/error_reason.proto)、[message](../../api/message/v1/error_reason.proto)、[access](../../api/access/v1/error_reason.proto)、[media](../../api/media/v1/error_reason.proto)），在 biz 层的 `errors.go` 中手写构造函数，不使用 errors 代码生成器。HTTP 状态码随错误类型确定：参数与验证码错误 400、凭据无效 401、封禁与无权限 403、不存在 404、冲突 409、限流 429、上传缺少长度 411、文件过大 413、类型不支持 415、依赖故障 503。
 - 发号（`pkg/idgen`）在节点号租约失效时返回 `idgen.ErrLeaseLost`（Redis 停机超过 30 秒），各服务 biz 层的 `nextID` 把它转成 `503 DEPENDENCY_UNAVAILABLE`，客户端稍后重试；其他发号错误（时钟大幅回拨）仍按内部错误处理。account 注册时先发号再校验验证码，租约失效不会白白消耗验证码。
 - 错误体为 `{"code", "reason", "message", "metadata"}`。`message` 是给用户看的中文提示；客户端按 `reason` 分支处理，不解析 `message`。
 - 限流类错误（429）在 `metadata.retry_after_seconds` 中给出需要等待的秒数。
@@ -201,7 +207,7 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 
 ### 5.10 测试
 
-- 单元测试不依赖外部服务，`go test ./...` 即可运行。biz 层用内存假 repo；Redis 相关逻辑（Lua 脚本、限流、缓存与重建锁、ID 租约、吊销名单、Outbox 租约、在线路由的字段级 TTL）用 miniredis。access 的连接管理用 `httptest` 加真实的 gorilla/websocket 客户端测试；Kafka 消费者和 Outbox 发布器用假的拉取与发送接口测试。
+- 单元测试不依赖外部服务，`go test ./...` 即可运行。biz 层用内存假 repo；Redis 相关逻辑（Lua 脚本、限流、缓存与重建锁、ID 租约、吊销名单、Outbox 租约、在线路由的字段级 TTL）用 miniredis。access 的连接管理用 `httptest` 加真实的 gorilla/websocket 客户端测试；media 的自定义处理函数用真实的 Kratos HTTP 服务器、中间件链和本地存储测试（`app/media/internal/server/http_test.go`），OSS 实现用 `httptest` 假服务器验证请求、离线验证预签名地址；Kafka 消费者和 Outbox 发布器用假的拉取与发送接口测试。
 - miniredis 不支持 RedisBloom，`pkg/bloom` 的测试在 `test/e2e/bloom_test.go`，连真实 Redis，用“把过滤器的键改成字符串”注入 `BF.INSERT` 失败。
 - 依赖 compose 环境和已启动服务的测试放在 `test/e2e`，带 `e2e` 构建标签，用 `make e2e` 运行；它会加载 `.env`，测试用其中的密码直接连 Redis、MySQL 做准备工作（清理本机 IP 的限流计数、设置管理员）。
 - 容器模式的集群测试与故障实验放在 `test/cluster`，带 `cluster` 构建标签，用 `make cluster-test` 运行，客户端只经网关访问。两组测试共用 `test/testkit` 中的 HTTP 调用、注册、WebSocket 收发和 Redis 读取函数，区别只在地址。
@@ -219,6 +225,8 @@ HTTP 编码：请求和响应按 protobuf JSON 规则（字段名 lowerCamelCase
 | gorilla/websocket | v1.5.3 | WebSocket（access） |
 | golang.org/x/crypto | v0.59.0 | bcrypt |
 | golang.org/x/sync | v0.25.0 | singleflight |
+| golang.org/x/image | v0.48.0 | 缩略图缩放（CatmullRom）与 WebP 解码（media） |
+| alibabacloud-oss-go-sdk-v2 | v1.6.1 | 阿里云 OSS 官方 SDK（media 的 oss 存储） |
 | miniredis | v2.40.0 | 单元测试中的 Redis |
 | hashicorp/consul/api | v1.35.0 | Consul 客户端 |
 | GORM + MySQL 驱动 | v1.31.2 / v1.6.0 | 数据访问 |

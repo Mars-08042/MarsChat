@@ -31,7 +31,7 @@ const (
 
 // TestMain 确认测试面对的是容器模式：宿主机运行的实例注册的是 127.0.0.1，网关和容器都访问不到。
 func TestMain(m *testing.M) {
-	for _, svc := range []string{"account", "social", "message", "access", "delivery"} {
+	for _, svc := range []string{"account", "social", "message", "access", "delivery", "media"} {
 		addrs, err := passingAddrs("marschat-" + svc)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "query consul: %v (is make cluster-up running?)\n", err)

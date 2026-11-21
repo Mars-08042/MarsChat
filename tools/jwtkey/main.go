@@ -1,9 +1,10 @@
-// jwtkey 生成开发用的 Ed25519 密钥对，追加到 .env：
+// jwtkey 生成开发用的密钥，追加到 .env：
 //
-//	MARSCHAT_JWT_PRIVATE_KEY  私钥种子（32 字节）的 base64，只有 account 使用
+//	MARSCHAT_JWT_PRIVATE_KEY  Ed25519 私钥种子（32 字节）的 base64，只有 account 使用
 //	MARSCHAT_JWT_PUBLIC_KEY   公钥的 base64，所有服务用来校验访问令牌
+//	MARSCHAT_MEDIA_URL_SECRET 32 字节随机数的 base64，media 本地存储用来签名下载地址
 //
-// .env 中已有这两个变量时不做任何修改，避免覆盖后已签发的令牌全部失效。
+// 每组密钥单独判断：.env 中已有的不做任何修改，避免覆盖后已签发的令牌或下载地址全部失效。
 // 不打印密钥内容。
 package main
 
@@ -18,7 +19,10 @@ import (
 	"regexp"
 )
 
-var existing = regexp.MustCompile(`(?m)^MARSCHAT_JWT_(PRIVATE|PUBLIC)_KEY=`)
+var (
+	existingJWT       = regexp.MustCompile(`(?m)^MARSCHAT_JWT_(PRIVATE|PUBLIC)_KEY=`)
+	existingURLSecret = regexp.MustCompile(`(?m)^MARSCHAT_MEDIA_URL_SECRET=.+`)
+)
 
 func main() {
 	path := flag.String("env", ".env", "要写入的 .env 文件")
@@ -34,33 +38,47 @@ func run(path string) error {
 	if err != nil {
 		return fmt.Errorf("read %s (copy .env.example to .env first): %w", path, err)
 	}
-	if existing.Match(content) {
-		fmt.Printf("%s already contains JWT keys, nothing changed\n", path)
+
+	var buf bytes.Buffer
+	var added []string
+	if existingJWT.Match(content) {
+		fmt.Printf("%s already contains JWT keys, kept\n", path)
+	} else {
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&buf, "MARSCHAT_JWT_PRIVATE_KEY=%s\n", base64.StdEncoding.EncodeToString(priv.Seed()))
+		fmt.Fprintf(&buf, "MARSCHAT_JWT_PUBLIC_KEY=%s\n", base64.StdEncoding.EncodeToString(pub))
+		added = append(added, "JWT key pair")
+	}
+	if existingURLSecret.Match(content) {
+		fmt.Printf("%s already contains MARSCHAT_MEDIA_URL_SECRET, kept\n", path)
+	} else {
+		secret := make([]byte, 32)
+		_, _ = rand.Read(secret) // crypto/rand.Read 不会返回错误
+		fmt.Fprintf(&buf, "MARSCHAT_MEDIA_URL_SECRET=%s\n", base64.StdEncoding.EncodeToString(secret))
+		added = append(added, "media URL secret")
+	}
+	if buf.Len() == 0 {
 		return nil
 	}
-
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
-	var buf bytes.Buffer
+	out := buf.Bytes()
 	if len(content) > 0 && !bytes.HasSuffix(content, []byte("\n")) {
-		buf.WriteByte('\n')
+		out = append([]byte("\n"), out...)
 	}
-	fmt.Fprintf(&buf, "MARSCHAT_JWT_PRIVATE_KEY=%s\n", base64.StdEncoding.EncodeToString(priv.Seed()))
-	fmt.Fprintf(&buf, "MARSCHAT_JWT_PUBLIC_KEY=%s\n", base64.StdEncoding.EncodeToString(pub))
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(buf.Bytes()); err != nil {
+	if _, err := f.Write(out); err != nil {
 		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
 		return err
 	}
-	fmt.Printf("JWT key pair appended to %s\n", path)
+	fmt.Printf("appended %v to %s\n", added, path)
 	return nil
 }

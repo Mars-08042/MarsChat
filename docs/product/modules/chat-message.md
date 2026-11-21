@@ -1,6 +1,6 @@
 # 会话与消息
 
-> **重构说明（2026-11-19）**：“新实现”一节描述 message、access、delivery 的当前代码；其后各节描述已移除的旧基线（截至提交 `6624cea`），其中的代码位置已不存在，只作功能参考。
+> **重构说明（2026-11-19）**：两个“新实现”小节描述 message、access、delivery 和 media（步骤 6）的当前代码；其后各节描述已移除的旧基线（截至提交 `6624cea`），其中的代码位置已不存在，只作功能参考。
 
 ## 新实现（重构步骤 4）
 
@@ -21,7 +21,7 @@
 - 连接首帧认证、心跳续期在线路由、慢连接断开；被踢、封禁、退出登录会立即断开连接（修正旧基线握手不校验身份、连接生命周期混乱的问题）。
 - 推送经 Kafka 和 delivery 跨实例投递，推送尽力而为，可靠性靠补拉（`GetDifference`）保证；历史消息分页。
 - 会话不再需要“打开”：第一条消息时自动创建；群会话的成员随入群、退群事件变化，新成员能看历史但不算未读。删除会话（旧基线的 `deleteSession`）暂未实现。
-- 消息类型目前只有文本（`TextContent`，1～4000 字符）。文件、图片等随 media 服务在步骤 6 加入，通话信令在步骤 7 加入。
+- 消息类型有文本（`TextContent`，1～4000 字符）、图片（`ImageContent`）和文件（`FileContent`），图片与文件见下一节；通话信令在步骤 7 加入。
 
 接口（HTTP 全部需要登录，同名的 gRPC 方法见 proto）：
 
@@ -37,7 +37,37 @@
 | `MessageInternalService.SendMessage` | 仅 gRPC（内网） | access 调用，发送者取自已认证的连接 |
 | `AccessInternalService.Push` / `Kick` | 仅 gRPC（内网） | delivery 按在线路由直连调用 |
 
-错误原因见 [message](../../../api/message/v1/error_reason.proto)、[access](../../../api/access/v1/error_reason.proto) 的 `error_reason.proto`；发言权限的拒绝原因沿用 social 的错误（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）。
+错误原因见 [message](../../../api/message/v1/error_reason.proto)、[access](../../../api/access/v1/error_reason.proto) 的 `error_reason.proto`；发言权限的拒绝原因沿用 social 的错误（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）；图片、文件消息另有 `FILE_INVALID`，见下一节。
+
+## 新实现：文件与图片（重构步骤 6）
+
+media 服务提供上传、下载地址和给 message 用的内部文件查询。设计见 [media-service.md](../../design/media-service.md)，存储选型见 [ADR-0007](../../architecture/adr/0007-object-storage.md)，上传与下载流程见 [data-flow.md](../../architecture/data-flow.md#8-文件上传与下载)，表与 Redis 键见 [data-model.md](../../architecture/data-model.md#24-mediamarschat_media迁移-000001_init)。
+
+| 层 | 位置 |
+|---|---|
+| 接口 | `api/media/v1/media.proto`、`internal.proto`、`error_reason.proto`；消息内容 `ImageContent`、`FileContent` 在 `api/message/v1/message.proto` |
+| media | `app/media/internal/biz/file.go`（上传、下载权限、内部查询）、`image.go`（缩略图）、`filename.go`（文件名清理与响应头）；`internal/data/local.go`、`oss.go`（两种存储）；`internal/service/media.go`（自定义的上传与下载处理函数） |
+| message | `app/message/internal/biz/message.go`（`resolveContent` 核实文件并覆盖元数据）、`internal/data/upstream.go`（调用 media） |
+
+与旧基线的主要差别：
+
+- 文件由服务端生成 ID，按内容识别类型（不信任扩展名和客户端声明的类型），文件名清理后只用于下载时的 `Content-Disposition`；旧基线按原文件名保存在静态目录、任何人拿到链接都能下载。
+- 聊天文件需要访问密钥（随消息下发）或是上传者才能换取下载地址，地址 10 分钟有效；头像对所有登录用户公开。
+- 图片消息有独立类型，带宽高和缩略图（最长边 320 像素）；旧基线所有文件都按文件卡片展示。
+- 存储可切换：默认仓库下的本地目录，可选阿里云 OSS。
+
+接口（HTTP 除下载内容外都需要登录，同名的 gRPC 方法见 proto）：
+
+| 方法 | HTTP / 通道 | 说明 |
+|---|---|---|
+| `UploadFile` | `POST /v1/files?purpose=&name=` | 请求体是文件的原始字节（不是 multipart），必须带 `Content-Length`。`purpose` 为 `PURPOSE_CHAT`（最大 100 MiB）或 `PURPOSE_AVATAR`（最大 5 MiB，必须是 JPEG、PNG、GIF、WebP）；`name` 最长 1024 字节，清理后保留 255 字节。返回 `FileInfo`：`id`、`accessKey`、`kind`（`FILE_KIND_IMAGE` / `FILE_KIND_FILE`）、`name`、`size`、`mimeType`、`width`、`height`、`hasThumbnail` |
+| `GetDownloadUrls` | `POST /v1/files/download-urls` | `items` 1～100 项，每项 `fileId`、`accessKey`（头像和自己上传的文件可以不填）、`variant`（`VARIANT_ORIGINAL` / `VARIANT_THUMBNAIL`）。返回有权限的项的 `url` 与 `expiresAt`，其余省略，不区分原因 |
+| `DownloadContent` | `GET /v1/files/{file_id}/content?variant=&expires=&signature=` | 只在本地存储下使用，不需要登录，由签名授权，可以直接用于 `<img src>`；支持 `Range`。OSS 的下载地址指向 OSS，不经过 media |
+| `MediaInternalService.GetFiles` | 仅 gRPC（内网） | message 发送图片、文件消息时调用，最多 100 个，不存在的 ID 跳过 |
+
+图片、文件消息：客户端把 `FileInfo` 的 `id`、`accessKey` 填入 `ImageContent` / `FileContent` 经 WebSocket 发送，其余字段由 message 用 media 的记录覆盖。文件不存在、访问密钥不匹配、用途不是聊天，或图片消息引用的不是图片时返回 `400 FILE_INVALID`；media 不可用时返回 `503 DEPENDENCY_UNAVAILABLE`。转发时带上原消息中的文件 ID 和访问密钥即可，不要求发送者是上传者。
+
+错误原因见 [media](../../../api/media/v1/error_reason.proto) 的 `error_reason.proto`：`411 LENGTH_REQUIRED`、`413 FILE_TOO_LARGE`（`metadata.max_bytes` 为上限）、`415 UNSUPPORTED_FILE_TYPE`、`400 UPLOAD_INCOMPLETE`（请求体没读完）、`403 DOWNLOAD_URL_INVALID`（签名错误或过期）、`429 RATE_LIMITED`（每人每小时上传 60 次）。
 
 ## 职责
 

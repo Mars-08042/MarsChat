@@ -6,6 +6,7 @@ require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1
 	buf.build/go/protovalidate v1.2.0
 	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.1
 	github.com/go-kratos/kratos/contrib/middleware/jwt/v3 v3.0.0-20261026152050-dd0fb7df1e32
 	github.com/go-kratos/kratos/contrib/middleware/validate/v3 v3.0.0-20261026152050-dd0fb7df1e32
 	github.com/go-kratos/kratos/contrib/registry/consul/v3 v3.0.0-20261026152050-dd0fb7df1e32
@@ -17,6 +18,7 @@ require (
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/twmb/franz-go v1.22.3
 	golang.org/x/crypto v0.59.0
+	golang.org/x/image v0.48.0
 	golang.org/x/sync v0.25.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260511170946-3700d4141b60
 	google.golang.org/grpc v1.81.0
@@ -63,6 +65,7 @@ require (
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
+	golang.org/x/time v0.4.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

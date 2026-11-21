@@ -61,11 +61,41 @@ message TextContent {
   }];
 }
 
-// MessageContent 是消息正文，按类型取其中一种。文件、图片等类型在 media 服务就绪后加入。
+// ImageContent 是图片消息。文件先经 media 上传（用途 PURPOSE_CHAT），发送时只需填 file_id 和 access_key；
+// 其余字段由 message 按 media 的记录填写，客户端上送的值被覆盖。文件必须是已生成缩略图的图片，
+// 否则返回 FILE_INVALID。接收方凭 file_id 和 access_key 调用 media 的 GetDownloadUrls 换取缩略图与原图地址。
+message ImageContent {
+  int64 file_id = 1 [(buf.validate.field).int64.gt = 0];
+  string access_key = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string name = 3;
+  int64 size = 4;
+  string mime_type = 5;
+  int32 width = 6;
+  int32 height = 7;
+}
+
+// FileContent 是文件消息，规则同 ImageContent，任意类型的聊天文件都可以发送。
+message FileContent {
+  int64 file_id = 1 [(buf.validate.field).int64.gt = 0];
+  string access_key = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string name = 3;
+  int64 size = 4;
+  string mime_type = 5;
+}
+
+// MessageContent 是消息正文，按类型取其中一种。
 message MessageContent {
   oneof body {
     option (buf.validate.oneof).required = true;
     TextContent text = 1;
+    ImageContent image = 2;
+    FileContent file = 3;
   }
 }
 

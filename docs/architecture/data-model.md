@@ -39,7 +39,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `email` | `VARCHAR(254)` | 唯一索引 `uk_email`；服务端统一转为小写后写入，排序规则 `utf8mb4_0900_ai_ci` 本身也不区分大小写。`000002_email` 替换了原来的 `phone` 列，已有数据填占位邮箱 `u{id}@legacy.invalid`（保留域名，发送方拒绝向它发信） |
 | `password_hash` | `VARCHAR(100)` | bcrypt（cost 12） |
 | `nickname` | `VARCHAR(32)` | 接口限制 1～16 个字符 |
-| `avatar` | `VARCHAR(64)` | media 文件 ID，步骤 6 前为空 |
+| `avatar` | `VARCHAR(64)` | media 文件 ID（用途为头像），不校验；步骤 6 前为空 |
 | `gender` | `TINYINT` | 0 未设置、1 男、2 女 |
 | `birthday` | `DATE NULL` | |
 | `signature` | `VARCHAR(100)` | |
@@ -192,6 +192,38 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 发消息的事务边界、死锁规避与并发 e2e 结果见 [message-pipeline 设计 3.4](../design/message-pipeline.md#34-message)。
 
+图片与文件消息（步骤 6）的 `content` 为 `ImageContent` / `FileContent`，只引用 media 的文件 ID 与访问密钥，名称、大小、类型、尺寸由 message 按 media 的记录填写，见 [media 服务设计 3.8](../design/media-service.md#38-图片消息与文件消息)。
+
+### 2.4 media（`marschat_media`，迁移 `000001_init`）
+
+文件内容在文件存储中（默认仓库下的 `data/media/`，可切换为阿里云 OSS，见 [ADR-0007](adr/0007-object-storage.md)），数据库只存元数据。对象键由 ID 推出：原文件 `files/{id}`，缩略图 `thumbs/{id}.jpg`；本地存储再按文件名哈希分到 256 个子目录，OSS 加上 `key_prefix`。
+
+**files**（写入后不再修改）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `BIGINT` PK | snowflake，即文件 ID |
+| `uploader_id` | `BIGINT` | |
+| `purpose` | `TINYINT` | 1 聊天、2 头像 |
+| `kind` | `TINYINT` | 1 普通文件、2 图片（已解码并生成缩略图） |
+| `name` | `VARCHAR(255)` | 清理后的文件名（去掉路径与控制字符，按 UTF-8 字符边界截断到 255 字节） |
+| `size` | `BIGINT` | 字节数 |
+| `mime_type` | `VARCHAR(127)` | `http.DetectContentType` 按内容识别的类型 |
+| `sha256` | `BINARY(32)` | |
+| `width` / `height` | `INT` | 图片原始宽高，普通文件为 0 |
+| `thumbnail_size` | `INT` | 缩略图字节数，没有为 0 |
+| `access_key` | `BINARY(16)` | 访问密钥，接口中为 22 个字符的 base64url |
+| `storage` | `TINYINT` | 写入时的存储：1 local、2 oss；签发下载地址时跳过不在当前存储中的文件 |
+| `created_at` | `DATETIME(3)` | |
+
+media 不发事件，没有 `outbox_events` 表。用户与群的头像字段（`users.avatar`、`chat_groups.avatar`，`VARCHAR(64)`）保存 media 文件 ID 的十进制字符串，account、social 不校验。
+
+索引与查询（`EXPLAIN` 于 2026-11-21 在 MySQL 9.7.4 上核对）：
+
+| 索引 | 查询 | 说明 |
+|---|---|---|
+| `files.PRIMARY` | 元数据回源 `WHERE id = ?`；下载地址与内部 `GetFiles` 批量回源 `WHERE id IN (...)`（最多 100 个） | 常量查找 / 主键点范围扫描；不需要二级索引 |
+
 ## 3. Redis 键
 
 所有键带服务前缀。限额类数值来自可热更新的 `policy` 配置，表中为默认值。
@@ -218,8 +250,10 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `social:rl:friend_request:{uid}` | ZSET | 窗口长度 | `pkg/ratelimit` | 每人每小时 20 条好友申请 |
 | `social:rl:group_create:{uid}` | ZSET | 窗口长度 | 同上 | 每人每天（滑动 24 小时）建 10 个群 |
 | `social:rl:join_request:{uid}` | ZSET | 窗口长度 | 同上 | 每人每小时 20 次入群（直接加入也计入）；social 的限流在 Redis 故障时都放行 |
-| `idgen:node:{n}` | String，值为实例 ID | 30 秒，每 10 秒续期 | 启动时 `SET NX` 抢占节点号 | snowflake 节点号租约（所有服务共用 0～1023） |
+| `idgen:node:{n}` | String，值为实例 ID | 30 秒，每 10 秒续期，续期失败后每秒重试（TD-39） | 启动时 `SET NX` 抢占节点号 | snowflake 节点号租约（所有服务共用 0～1023） |
 | `message:rl:send:{uid}` | ZSET | 窗口长度 | `pkg/ratelimit` | 每人每 10 秒 30 条消息（所有设备、所有会话合计），Redis 故障时放行 |
+| `media:file:{id}` | String（1 字节标记 + JSON） | 30 分钟 ±10%；空值标记 1 分钟 | 回源时写入；记录不会修改，不需要删除 | 文件元数据缓存（Cache-Aside），下载地址与 `GetFiles` 批量读取；不加布隆过滤器（文件 ID 不对外列举） |
+| `media:rl:upload:{uid}` | ZSET | 窗口长度 | `pkg/ratelimit` | 每人每小时 60 次上传，Redis 故障时放行 |
 | `access:route:{uid}` | Hash：字段为连接 ID，值为 `{session_id}\|{access gRPC 地址}` | **字段级** 90 秒（心跳超时） | access 认证成功和每次心跳时 `HSETEX ... PX`，连接关闭时 `HDEL` | 在线路由（`pkg/route`），delivery 推送前用 pipeline `HGETALL`。`HSETEX` 需要 Redis 8.0+ |
 | `delivery:done:{event_id}` | String | 1 小时 | 推送前 `SET NX` | 推送去重：已存在就跳过，覆盖消费者重启、再均衡后的重复投递 |
 | `outbox:lease:{service}` | String，值为实例 ID | 10 秒，每 3 秒续期 | 发布器 `SET NX PX` 抢占，续期与释放都校验持有者 | 每个服务同时只有一个实例发布 Outbox（account、social、message） |

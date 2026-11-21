@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,7 @@ type MessageUsecase struct {
 	msgs    MessageRepo
 	events  EventRepo
 	perm    PermissionChecker
+	files   FileService
 	limiter RateLimiter
 	ids     IDGenerator
 	policy  *PolicyHolder
@@ -29,9 +31,9 @@ type MessageUsecase struct {
 
 // NewMessageUsecase 创建发送用例。
 func NewMessageUsecase(tx Transaction, convs ConversationRepo, members MemberRepo, msgs MessageRepo, events EventRepo,
-	perm PermissionChecker, limiter RateLimiter, ids IDGenerator, policy *PolicyHolder, logger *slog.Logger) *MessageUsecase {
+	perm PermissionChecker, files FileService, limiter RateLimiter, ids IDGenerator, policy *PolicyHolder, logger *slog.Logger) *MessageUsecase {
 	return &MessageUsecase{tx: tx, convs: convs, members: members, msgs: msgs, events: events,
-		perm: perm, limiter: limiter, ids: ids, policy: policy, logger: logger}
+		perm: perm, files: files, limiter: limiter, ids: ids, policy: policy, logger: logger}
 }
 
 // SendInput 是一次发送请求。发送者和连接来自 access 上已鉴权的连接。
@@ -47,7 +49,7 @@ type SendInput struct {
 // Send 写入一条消息并返回它；同一发送者在同一会话中重复的 client_msg_id 返回首次写入的消息。
 //
 // 顺序（设计 3.4）：限流 → 只读地解析会话 → 幂等快速路径 → 调用 social 校验权限（事务外）
-// → 事务内锁会话行分配 seq、写消息、推进发送者已读位置、写 Outbox 事件。
+// → 图片、文件消息向 media 核实文件（事务外）→ 事务内锁会话行分配 seq、写消息、推进发送者已读位置、写 Outbox 事件。
 func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, error) {
 	if err := uc.checkRate(ctx, in.SenderID); err != nil {
 		return nil, err
@@ -89,6 +91,10 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 		}
 		return nil, err
 	}
+	content, err := uc.resolveContent(ctx, in.SenderID, in.Content)
+	if err != nil {
+		return nil, err
+	}
 
 	var (
 		created *Message
@@ -106,7 +112,7 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 			Seq:            c.MaxSeq + 1,
 			SenderID:       in.SenderID,
 			ClientMsgID:    in.ClientMsgID,
-			Content:        in.Content,
+			Content:        content,
 			CreatedAt:      now,
 		}
 		// 撞上 uk_client 时整个事务回滚，max_seq 不变，seq 不会出现空洞
@@ -138,6 +144,49 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 		return nil, err
 	}
 	return created, nil
+}
+
+// resolveContent 核实图片、文件消息引用的文件，并用 media 的记录重建内容：名称、大小、类型和尺寸都不信任客户端。
+// 文件不存在、访问密钥不匹配、不是聊天文件、图片消息引用的不是带缩略图的图片，一律返回 FILE_INVALID，不区分原因。
+// 不要求发送者是上传者：转发时访问密钥随消息一起转发，能看到消息的人就能使用文件。
+// 文本消息不调用 media，media 故障不影响文本消息。
+func (uc *MessageUsecase) resolveContent(ctx context.Context, senderID int64, c *v1.MessageContent) (*v1.MessageContent, error) {
+	var (
+		fileID    int64
+		accessKey string
+		image     bool
+	)
+	switch b := c.GetBody().(type) {
+	case *v1.MessageContent_Image:
+		fileID, accessKey, image = b.Image.GetFileId(), b.Image.GetAccessKey(), true
+	case *v1.MessageContent_File:
+		fileID, accessKey = b.File.GetFileId(), b.File.GetAccessKey()
+	default:
+		return c, nil
+	}
+	files, err := uc.files.GetFiles(ctx, []int64{fileID})
+	if err != nil {
+		if errors.Is(err, ErrUnavailable) {
+			uc.logger.Warn("get file from media failed", slog.Int64("sender_id", senderID), slog.Int64("file_id", fileID), slog.Any("error", err))
+			return nil, ErrDependencyUnavailable()
+		}
+		return nil, err
+	}
+	f := files[fileID]
+	if f == nil || f.Purpose != FilePurposeChat || subtle.ConstantTimeCompare([]byte(f.AccessKey), []byte(accessKey)) != 1 {
+		return nil, ErrFileInvalid()
+	}
+	if image {
+		if f.Kind != FileKindImage || !f.HasThumbnail {
+			return nil, ErrFileInvalid()
+		}
+		return &v1.MessageContent{Body: &v1.MessageContent_Image{Image: &v1.ImageContent{
+			FileId: f.ID, AccessKey: f.AccessKey, Name: f.Name, Size: f.Size, MimeType: f.MimeType, Width: f.Width, Height: f.Height,
+		}}}, nil
+	}
+	return &v1.MessageContent{Body: &v1.MessageContent_File{File: &v1.FileContent{
+		FileId: f.ID, AccessKey: f.AccessKey, Name: f.Name, Size: f.Size, MimeType: f.MimeType,
+	}}}, nil
 }
 
 // lockConversation 锁住会话行，会话不存在时先创建。

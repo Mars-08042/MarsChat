@@ -122,7 +122,8 @@ func (g *Generator) acquire(ctx context.Context) error {
 	return ErrNoFreeNode
 }
 
-// renewLoop 定期续期；租约失效期间改为每秒重试，Redis 恢复后尽快恢复发号。
+// renewLoop 定期续期。续期失败或租约失效期间改为每秒重试：Redis 短暂不可用后能在本地截止时间前续上，
+// 而不是等满 renewEvery——那样下一轮续期可能恰好晚于截止时间，中间出现发号失败的窗口（TD-39）。
 func (g *Generator) renewLoop(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	timer := time.NewTimer(renewEvery)
@@ -132,29 +133,34 @@ func (g *Generator) renewLoop(stop <-chan struct{}, done chan<- struct{}) {
 		case <-stop:
 			return
 		case <-timer.C:
-			g.renew()
-			next := renewEvery
-			if !g.holding() {
-				next = retryEvery
-			}
-			timer.Reset(next)
+			timer.Reset(g.nextRenewDelay(g.renew()))
 		}
 	}
+}
+
+// nextRenewDelay 返回下一次续期的间隔：本次续上且租约有效时按 renewEvery，否则按 retryEvery 尽快重试。
+func (g *Generator) nextRenewDelay(renewed bool) time.Duration {
+	if renewed && g.holding() {
+		return renewEvery
+	}
+	return retryEvery
 }
 
 func (g *Generator) holding() bool {
 	return g.now().UnixMilli() < g.leaseUntil.Load()
 }
 
-func (g *Generator) renew() {
+// renew 续期当前节点号，键已失效时换一个空闲节点号。返回是否持有有效租约（续上或换到了新节点号）。
+func (g *Generator) renew() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	begin := g.now()
 	n, err := renewScript.Run(ctx, g.rdb, []string{g.key()}, g.owner, leaseTTL.Milliseconds()).Int64()
 	switch {
 	case err != nil:
-		// 网络抖动时下一轮再试，租约在本地截止时间前仍然有效；过了截止时间发号返回 ErrLeaseLost
+		// 网络抖动时尽快重试，租约在本地截止时间前仍然有效；过了截止时间发号返回 ErrLeaseLost
 		g.logger.Warn("renew idgen node lease failed", slog.Int64("node", g.Node()), slog.Any("error", err))
+		return false
 	case n == 0:
 		// 键已过期（Redis 停机超过 TTL）或被其他实例占用，不能再续这个节点号。
 		// 立即停止用它发号，再换一个空闲节点号：新节点号上的 ID 不会与旧节点号的 ID 冲突，不必等旧租约到期
@@ -164,11 +170,13 @@ func (g *Generator) renew() {
 		g.mu.Unlock()
 		if err := g.acquire(ctx); err != nil {
 			g.logger.Error("idgen node lease lost, reacquire failed", slog.Int64("node", old), slog.Any("error", err))
-			return
+			return false
 		}
 		g.logger.Warn("idgen node lease lost, switched to a new node", slog.Int64("old_node", old), slog.Int64("node", g.Node()))
+		return true
 	default:
 		g.leaseUntil.Store(begin.Add(leaseTTL).UnixMilli())
+		return true
 	}
 }
 

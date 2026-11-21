@@ -72,8 +72,7 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 	conversationUsecase := biz.NewConversationUsecase(transaction, conversationRepo, memberRepo, messageRepo, eventRepo, userService, groupService, policyHolder, logger)
 	messageService := service.NewMessageService(conversationUsecase)
 	permissionChecker := data.NewPermissionChecker(socialClient)
-	rateLimiter := data.NewRateLimiter(client)
-	idGenerator, cleanup6, err := data.NewIDGenerator(client, logger)
+	mediaClient, cleanup6, err := data.NewMediaClient(confBootstrap, consulRegistry, logger)
 	if err != nil {
 		cleanup5()
 		cleanup4()
@@ -82,13 +81,26 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 		cleanup()
 		return nil, nil, err
 	}
-	messageUsecase := biz.NewMessageUsecase(transaction, conversationRepo, memberRepo, messageRepo, eventRepo, permissionChecker, rateLimiter, idGenerator, policyHolder, logger)
+	fileService := data.NewFileService(mediaClient)
+	rateLimiter := data.NewRateLimiter(client)
+	idGenerator, cleanup7, err := data.NewIDGenerator(client, logger)
+	if err != nil {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	messageUsecase := biz.NewMessageUsecase(transaction, conversationRepo, memberRepo, messageRepo, eventRepo, permissionChecker, fileService, rateLimiter, idGenerator, policyHolder, logger)
 	internalService := service.NewInternalService(messageUsecase)
 	grpcServer := server.NewGRPCServer(confServer, middlewares, messageService, internalService)
 	httpServer := server.NewHTTPServer(confServer, middlewares, dataData, messageService, logger)
 	membershipUsecase := biz.NewMembershipUsecase(transaction, conversationRepo, memberRepo)
-	consumer, cleanup7, err := server.NewSocialEventConsumer(kafka, membershipUsecase, logger)
+	consumer, cleanup8, err := server.NewSocialEventConsumer(kafka, membershipUsecase, logger)
 	if err != nil {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -99,6 +111,7 @@ func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL
 	}
 	app := newApp(logger, consulRegistry, grpcServer, httpServer, publisher, consumer)
 	return app, func() {
+		cleanup8()
 		cleanup7()
 		cleanup6()
 		cleanup5()

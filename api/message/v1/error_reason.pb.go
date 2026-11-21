@@ -28,11 +28,13 @@ type ErrorReason int32
 
 const (
 	ErrorReason_ERROR_REASON_UNSPECIFIED ErrorReason = 0
+	// 400：图片或文件消息引用的文件无效：不存在、访问密钥不匹配、不是聊天文件，或者图片消息引用的不是图片。不区分原因
+	ErrorReason_FILE_INVALID ErrorReason = 10
 	// 404：会话不存在，或当前用户不是会话成员
 	ErrorReason_CONVERSATION_NOT_FOUND ErrorReason = 20
 	// 429：发消息过于频繁，metadata 中 retry_after_seconds 为建议的等待秒数
 	ErrorReason_RATE_LIMITED ErrorReason = 40
-	// 503：依赖的服务不可用（发消息时无法校验发言权限）
+	// 503：依赖的服务不可用（发消息时无法校验发言权限，或无法向 media 核实图片、文件）
 	ErrorReason_DEPENDENCY_UNAVAILABLE ErrorReason = 50
 )
 
@@ -40,12 +42,14 @@ const (
 var (
 	ErrorReason_name = map[int32]string{
 		0:  "ERROR_REASON_UNSPECIFIED",
+		10: "FILE_INVALID",
 		20: "CONVERSATION_NOT_FOUND",
 		40: "RATE_LIMITED",
 		50: "DEPENDENCY_UNAVAILABLE",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED": 0,
+		"FILE_INVALID":             10,
 		"CONVERSATION_NOT_FOUND":   20,
 		"RATE_LIMITED":             40,
 		"DEPENDENCY_UNAVAILABLE":   50,
@@ -84,9 +88,11 @@ var File_message_v1_error_reason_proto protoreflect.FileDescriptor
 const file_message_v1_error_reason_proto_rawDesc = "" +
 	"\n" +
 	"\x1dmessage/v1/error_reason.proto\x12\n" +
-	"message.v1*u\n" +
+	"message.v1*\x87\x01\n" +
 	"\vErrorReason\x12\x1c\n" +
-	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fFILE_INVALID\x10\n" +
+	"\x12\x1a\n" +
 	"\x16CONVERSATION_NOT_FOUND\x10\x14\x12\x10\n" +
 	"\fRATE_LIMITED\x10(\x12\x1a\n" +
 	"\x16DEPENDENCY_UNAVAILABLE\x102B2Z0github.com/Mars-08042/MarsChat/api/message/v1;v1b\x06proto3"

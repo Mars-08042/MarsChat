@@ -31,13 +31,12 @@
 | Kafka（外部监听） | 9092 | 19092 | 1 |
 | Consul（HTTP / UI） | 8500 | 18500 | 1 |
 | APISIX（HTTP / HTTPS） | 9080 / 9443 | 19080 / 19443 | 5 |
-| MinIO（API / 控制台） | 9000 / 9001 | 19000 / 19001 | 6 |
 | Prometheus | 9090 | 19090 | 8 |
 | Alertmanager | 9093 | 19093 | 8 |
 | Grafana | 3000 | 13000 | 8 |
 | Jaeger（UI / OTLP gRPC / OTLP HTTP） | 16686 / 4317 / 4318 | 26686 / 14317 / 14318 | 8 |
 
-应用服务按 HTTP `18xx0`、gRPC `19xx0` 编排（2026-11-18 确认）：access 18000（WebSocket）/ 19100（内部 gRPC，19000 留给 MinIO，2026-11-19 确认）、account 18010 / 19010、social 18020 / 19020、message 18030 / 19030、delivery 19040（仅 gRPC）、media 18050 / 19050。
+应用服务按 HTTP `18xx0`、gRPC `19xx0` 编排（2026-11-18 确认）：access 18000（WebSocket）/ 19100（内部 gRPC，2026-11-19 确认；19000 原本留给 MinIO，2026-11-20 改用本地目录与阿里云 OSS 后不再部署 MinIO，见 ADR-0007）、account 18010 / 19010、social 18020 / 19020、message 18030 / 19030、delivery 19040（仅 gRPC）、media 18050 / 19050。
 
 2026-11-18 检查：上述端口中只有 19093 被占用，占用者是旧的 `marschat-kafka-1`，步骤 0 删除后释放。
 
@@ -166,7 +165,14 @@
 
 ### 6. media 服务
 
-- [ ] MinIO（S3 兼容）存储；上传时由服务端生成文件 ID 并限制大小和类型；下载前校验权限；文件消息引用文件 ID；图片生成缩略图。
+- [ ] ~~MinIO（S3 兼容）存储~~ 可切换的存储（默认仓库下的本地目录，可选阿里云 OSS）；上传时由服务端生成文件 ID 并限制大小和类型；下载前校验权限；文件消息引用文件 ID；图片生成缩略图。
+  - 2026-11-20 核实：MinIO 社区版已归档，Docker Hub 镜像已删除。开发者决定存储可切换，默认本地目录 `data/media/`，实现阿里云 OSS 集成，聊天文件上限 100 MB，见 [ADR-0007](../../architecture/adr/0007-object-storage.md) 与设计 [media-service.md](../../design/media-service.md)（已采纳）。
+  - [x] 1. media 骨架：proto、配置、迁移、wire、Consul 注册、镜像与 Compose、Makefile；验证容器内挂载目录的写权限（2026-11-21：迁移 up → down 1 → up 往返通过；Docker Desktop 下 nonroot 用户可写挂载目录）
+  - [x] 2. 存储接口与 local、oss 两种实现，单元测试（2026-11-21：OSS 预签名离线校验、上传与删除对接假服务器）
+  - [x] 3. 上传、缩略图、下载地址、本地下载、内部 `GetFiles`、元数据缓存，单元测试与 e2e（2026-11-21：`EXPLAIN` 记在 data-model.md）
+  - [x] 4. message 接入图片与文件消息，e2e（2026-11-21）
+  - [x] 5. 网关路由、集群测试、文档（2026-11-21：宿主机模式 `make e2e` 通过；`make cluster-test` 15 项中 14 项首次通过，图片消息用例因测试未注册 JPEG 解码器失败，补上后单独重跑通过；内存实测后调整缩略图并发与内存预算，见设计第 10 节；调整后全量检查、e2e、集群测试 15 项通过，验收中发现并修复 TD-39）
+  - [ ] 6. OSS 手动验证（需要开发者的 Bucket 与 AccessKey）
 
 ### 7. 通话信令
 
@@ -207,14 +213,14 @@
 | 4、5 | Kafka 生产者分区键 | `app/messenger/msg/inbox/client/inbox_mq_client.go` | 我们按会话分区，并且先经过 Outbox |
 | 5 | 查路由、按实例分组推送、排除发起设备、推送尽力而为 | `app/messenger/sync/internal/core/core.go` | — |
 | 5 | 按节点缓存客户端、监听注册中心变化、连续失败摘除 | `app/interface/gnetway/internal/dao/sharding_session_client.go` | 我们按路由定向推送，不做一致性哈希 |
-| 6 | 文件服务与 MinIO 初始化 | `app/service/dfs/`、`app/service/media/`、`minio_init.sh` | — |
+| 6 | 文件服务与 MinIO 初始化 | `app/service/dfs/`、`app/service/media/`、`minio_init.sh` | 我们不用 MinIO（ADR-0007）；只参考上传时同步生成缩略图、随机访问密钥 |
 | 8 | Prometheus、日志收集、链路追踪 | `teamgramd/deploy/prometheus/`、`docs/log-collection-zh.md`、`docs/link-tracking-zh.md` | 我们用 OpenTelemetry + Jaeger |
 
 不参考：MTProto 协议层、写扩散与按用户分表、独立的 idgen 服务、12 个服务的拆分粒度。teamgram 写库与投递 Kafka 不在同一事务中，pts 记录写失败也只打日志，我们用事务 Outbox 避免这两个问题。
 
 ## 已确认的决定（2026-11-18）
 
-- 保留手机号加短信验证码注册，以及短信验证码登录。
+- 保留手机号加短信验证码注册，以及短信验证码登录。（2026-11-20 已改为邮箱验证码，见[插入任务：邮箱验证码](#当前进度与下一步)）
 - 应用服务端口按 HTTP `18xx0`、gRPC `19xx0` 编排。
 - 数据库表按新项目重新设计，考虑事务、索引和缓存三类问题。
 - 适合本项目的生产环境技术可以引入。
@@ -251,7 +257,7 @@
 
 步骤 5 已完成（2026-11-20），提交 `1f8e77e`（第 1～3 段）、`52eb184`（第 4 段）、`7d20975`（第 5 段）。实施中的调整记在设计第 9 节。验证：`buf lint`、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go test -race ./...`、宿主机模式 `make e2e`、容器模式 `make cluster-test` 通过。
 
-插入任务：邮箱验证码（2026-11-20）。个人认证的阿里云账号无法申请短信签名（TD-24），开发者决定账号标识改为邮箱、验证码经 SMTP 发到个人邮箱。设计 [email-verification.md](../../design/email-verification.md) 已采纳（第 8 节的 5 个问题均按推荐方案确认），顺带修复 TD-35、TD-36、TD-29：
+插入任务：邮箱验证码（2026-11-20，提交 `0749b90`）。个人认证的阿里云账号无法申请短信签名（TD-24），开发者决定账号标识改为邮箱、验证码经 SMTP 发到个人邮箱。设计 [email-verification.md](../../design/email-verification.md) 已采纳（第 8 节的 5 个问题均按推荐方案确认），顺带修复 TD-35、TD-36、TD-29：
 
 - [x] 1. 接口：`SendEmailCode`、`LoginByEmailCode`，请求字段 `email`、`code`，枚举 `CodePurpose`，错误原因改名并新增 `DEPENDENCY_UNAVAILABLE`
 - [x] 2. account：邮箱规范化与脱敏，Redis 键改名，用户缓存键 `account:user:v2:`，`smtp` 发送方（标准库，隐式 TLS 或 STARTTLS，截止时间不超过请求剩余时间，拒绝保留域名），假 SMTP 服务器单元测试
@@ -260,7 +266,9 @@
 - [x] 5. 文档：features、user-auth、contact、data-model、deployment、system、data-flow、account 与 social 设计、tech-debt
 - [x] 6. 验证（2026-11-20）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go test -race ./...`（27 个包）通过；宿主机模式 e2e 32 项通过，五个服务日志无 ERROR；重建镜像后 `make cluster-test` 13 项通过（含 7 项故障实验），全部应用容器无 ERROR、无 go-redis 纯文本日志；Redis 停机 60 秒实验中需要发号的写操作全部返回 `503 DEPENDENCY_UNAVAILABLE`（实验新增了这条断言，单独重跑通过：18 次，两个 message 实例各 9 次）；`grant-admin` 手动验证成功（邮箱大小写混写）、邮箱不存在、非法输入三种情况。真实发信：容器模式经网关向开发者的邮箱发送注册码和登录码各一封（1.53 秒、1.18 秒），完成注册、密码登录和邮箱验证码登录，验证码一次性使用；首次按 465 端口发送因 TLS 被截获失败，改用 587，见 [lessons/smtp-465-tls-interception.md](../../lessons/smtp-465-tls-interception.md)
 
-下一步：步骤 6（media 服务）。开始前先写设计文档，重点是 MinIO 的部署与端口、上传大小和类型限制、下载权限校验、缩略图处理（可复用第 4 段的重试队列与死信队列）。
+步骤 6 实施中（2026-11-20）：设计 [media-service.md](../../design/media-service.md) 已采纳。存储由设计推荐的 SeaweedFS 改为可切换的本地目录（默认）与阿里云 OSS，见 [ADR-0007](../../architecture/adr/0007-object-storage.md)；新增依赖 OSS 官方 SDK v2 与 `golang.org/x/image`（开发者已同意）。
+
+步骤 6 第 1～5 段完成（2026-11-21），第 6 段（OSS 手动验证）等开发者提供 Bucket 与 AccessKey。实测数据：经网关上传 20 MiB 约 0.6 秒、下载约 0.14 秒（本地存储）；media 空闲约 18 MiB，并发上传 1590 万像素 16 位 PNG 时峰值 335 MiB（限制 384 MiB）。新增 TD-37（上传中途进程退出留下孤儿对象）、TD-38（缩略图不处理 JPEG 的 EXIF 方向）。验收时发现并修复 TD-39：Redis 停机约 20 秒后，节点号租约的下一轮续期可能晚于本地截止时间，留下短暂的发号失败窗口；`pkg/idgen` 改为续期失败后每秒重试。验证（2026-11-21，缩略图内存调整与 TD-39 修复之后）：`buf lint`、`make gen` 后无差异、`go vet`（含 `e2e`、`cluster` 标签）、`go build`、`go mod tidy -diff`、`go test -race ./...`（30 个包）通过；宿主机模式 `make e2e` 通过，六个服务日志无 ERROR；重建镜像后 `make cluster-test` 15 项通过（含 7 项故障实验）。修复前第一次运行时，`TestFaultStopRedisLong` 在准备阶段遇到上述窗口而失败，这也是发现 TD-39 的经过。
 
 核对代码时新发现 TD-34（节点号租约丢失后不会重新获取），列入本步骤修复。Compose 全栈内存已初步评估：Docker Desktop 虚拟机 3.8 GiB，现有占用约 2.1 GiB（Kafka 1.06 GiB），加上多实例与 APISIX 估计约 2.0 GiB（Kafka 堆限制为 512 MiB 后），第一阶段实测。
 
@@ -300,4 +308,4 @@
 - 2026-11-19：补 TD-27 的布隆过滤器集成测试时发现，`BF.EXISTS` 在 go-redis v9 默认的 RESP3 下返回布尔值，原代码按整数读取，读取失败后放行，account 的用户 ID 过滤器从步骤 2 起没有拦截过任何 ID。已改用 `Cmd.Bool()` 并在解析失败时记 WARN，见 [lessons/redis-resp3-reply-types.md](../../lessons/redis-resp3-reply-types.md)。
 
 - 2026-11-20：Redis 故障实验中，停掉 Redis 约 3 秒后发消息开始失败，而设计预期 20 秒内照常成功。容器停止后服务名从 Docker DNS 中消失，每次解析约 1 秒才失败；go-redis v9.23 默认单次拨号重试 5 次、命令重试 3 次，一条命令就用完了调用方的截止时间，限流的“失败放行”来不及生效。`pkg/bootstrap.NewRedis` 加拨号保护并关闭单次拨号内的重试，见 [lessons/redis-dial-stall-docker-dns.md](../../lessons/redis-dial-stall-docker-dns.md)。
-- Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、MinIO、监控组件加多实例服务）在 Docker Desktop 上的内存占用：步骤 5 的全部容器实测约 1.2～1.3 GiB（见 [ADR-0005](../../architecture/adr/0005-distributed-architecture.md#代价与风险)），MinIO 与监控组件在步骤 6、8 引入时再测。
+- Compose 全栈（Kafka、MySQL、Redis、Consul、APISIX、监控组件加多实例服务；2026-11-20 起不再部署 MinIO）在 Docker Desktop 上的内存占用：步骤 5 的全部容器实测约 1.2～1.3 GiB（见 [ADR-0005](../../architecture/adr/0005-distributed-architecture.md#代价与风险)），步骤 6 加入 media 后空闲时合计约 1.2 GiB（2026-11-21，media 约 18 MiB），监控组件在步骤 8 引入时再测。

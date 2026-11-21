@@ -211,6 +211,46 @@ func TestRenewErrorKeepsNodeUntilDeadline(t *testing.T) {
 	}
 }
 
+// 续期失败后下一轮按 retryEvery 尽快重试，而不是等满 renewEvery；Redis 在本地截止时间前恢复时，
+// 重试续上租约、节点号不变，原截止时间过后照常发号（TD-39：停机约 20 秒时第三次续期恰好撞上截止时间）。
+func TestRenewRetriesSoonAfterError(t *testing.T) {
+	mr, rdb := newTestRedis(t)
+	g, cleanup, err := New(context.Background(), rdb, "a", discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	if d := g.nextRenewDelay(true); d != renewEvery {
+		t.Fatalf("delay after a successful renew = %v, want %v", d, renewEvery)
+	}
+	node := g.Node()
+	mr.SetError("LOADING Redis is loading the dataset in memory")
+	ok := g.renew()
+	mr.SetError("")
+	if ok {
+		t.Fatal("renew reported success while Redis returned an error")
+	}
+	if d := g.nextRenewDelay(ok); d != retryEvery {
+		t.Fatalf("delay after a failed renew = %v, want %v", d, retryEvery)
+	}
+
+	// 距本地截止时间还剩 1 秒时 Redis 已恢复：重试续上，截止时间顺延
+	base := time.Now()
+	before := g.leaseUntil.Load()
+	g.now = func() time.Time { return base.Add(leaseTTL - time.Second) }
+	if !g.renew() {
+		t.Fatal("renew failed after Redis recovered")
+	}
+	if g.leaseUntil.Load() <= before || g.Node() != node {
+		t.Fatalf("lease not extended on the same node: until %d -> %d, node %d -> %d", before, g.leaseUntil.Load(), node, g.Node())
+	}
+	g.now = func() time.Time { return base.Add(leaseTTL + time.Second) }
+	if _, err := g.NextID(); err != nil {
+		t.Fatalf("NextID after the original deadline: %v", err)
+	}
+}
+
 func TestClockBackwards(t *testing.T) {
 	_, rdb := newTestRedis(t)
 	g, cleanup, err := New(context.Background(), rdb, "a", discard)
