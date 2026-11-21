@@ -1,6 +1,6 @@
 # 计划：React 前端重写
 
-- 状态：进行中 | 开始：2026-11-20 | 分支：`ui`（独立 worktree） | 关联设计：[frontend.md](../../design/frontend.md)（已采纳）、[ADR-0008](../../architecture/adr/0008-react-frontend.md)
+- 状态：进行中 | 开始：2026-11-20 | 分支：`dev`（2026-11-21 起；此前在 `ui` 分支的独立 worktree） | 关联设计：[frontend.md](../../design/frontend.md)（已采纳）、[ADR-0008](../../architecture/adr/0008-react-frontend.md)
 
 ## 目标
 
@@ -9,9 +9,9 @@
 ## 范围与约定
 
 - 前端代码放在本仓库 `web/`（2026-11-20 确认，ADR-0008）。包管理用 pnpm（[ADR-0004](../../architecture/adr/0004-frontend-pnpm.md)）。
-- 不新增或修改后端接口。发现需要后端配合时，先记录到[后端重构计划](backend-refactor.md)或 [tech-debt.md](../tech-debt.md)，再与开发者确认。
+- 不新增或修改后端接口。发现需要后端配合时，先记录到 [tech-debt.md](../tech-debt.md)，或在 `docs/plans/active/` 新建后端计划（[后端重构计划](../completed/backend-refactor.md)已完成），再与开发者确认。
 - 和后端计划的依赖关系：
-  - 第 7 阶段（文件）依赖后端步骤 6（media），第 8 阶段（通话）依赖后端步骤 7（通话信令）。两步都已于 2026-11-21 在 `dev` 上完成，但还没有合并进 `ui` 分支：`ui` 上没有 `api/media`、`api/access/v1/call.proto`，生成的 TS 代码也没有这些类型。开始第 7 阶段前，需要开发者同意把 `dev` 合并进 `ui`。
+  - 第 7 阶段（文件）依赖后端步骤 6（media），第 8 阶段（通话）依赖后端步骤 7（通话信令）。两步都已于 2026-11-21 在 `dev` 上完成；`ui` 合并进 `dev` 后（`9a737ab`），`web/src/gen` 已包含 `media` 和通话信令的类型。
   - coturn 与 TURN 临时凭据下发推迟到前端阶段（后端计划步骤 7），第 8 阶段与开发者确认部署方式。
 - 依赖：设计确认后，设计第 3.1 节列出的依赖视为已同意，安装时锁定当时的稳定版本；计划外的新依赖仍先询问。
 - Compose、网关配置、CI 的改动属于对应阶段的任务；推送到远端仍需开发者同意。
@@ -128,7 +128,11 @@
 - 浏览器（页面内嵌 390×800 的 iframe 模拟窄屏）：单行输入栏、面板顶替软键盘、连续选表情时输入框不获得焦点、删除键一次删掉一个表情、从面板发送后面板保持打开、时间线保持贴底；
 - 未验证：真机（iOS Safari、Android Chrome）上的软键盘与面板切换。
 
-前端在 `ui` 分支开发，用与主目录并列的独立 worktree。主目录在 `dev` 上做后端，步骤 6、7 已完成，步骤 8 进行中，所以 `ui` 分支上指向 `media-service.md`、`call-signaling.md` 的链接要等两边合并后才有效。后端步骤 8 完成后，由开发者把 `ui` 合并进 `dev`；合并时注意 `Makefile`、`.gitignore`、`AGENTS.md`、`deployment.md` 两边都有改动。
+合并进 `dev`（2026-11-21，提交 `9a737ab`，只在本地，未推送）：后端重构完成后，开发者把 `ui` 合并进 `dev`，之后前端在 `dev` 上开发。5 处文档冲突两边内容都保留；合并时关闭了目录改名检测，本计划留在 `active/`（`dev` 把后端计划移到了 `completed/`）。按 `dev` 的 proto 重新生成 `web/src/gen`：新增 `media`、`access/v1/call_pb.ts`，`message` 与 `access` 的消息内容、帧和错误原因随之更新，类型检查通过。指向 `media-service.md`、`call-signaling.md` 的链接已有效。平台表情的来源仓库改放 `data/emoji-sources`（设计第 10 节第 20 条）。验证：
+- `buf lint`、`go vet ./...`、`go build ./...`、`go test ./...`（31 个包）通过；
+- `make web-check` 通过：lint、类型检查、单元测试 148 项（9 个文件）、构建，产物与合并前一致（主包 JS 825.44 KB，gzip 272.06 KB）；
+- `make web-emoji` 从 `data/emoji-sources` 重新生成 1720 个表情（44.8 MB），2171 个文件与原有的 `web/public/emoji-packs` 逐个比对 SHA-256 全部一致；
+- 浏览器（`make web-dev`）：表情面板在系统分类前列出 8 个平台分组（微信、抖音、B站、贴吧、知乎、小红书、钉钉、QQ）。
 
 外观决定（2026-11-21，设计第 10 节第 18 条）：字体组和登录页背景都保留，用户可切换，字体默认 Geist 组。验证：lint、类型检查、单元测试 136 项通过；浏览器中没有保存偏好时使用 Geist（`html` 上没有 `data-font`），保存 `grotesk` 后刷新，首屏脚本在渲染前切到 Space Grotesk；登录页背景按偏好显示。
 
@@ -139,7 +143,7 @@
 - 浏览器（页面内嵌 390×750 的 iframe 模拟窄屏）：B站分组显示两个小节，连续选择时输入框不获得焦点，删除键一次删掉整个 `:bili_笑哭:`；
 - 未验证：系统开启「减少动态效果」时消息里改用静态帧（逻辑只依赖 Motion 的 `useReducedMotion`，没有在浏览器里切换系统设置）。
 
-下一步：开启「减少动态效果」和禁用 WebGL 时检查降级效果，之后完成第 2 阶段；第 3 阶段（认证）可以在 `ui` 分支继续做，不依赖后端步骤 8。
+下一步：开启「减少动态效果」和禁用 WebGL 时检查降级效果，之后完成第 2 阶段；第 3 阶段（认证）在 `dev` 上继续。
 
 ## 遇到的问题
 

@@ -4,7 +4,7 @@ import http from 'k6/http';
 
 export const BASE = __ENV.BASE_URL || 'http://apisix:9080';
 export const WS_URL = __ENV.WS_URL || 'ws://apisix:9080/ws';
-// 准备数据的输出，也是其他脚本的输入；挂载自宿主机的 tmp/load
+// 准备数据的输出，也是其他脚本的输入；挂载自宿主机的 data/load
 export const USERS_FILE = '/load/users.json';
 export const PASSWORD = 'abc12345';
 // account 的 log 发送方使用的固定验证码，压测前要把 account 覆盖为 log 模式

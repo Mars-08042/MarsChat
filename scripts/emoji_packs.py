@@ -6,7 +6,7 @@
 源仓库是不受信任的数据：只读取图片和 JSON，不执行其中任何脚本，跳过符号链接，用 python -I 运行。
 依赖 Pillow。
 
-用法：python -I scripts/emoji_packs.py --sources tmp/emoji-sources --out web/public/emoji-packs [--size 128]
+用法：python -I scripts/emoji_packs.py --sources data/emoji-sources --out web/public/emoji-packs [--size 128]
 """
 
 from __future__ import annotations
@@ -348,7 +348,7 @@ const html = text.replace(/:([^\\s:]{{1,64}}):/g, (m, code) => {{
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="extract platform emoji packs")
-    parser.add_argument("--sources", type=Path, default=Path("tmp/emoji-sources"))
+    parser.add_argument("--sources", type=Path, default=Path("data/emoji-sources"))
     parser.add_argument("--out", type=Path, default=Path("web/public/emoji-packs"))
     parser.add_argument("--size", type=int, default=128)
     args = parser.parse_args()

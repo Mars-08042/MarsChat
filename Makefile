@@ -47,14 +47,14 @@ web-dev: ## 启动前端开发服务器 http://localhost:5173，默认经网关�
 web-check: ## 前端检查：lint、类型检查、单元测试、构建
 	cd web && pnpm check
 
-# 平台表情图片不进仓库：源仓库按 scripts/emoji_packs.py 中固定的提交克隆到 tmp/emoji-sources，
+# 平台表情图片不进仓库：源仓库按 scripts/emoji_packs.py 中固定的提交克隆到 data/emoji-sources，
 # 生成结果在 web/public/emoji-packs（已忽略）。Windows 上 python3 常是商店占位程序，跑不起来时退回 python
 PYTHON ?= $(shell python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 EMOJI_PACKS_OUT ?= web/public/emoji-packs
 
 .PHONY: web-emoji
-web-emoji: ## 从 tmp/emoji-sources 生成平台表情资源（需要 Pillow，约几分钟），EMOJI_PACKS_OUT 可改输出目录
-	$(PYTHON) -I scripts/emoji_packs.py --sources tmp/emoji-sources --out $(EMOJI_PACKS_OUT)
+web-emoji: ## 从 data/emoji-sources 生成平台表情资源（需要 Pillow，约几分钟），EMOJI_PACKS_OUT 可改输出目录
+	$(PYTHON) -I scripts/emoji_packs.py --sources data/emoji-sources --out $(EMOJI_PACKS_OUT)
 
 .PHONY: lint
 lint: ## proto 规范检查
@@ -139,7 +139,7 @@ dlq: ## 查看死信队列 marschat.dlq 的全部记录（带键、头与时间�
 		--property print.headers=true --property print.key=true --property print.timestamp=true
 
 # 压测（profile loadtest）：k6 在 Compose 网络中经网关压测容器模式的服务，脚本见 test/load/k6，
-# 准备的数据和结果摘要写入 tmp/load。流程：load-up → load-seed → load-ws / load-read → load-restore。
+# 准备的数据和结果摘要写入 data/load。流程：load-up → load-seed → load-ws / load-read → load-restore。
 # load-up 把 account 临时切到 log 发送方（注册用固定验证码，不发真实邮件）并调低 Trace 采样比例，.env 不改；
 # load-restore 按 .env 重建应用容器，恢复原来的设置。
 K6 := MSYS_NO_PATHCONV=1 docker compose run --rm k6 run
@@ -161,10 +161,10 @@ load-restore: ## 压测后按 .env 重建应用容器，恢复邮件发送方与
 
 # 注册前确认 account 使用 log 发送方，否则会向 @example.test 地址发送真实邮件
 .PHONY: load-seed
-load-seed: ## 压测准备数据：注册 LOAD_USERS 个用户、两两加好友、建热点群，写入 tmp/load/users.json
+load-seed: ## 压测准备数据：注册 LOAD_USERS 个用户、两两加好友、建热点群，写入 data/load/users.json
 	@ids=$$(docker compose ps -q account); test -n "$$ids" || { echo "account is not running: run make cluster-up"; exit 1; }; \
 	for c in $$ids; do docker inspect $$c --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q '^MARSCHAT_MAIL_PROVIDER=log$$' || { echo "account is not using the log mail provider: run make load-up"; exit 1; }; done
-	@mkdir -p tmp/load/out
+	@mkdir -p data/load/out
 	$(K6) -q -e USERS=$(LOAD_USERS) /scripts/seed.js
 
 .PHONY: load-token
@@ -172,7 +172,7 @@ load-token: ## 刷新压测用户的访问令牌（15 分钟有效，每轮压�
 	$(K6) -q -e MODE=refresh /scripts/seed.js
 
 .PHONY: load-ws
-load-ws: ## WebSocket 收发压测，例如 make load-ws CONNS=500 DURATION=60，摘要写入 tmp/load/out
+load-ws: ## WebSocket 收发压测，例如 make load-ws CONNS=500 DURATION=60，摘要写入 data/load/out
 	$(K6) -e CONNS=$(CONNS) -e DURATION=$(DURATION) --summary-export /load/out/ws_chat_$(CONNS).json /scripts/ws_chat.js
 
 .PHONY: load-read
@@ -181,7 +181,7 @@ load-read: ## 热点读压测，例如 make load-read RATE=500；MODE=penetratio
 
 .PHONY: load-bust
 load-bust: ## 击穿实验：在 load-read 运行期间删除热点群的资料与成员缓存键
-	@g=$$(sed -n 's/.*"hotGroupId":"\([0-9]*\)".*/\1/p' tmp/load/users.json); test -n "$$g" || { echo "no hot group in tmp/load/users.json: run make load-seed"; exit 1; }; \
+	@g=$$(sed -n 's/.*"hotGroupId":"\([0-9]*\)".*/\1/p' data/load/users.json); test -n "$$g" || { echo "no hot group in data/load/users.json: run make load-seed"; exit 1; }; \
 	docker compose exec -T redis sh -c 'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning DEL social:group:'"$$g"' social:group:members:'"$$g"
 
 .PHONY: up

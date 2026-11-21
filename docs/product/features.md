@@ -2,7 +2,7 @@
 
 > 本清单是功能实现状态的**唯一权威记录**。功能变化时同步更新本表和对应模块文档。
 
-状态均指后端接口（HTTP、gRPC 与 WebSocket），前端尚未重写（React + pnpm，另立计划）。
+状态均指后端接口（HTTP、gRPC 与 WebSocket），前端在重写中，尚未接入后端，见[前端计划](../plans/active/frontend-rewrite.md)。
 
 **状态**：
 

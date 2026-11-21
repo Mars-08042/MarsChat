@@ -1,6 +1,6 @@
 # 音视频通话
 
-服务端只做信令，媒体仍是浏览器之间的 WebRTC 点对点连接，前端尚未重写。设计见 [call-signaling.md](../../design/call-signaling.md)，帧与流程见 [data-flow.md](../../architecture/data-flow.md#9-通话信令)，Redis 键见 [data-model.md](../../architecture/data-model.md#3-redis-键)，功能状态见 [features.md](../features.md)。
+服务端只做信令，媒体仍是浏览器之间的 WebRTC 点对点连接，前端尚未接入。设计见 [call-signaling.md](../../design/call-signaling.md)，帧与流程见 [data-flow.md](../../architecture/data-flow.md#9-通话信令)，Redis 键见 [data-model.md](../../architecture/data-model.md#3-redis-键)，功能状态见 [features.md](../features.md)。
 
 | 层 | 位置 |
 |---|---|

@@ -452,7 +452,7 @@ services:
       retries: 30
 
   # 压测（profile loadtest），只在压测时用 docker compose run --rm 运行，见 Makefile 的 load-* 命令。
-  # 经网关访问各服务；脚本在 test/load/k6，准备的数据和结果摘要写入 tmp/load（被 Git 忽略）。
+  # 经网关访问各服务；脚本在 test/load/k6，准备的数据和结果摘要写入 data/load（被 Git 忽略）。
   # 固定 IP 172.30.0.20：网关只对这个地址信任 X-Forwarded-For（apisix.yaml 的 global_rules），
   # 每个虚拟客户端带不同的来源地址，网关与 account 的按 IP 限流按虚拟客户端生效。
   k6:
@@ -468,7 +468,7 @@ services:
       K6_NO_USAGE_REPORT: "true"
     volumes:
       - ./test/load/k6:/scripts:ro
-      - ./tmp/load:/load
+      - ./data/load:/load
 
 volumes:
   mysql-data:

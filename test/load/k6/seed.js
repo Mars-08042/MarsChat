@@ -1,4 +1,4 @@
-// 准备压测数据，结果写入 /load/users.json（宿主机的 tmp/load/users.json）。
+// 准备压测数据，结果写入 /load/users.json（宿主机的 data/load/users.json）。
 //
 //   MODE=seed（默认）：经网关注册 USERS 个用户；第 2k 与 2k+1 个用户互为好友（WebSocket 收发场景两两配对）；
 //     第 0 个用户建一个热点群，初始成员为第 1～HOT_MEMBERS 个用户（热点读场景）。
@@ -120,6 +120,6 @@ export function handleSummary(summary) {
   }
   return {
     [USERS_FILE]: JSON.stringify(data),
-    stdout: `${MODE}: ${data.users.length} users, hot user ${data.hotUserId}, hot group ${data.hotGroupId} -> tmp/load/users.json\n`,
+    stdout: `${MODE}: ${data.users.length} users, hot user ${data.hotUserId}, hot group ${data.hotGroupId} -> data/load/users.json\n`,
   };
 }

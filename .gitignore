@@ -10,6 +10,7 @@
 *.out
 coverage.*
 vendor/
+__pycache__/
 
 # 前端依赖与构建产物
 node_modules/
@@ -26,7 +27,7 @@ deploy/apisix/certs/
 *.pem
 *.key
 
-# 运行数据（media 本地存储的文件默认写在 data/media）
+# 本地数据：media 本地存储的文件、压测数据、平台表情的来源仓库
 /data/
 
 # 日志

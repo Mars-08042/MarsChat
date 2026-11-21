@@ -835,7 +835,7 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
 
      `Augenstern-O/Stickers` 的子集按仓库 `OwO.json` 中的顺序排列，与平台面板一致。没有采用 `Stickers/QQ` 的互动表情、企鹅等表情包目录，`Stickers/RedNote`（单个文件最大 16 MB），以及 `bilicon` 的 `bili.json`（混有联动表情包）。
    - 脚本 `scripts/emoji_packs.py`（Python 和 Pillow，`make web-emoji` 调用）：
-     - 来源仓库按固定提交克隆到 `tmp/emoji-sources/`。来源是不受信任的数据：只读图片和 JSON，跳过符号链接和越界路径，用 `python -I` 运行；
+     - 来源仓库按固定提交克隆到 `data/emoji-sources/`。来源是不受信任的数据：只读图片和 JSON，跳过符号链接和越界路径，用 `python -I` 运行；
      - 输出 `manifest.json`、README 和 WebP 图片，文件名用序号，不用中文，避免压缩和部署工具的编码问题；
      - 只清理自己生成过的输出目录（按 manifest 的 `generator` 字段判断），参数写错时不会误删。
    - 压缩：
@@ -843,3 +843,4 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
      - 动图有损压缩也只比 APNG 原图小两三成，开 `minimize_size` 能再小一成多，但编码时间翻好几倍。所以改为给动图另出一张静态帧，面板只加载静态帧。
      - 结果：1720 个表情（其中 449 个动图）共约 45 MB，静态帧合计约 1.2 MB。
    - 前端：`features/chat/emoji-packs.ts` 负责 manifest 加载与校验、短代码切分、搜索，`EmojiText` 负责渲染。manifest 中的路径只接受脚本生成的命名，被改坏也不会指向其他地址。
+20. **表情来源仓库改放 `data/emoji-sources`**（2026-11-21，合并进 `dev` 后整理目录）：`tmp/` 只放临时文件和只读参考源码，可以随时清空；来源仓库约 780 MB，重新生成表情时还要用，改放被忽略的 `data/emoji-sources`，`make web-emoji` 与脚本的默认参数同步修改。

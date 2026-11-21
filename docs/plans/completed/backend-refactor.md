@@ -360,7 +360,7 @@
 - Docker Desktop（Hyper-V 后端），虚拟机 24 个 CPU、3.8 GiB 内存；MySQL 9.7.4、Redis 8.8.4、Kafka 4.4.0（单节点）、APISIX 3.20.0；服务为步骤 8 的工作区代码（版本号 `66ea720-dirty`）。
 - access、message、delivery 各 2 个实例，account、social、media、APISIX 各 1 个；应用容器内存限制 256 MiB（media 384 MiB），APISIX 512 MiB，k6 768 MiB。
 - k6 2.4.0 经网关压测，`make load-up`：account 用 `log` 发送方，Trace 采样比例 0.05（对比实验除外）。
-- 原始摘要在 `tmp/load/out/`（被 Git 忽略）：k6 的 `ws_chat_<连接数>.json`、`hot_read_*.json`，容器 CPU、内存与 Prometheus 指标的 `stats_<场景>.json`。
+- 原始摘要在 `data/load/out/`（被 Git 忽略）：k6 的 `ws_chat_<连接数>.json`、`hot_read_*.json`，容器 CPU、内存与 Prometheus 指标的 `stats_<场景>.json`。
 
 **准备数据**：经网关注册 1000 个用户（每批 40 个并发）、两两加好友、建一个 31 人的热点群，共 30.7 秒，注册约 35 个每秒（bcrypt cost 12，account 单实例）。第一次运行时 4 个并发注册有 3 个死锁，见“遇到的问题”。
 

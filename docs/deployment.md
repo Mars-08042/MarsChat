@@ -53,7 +53,7 @@ make keys    # 生成 JWT 密钥对和 media 下载地址签名密钥并追加�
 
 MySQL 的建库脚本和 root 密码只在数据卷**首次初始化**时生效，之后修改 `.env` 不会改变已有账号的密码。需要重置时见“停止与重置”。
 
-**Docker Desktop 文件共享**：本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录前需要在 Settings → Resources → File sharing 中加入该目录，否则 Docker Desktop 会弹窗询问，确认前 `docker compose up` 会一直卡住。建议直接加入项目根目录，APISIX、Prometheus、Grafana、Jaeger 的配置，media 的 `data/media` 目录和压测的 `test/load`、`tmp/load` 都会挂载。WSL 2 后端不需要这一步。排查过程见 [lessons/docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md)。
+**Docker Desktop 文件共享**：本机 Docker Desktop 使用 Hyper-V 后端，挂载宿主机目录前需要在 Settings → Resources → File sharing 中加入该目录，否则 Docker Desktop 会弹窗询问，确认前 `docker compose up` 会一直卡住。建议直接加入项目根目录，APISIX、Prometheus、Grafana、Jaeger 的配置，media 的 `data/media` 目录和压测的 `test/load`、`data/load` 都会挂载。WSL 2 后端不需要这一步。排查过程见 [lessons/docker-desktop-bind-mount-hang.md](lessons/docker-desktop-bind-mount-hang.md)。
 
 ## 启动依赖组件
 
@@ -237,7 +237,7 @@ make mysql-slow
 
 ## 压测
 
-k6 在 profile `loadtest` 中，用 `docker compose run --rm k6` 按需运行，经网关（`http://apisix:9080`、`ws://apisix:9080/ws`）压测容器模式的服务。脚本在 [test/load/k6/](../test/load/k6/)，准备的数据（用户与令牌）写入 `tmp/load/users.json`，结果摘要写入 `tmp/load/out/`，都被 Git 忽略。k6 容器的固定 IP 与网关的 `real-ip` 规则见“网关”。
+k6 在 profile `loadtest` 中，用 `docker compose run --rm k6` 按需运行，经网关（`http://apisix:9080`、`ws://apisix:9080/ws`）压测容器模式的服务。脚本在 [test/load/k6/](../test/load/k6/)，准备的数据（用户与令牌）写入 `data/load/users.json`，结果摘要写入 `data/load/out/`，都被 Git 忽略。k6 容器的固定 IP 与网关的 `real-ip` 规则见“网关”。
 
 ```bash
 make cluster-up && make monitoring-up
@@ -287,12 +287,12 @@ make web-check          # lint → 类型检查 → 单元测试 → 构建
 
 ```bash
 # 1. 按 scripts/emoji_packs.py 中 SOURCES 的提交克隆来源仓库（只读取图片和 JSON，不执行其中的脚本）
-git clone https://github.com/walinejs/emojis.git tmp/emoji-sources/walinejs-emojis
-git clone https://github.com/Augenstern-O/Stickers.git tmp/emoji-sources/augenstern-stickers
-git clone https://github.com/gweesin/bilicon.git tmp/emoji-sources/gweesin-bilicon
-git -C tmp/emoji-sources/walinejs-emojis checkout b10c0abfdb7c52365d8f5a46b730ab9130de173f
-git -C tmp/emoji-sources/augenstern-stickers checkout 91285989c50eaf45560dab02043df1d4b03aded1
-git -C tmp/emoji-sources/gweesin-bilicon checkout 70b2b187a867a62b91fddf5505bd8ab52cb43e7f
+git clone https://github.com/walinejs/emojis.git data/emoji-sources/walinejs-emojis
+git clone https://github.com/Augenstern-O/Stickers.git data/emoji-sources/augenstern-stickers
+git clone https://github.com/gweesin/bilicon.git data/emoji-sources/gweesin-bilicon
+git -C data/emoji-sources/walinejs-emojis checkout b10c0abfdb7c52365d8f5a46b730ab9130de173f
+git -C data/emoji-sources/augenstern-stickers checkout 91285989c50eaf45560dab02043df1d4b03aded1
+git -C data/emoji-sources/gweesin-bilicon checkout 70b2b187a867a62b91fddf5505bd8ab52cb43e7f
 
 # 2. 生成到 web/public/emoji-packs（需要 Python 3 和 Pillow，约 2～7 分钟）
 make web-emoji
@@ -439,7 +439,7 @@ media 的主要配置段（默认值见 [config.yaml](../app/media/configs/confi
 - 2026-11-20 实测（QQ 邮箱，587）：一次发送从请求到 SMTP 服务器接受邮件 1.2～1.5 秒，在 2.5 秒的发送超时以内。
 - 发往保留域名（`.test`、`.example`、`.invalid`、`.localhost`、`example.com/net/org`）的验证码直接按发送失败处理，不占用个人邮箱的每日发信额度。e2e 的测试账号（`@example.test`）和迁移填充的占位邮箱（`@legacy.invalid`）都在其中。
 - 发送失败（连接、认证、服务器拒收、超时）返回 `503 CODE_SEND_FAILED`，撤销本次的发送间隔和每日计数，可以立即重试；原因写在 account 的 ERROR 日志 `send verification code failed` 中（邮箱已脱敏）。
-- 运行 `make e2e`、`make cluster-test` 前把 `MARSCHAT_MAIL_PROVIDER` 改回 `log`（或注释掉），`MARSCHAT_MAIL_FIXED_CODE` 恢复为 `000000`：测试依赖固定验证码。
+- 运行 `make e2e`、`make cluster-test` 前把 `MARSCHAT_MAIL_PROVIDER` 改回 `log`（或注释掉），`MARSCHAT_MAIL_FIXED_CODE` 恢复为 `000000`：测试依赖固定验证码。`make e2e` 也可以改用 `scripts/host_services.sh` 在宿主机运行服务，脚本只在服务进程的环境中改用 `log` 发送方，不用修改 `.env`，见“开发命令”。
 
 ### 文件存储
 
@@ -498,11 +498,11 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 | `make gen` | 重新生成配置 proto（`make conf`）、接口 proto（`make api`）、依赖注入代码（`make wire`）和前端 TS 代码（`make web-gen`，需要先 `make web-install`） |
 | `make web-install` / `make web-dev` / `make web-check` | 安装前端依赖 / 启动前端开发服务器 / 前端检查，见“前端开发” |
 | `make web-gen` | 删除并重新生成 `web/src/gen/` |
-| `make web-emoji` | 从 `tmp/emoji-sources/` 生成平台表情资源到 `web/public/emoji-packs/`，见“平台表情（可选）” |
+| `make web-emoji` | 从 `data/emoji-sources/` 生成平台表情资源到 `web/public/emoji-packs/`，见“平台表情（可选）” |
 | `make lint` | `buf lint` |
 | `make vet` / `make test` | `go vet ./...` / `go test ./...` |
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |
-| `make e2e` | 端到端测试，需要依赖组件已启动、account、social、message、media 已迁移，六个服务都在运行（media 使用默认的本地存储，测试文件写入 `data/media/`）；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理；`kafka_test.go` 使用专用 topic `marschat.e2e.events`、`marschat.e2e.retry` 和随机消费组，并在死信队列中查找本次写入的记录 |
+| `make e2e` | 端到端测试，需要依赖组件已启动、account、social、message、media 已迁移，六个服务都在运行（media 使用默认的本地存储，测试文件写入 `data/media/`）；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理；`kafka_test.go` 使用专用 topic `marschat.e2e.events`、`marschat.e2e.retry` 和随机消费组，并在死信队列中查找本次写入的记录。服务可以用 `sh scripts/host_services.sh start` 在宿主机后台启动（`wait` 等待就绪，`stop` 结束；二进制与日志在 `tmp/hostbin/`、`tmp/hostlogs/`，邮件固定用 `log` 发送方与验证码 `000000`），不能和容器模式同时运行 |
 | `make images` | 宿主机交叉编译全部服务并构建镜像 `marschat/<服务>:dev`，见“容器模式” |
 | `make certs` | 生成网关的自签证书到 `deploy/apisix/certs/`（已有时不覆盖） |
 | `make cluster-up` / `make cluster-down` | 启动容器模式的全部服务和网关 / 删除这些容器（依赖组件保持运行） |

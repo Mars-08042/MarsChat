@@ -43,14 +43,16 @@ pkg/clientip/            按可信代理解析客户端 IP
 pkg/telemetry/           OpenTelemetry 初始化（Prometheus 指标导出、OTLP Trace 导出）、Kratos 指标与链路中间件、带 trace_id 的日志 Handler；
                          telemetrytest 供单元测试读取指标
 tools/jwtkey/            生成开发用 JWT 密钥与 media 下载地址签名密钥（make keys）
-scripts/                 运维脚本（make grant-admin）
+scripts/                 运维与开发脚本（make grant-admin、make web-emoji、宿主机运行全部服务的 host_services.sh）
 deploy/                  依赖组件的初始化脚本与配置：MySQL 初始化、APISIX、Prometheus 与告警规则、Alertmanager、Grafana、Jaeger
 test/e2e/                依赖 compose 环境的端到端测试（构建标签 e2e）
 test/cluster/            容器模式的集群测试与故障实验（构建标签 cluster）
 test/testkit/            e2e 与集群测试共用的调用、注册、WebSocket 与 Redis 读取函数
 test/load/k6/            k6 压测脚本（make load-*）
 web/                     前端（React + Vite，pnpm，ADR-0008）；src/gen/ 为 buf 生成的接口 TS 代码，目录约定见前端设计 3.2 节
-data/media/              media 本地存储的文件（运行时创建，被 Git 忽略）
+data/                    被 Git 忽略的本地数据：media/ 本地存储的文件（运行时创建）、load/ 压测的用户与结果摘要、
+                         emoji-sources/ 平台表情的来源仓库（make web-emoji 的输入）
+tmp/                     临时文件与只读参考源码（被 Git 忽略，可以随时清空）
 ```
 
 `internal` 保证服务之间不能互相 import 实现代码，跨服务只能通过 `api/` 的接口或事件通信。

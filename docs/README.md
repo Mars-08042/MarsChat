@@ -1,6 +1,6 @@
 # 文档索引
 
-文档描述 `dev` 分支上的当前代码：Kratos v3 微服务后端已按 [后端重构计划](plans/completed/backend-refactor.md) 完成（2026-11-21），前端尚未重写。旧版本（Gin 单体 + Vue 3 前端）的代码与文档见提交 `6624cea`。
+文档描述 `dev` 分支上的当前代码：Kratos v3 微服务后端已按 [后端重构计划](plans/completed/backend-refactor.md) 完成（2026-11-21），前端在 `web/` 重写中，见[前端计划](plans/active/frontend-rewrite.md)。旧版本（Gin 单体 + Vue 3 前端）的代码与文档见提交 `6624cea`。
 
 ## 目录
 

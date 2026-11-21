@@ -222,13 +222,13 @@ Alertmanager 只配置一个不发送的接收方，告警在它的界面（1909
 - k6 2.4.0 镜像（`k6/websockets` 在 1.6.0 起为稳定模块），连在 Compose 网络中，经网关压测：`ws://apisix:9080/ws`、`http://apisix:9080`。
 - WebSocket 使用 access 已支持的 JSON 子协议 `marschat.v1.json`，k6 不需要处理 protobuf。
 - 一个 VU 可以同时持有多个 WebSocket 连接，用于减少 k6 自身的内存（每个 VU 是一个 JS 运行时）。
-- 脚本放在 `test/load/k6/`，结果摘要输出到 `tmp/load/`（被 Git 忽略），关键数据写入重构计划。
+- 脚本放在 `test/load/k6/`，结果摘要输出到 `data/load/`（被 Git 忽略），关键数据写入重构计划。
 
 **准备数据**：
 
 - `test/load/seed_test.go`（构建标签 `load`，`make load-seed`）经网关注册 N 个用户、两两加好友、建一个热点群。
 - 注册受“每 IP 每小时 20 次发码”限制，沿用集群测试的做法：每批注册后清除本机来源地址的限流计数（`testkit.ResetRateLimits`）。
-- 用户与令牌写入 `tmp/load/users.json`。
+- 用户与令牌写入 `data/load/users.json`。
 - 访问令牌 15 分钟有效，所以准备数据后立即压测。
 - 验证码依赖 account 的 `log` 发送方。压测期间按“验证码邮件”一节，在命令的环境中把 account 覆盖为 `log` 模式，结束后恢复，`.env` 不改。
 
@@ -440,3 +440,4 @@ ALTER TABLE outbox_events ADD COLUMN trace_parent VARCHAR(64) NOT NULL DEFAULT '
 24. **连接池上限之和超过 MySQL 最大连接数**（TD-41，已修复）：MySQL 启动参数加 `--max-connections=300`。缩小连接池的方案试过，会让请求排队超时并触发熔断，数据见[重构计划的压测结果](../plans/completed/backend-refactor.md#压测结果)。
 25. **delivery 全部停止后没有告警**（TD-42，未处理）：积压指标随 delivery 一起消失，实例注销后 `InstanceDown` 也会结束。
 26. **补上 `make dlq`**（2026-11-21，后端收尾复核时发现）：3.5 节的告警表和 `KafkaDeadLetter` 规则的说明都指向 `make dlq`，实施时漏了这个命令，排查的人会被引到不存在的目标。Makefile 补上该目标，命令与 deployment.md“死信队列”一节原来手写的一致。
+27. **压测数据改放 `data/load`**（2026-11-21，合并前端分支后整理目录）：`tmp/` 只放临时文件和只读参考源码，可以随时清空；压测准备的用户与令牌要和数据库中的数据对应，结果摘要也要保留，改放被忽略的 `data/load`，k6 容器的挂载、Makefile 与脚本注释同步修改。

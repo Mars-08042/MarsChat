@@ -4,7 +4,7 @@
 
 ## 项目速览
 
-- MarsChat：Web 即时通讯系统，代码在 `dev` 分支。后端是 Kratos v3 微服务（access、account、social、message、delivery、media），接口用 protobuf 定义，2026-11-21 按后端重构计划完成；前端尚无代码，之后用 React + pnpm 重写。
+- MarsChat：Web 即时通讯系统，代码在 `dev` 分支。后端是 Kratos v3 微服务（access、account、social、message、delivery、media），接口用 protobuf 定义，2026-11-21 按后端重构计划完成；前端在 `web/` 用 React + pnpm 重写，处于视觉原型阶段，尚未接入后端。
 - 架构总览见 [ARCHITECTURE.md](ARCHITECTURE.md)，选型见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)、[ADR-0006](docs/architecture/adr/0006-message-sync-model.md) 和 [架构图](docs/images/proposed-distributed-architecture.svg)；后端重构的过程、实测数据与遗留项见 [docs/plans/completed/backend-refactor.md](docs/plans/completed/backend-refactor.md)。
 - Go module 为 `github.com/Mars-08042/MarsChat`。依赖组件由 Compose 提供：MySQL、Redis、Kafka、Consul、APISIX；监控组件（Prometheus、Alertmanager、Grafana、Jaeger）和压测工具 k6 在单独的 profile 中，见 [deployment.md](docs/deployment.md)。文件存储默认用仓库下的本地目录，可切换为阿里云 OSS（[ADR-0007](docs/architecture/adr/0007-object-storage.md)）。
 - 文档只描述当前代码。旧版本（Gin 单体 + Vue 前端）的描述已删除，需要时查看提交 `6624cea`；设计文档与 ADR 中提到的旧基线只是决策背景。
@@ -39,6 +39,7 @@
 - 容器宿主机端口为默认端口 + 10000，只绑定 `127.0.0.1`；应用服务 HTTP 用 `18xx0`、gRPC 用 `19xx0`。完整端口表见重构计划。
 - 只操作 MarsChat 自己的容器、卷和镜像。本机还有其他项目的容器，例如 `pestle-redis` 使用 `redis:7` 镜像。
 - 不要把本机路径、IP、密钥提交进仓库；真实配置放在被忽略的本地文件中。
+- `tmp/` 只放临时文件和只读参考源码，可以随时清空；需要保留的本地数据放在 `data/` 的子目录（都被 Git 忽略）：`data/media` 文件存储、`data/load` 压测数据、`data/emoji-sources` 表情来源仓库。
 - 后端依赖用 go mod。新增、升级依赖或修改 `go.mod` 前先征得开发者同意（重构计划中已列出的除外）。
 - 前端在 `web/`，依赖用 pnpm；新增或升级依赖同样先征得同意（[前端设计](docs/design/frontend.md) 第 3.1 节已列出的除外）。设计变量在 `web/src/styles/tokens.css`，改颜色后要通过对比度测试；第三方源码按设计 3.3 节登记到 `web/THIRD_PARTY_NOTICES.md`。
 - WebSocket 帧或通话信令变化时，同步更新对应的 proto 定义和 `data-flow.md`。

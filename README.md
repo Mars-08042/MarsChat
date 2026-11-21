@@ -1,6 +1,6 @@
 # MarsChat
 
-MarsChat 是一个 Web 即时通讯系统。后端用 Go + Kratos v3 拆分为六个微服务，实现了可靠消息（幂等、会话内有序、事务 Outbox、断线补拉）、多端同步、跨节点投递和慢连接隔离，并用端到端测试、故障实验和压测验证。前端正在用 React + pnpm 重写，目前仓库中只有后端。
+MarsChat 是一个 Web 即时通讯系统。后端用 Go + Kratos v3 拆分为六个微服务，实现了可靠消息（幂等、会话内有序、事务 Outbox、断线补拉）、多端同步、跨节点投递和慢连接隔离，并用端到端测试、故障实验和压测验证。前端正在 `web/` 用 React + Vite + pnpm 重写，目前是视觉原型，尚未接入后端。
 
 > 当前代码在 `dev` 分支。旧版本（Gin 单体 + Vue 3 前端）已在重构中移除，需要时查看提交 `6624cea`。
 
@@ -20,6 +20,7 @@ MarsChat 是一个 Web 即时通讯系统。后端用 Go + Kratos v3 拆分为�
 | 层 | 技术 |
 |---|---|
 | 服务 | Go 1.27.3、Kratos v3（HTTP + gRPC，protobuf 契约）、wire、GORM、go-redis、franz-go、gorilla/websocket |
+| 前端 | React、TypeScript、Vite、Tailwind CSS、shadcn/ui、TanStack Query、zustand、Vitest，pnpm 管理依赖（[ADR-0008](docs/architecture/adr/0008-react-frontend.md)） |
 | 组件 | MySQL、Redis 8（含布隆过滤器）、Kafka、Consul、Apache APISIX，全部由 Docker Compose 提供 |
 | 可观测 | OpenTelemetry、Prometheus、Alertmanager、Grafana、Jaeger；压测用 k6 |
 | 存储 | 本地目录或阿里云 OSS |
@@ -39,6 +40,7 @@ api/<服务>/v1/     接口契约 *.proto 与生成代码
 pkg/              跨服务公共组件：启动、鉴权、ID、缓存、布隆过滤器、限流、Outbox、Kafka、遥测等
 deploy/           MySQL、APISIX、Prometheus、Alertmanager、Grafana、Jaeger 的配置与初始化脚本
 test/             e2e（需要 Compose 环境）、cluster（容器模式的集群测试与故障实验）、load（k6 压测）
+web/              前端（React + Vite + pnpm），src/gen/ 为 buf 从 proto 生成的 TS 代码
 docs/             项目文档
 ```
 
@@ -57,12 +59,20 @@ make images             # 构建服务镜像
 make cluster-up         # 容器模式：多实例服务 + 网关，入口 https://127.0.0.1:19443
 ```
 
-也可以在宿主机逐个运行服务（`make run-account` 等，每个服务一个终端）。两种方式不能同时运行。端口、配置、监控与压测见 [deployment.md](docs/deployment.md)。
+也可以在宿主机逐个运行服务（`make run-account` 等，每个服务一个终端）。两种方式不能同时运行。
+
+前端需要 Node.js 与 pnpm：
+
+```bash
+make web-install        # 按锁文件安装依赖
+make web-dev            # 开发服务器 http://localhost:5173，/v1 与 /ws 默认代理到网关
+```端口、配置、监控与压测见 [deployment.md](docs/deployment.md)。
 
 ## 开发检查
 
 ```bash
 make lint vet test build   # buf lint、go vet、单元测试、构建
+make web-check            # 前端：lint、类型检查、单元测试、构建
 make e2e                   # 端到端测试，需要先启动依赖并在宿主机运行全部服务
 make cluster-test          # 集群测试与故障实验，需要先 make cluster-up
 ```
