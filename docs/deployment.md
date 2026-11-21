@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 5（2026-11-20）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
+> 本文描述**新后端**的运行方式，随重构步骤更新，最近一次更新于步骤 5（2026-11-20）；前端开发方式见“前端开发”（前端计划第 1 阶段，2026-11-21）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）。旧单体的部署流程见提交 `6624cea` 中的本文。
 
 ## 运行依赖
 
@@ -10,6 +10,8 @@
 | Docker Desktop | 本机 29.9.2，Compose v5.6.1 | 运行依赖组件 |
 | buf | 1.71.0 | `make lint`、`make conf`、`make api`；protoc 插件由 `go run` 按固定版本下载，不需要单独安装 |
 | make + Git Bash | GNU make 3.81 及以上 | 开发命令；Makefile 使用 `sh`，Windows 上需要 Git Bash |
+| Node.js | 24（本机 24.12.0，CI 同为 24） | 前端开发与构建，以及 `make gen` 中的 TS 代码生成 |
+| pnpm | 11.22.0（`web/package.json` 的 `packageManager`） | 前端依赖，见“前端开发” |
 
 ## 依赖组件
 
@@ -190,6 +192,29 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 
 - **日志**：`docker compose logs -f apisix`，访问日志和错误日志都输出到容器的标准输出。
 
+## 前端开发
+
+前端在 `web/`（React + Vite，pnpm 管理依赖），设计见 [frontend.md](design/frontend.md)，进度见[前端计划](plans/active/frontend-rewrite.md)。
+
+```bash
+make web-install        # 按 web/pnpm-lock.yaml 安装依赖（cd web && pnpm install --frozen-lockfile）
+make web-dev            # 开发服务器 http://localhost:5173（端口固定，被占用时直接报错）
+make web-check          # lint → 类型检查 → 单元测试 → 构建
+```
+
+开发服务器把 `/v1` 和 `/ws` 代理到后端。浏览器只访问 Vite 的源，网关和各服务都不需要配置 CORS。代理目标由环境变量 `MARSCHAT_API_TARGET` 选择：
+
+| 取值 | 代理到 | 后端运行方式 |
+|---|---|---|
+| `gateway`（默认） | APISIX `http://127.0.0.1:19080` | 容器模式（`make cluster-up`） |
+| `host` | 按路径前缀转发到各服务的宿主机端口，与网关的路由划分一致，见 [vite.config.ts](../web/vite.config.ts) | 宿主机运行（`make run-<服务>`） |
+
+例如 `MARSCHAT_API_TARGET=host make web-dev`。后端没有运行时，代理请求返回 502。
+
+- 本机经网关的请求来源 IP 相同，`/v1/auth/*` 每分钟 60 次的入口限流对本机是全局的；需要反复登录时用 `host` 模式。
+- 本机设置了系统 HTTP 代理时，curl 访问 `localhost` 也会走代理，返回带 `Proxy-Connection` 头的 502。加上 `--noproxy '*'` 即可。
+- 改了 `api/` 下的 proto 后执行 `make gen`，它会一并执行 `make web-gen`，重新生成 `web/src/gen/` 下的 TS 代码。生成代码要提交到仓库。
+
 ## 服务配置
 
 配置文件在 `app/<服务>/configs/config.yaml`，结构定义在各服务的 `internal/conf/conf.proto`，约定见 [system.md](architecture/system.md#51-配置)。
@@ -307,7 +332,9 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 
 | 命令 | 作用 |
 |---|---|
-| `make gen` | 重新生成配置 proto（`make conf`）、接口 proto（`make api`）和依赖注入代码（`make wire`） |
+| `make gen` | 重新生成配置 proto（`make conf`）、接口 proto（`make api`）、依赖注入代码（`make wire`）和前端 TS 代码（`make web-gen`，需要先 `make web-install`） |
+| `make web-install` / `make web-dev` / `make web-check` | 安装前端依赖 / 启动前端开发服务器 / 前端检查，见“前端开发” |
+| `make web-gen` | 删除并重新生成 `web/src/gen/` |
 | `make lint` | `buf lint` |
 | `make vet` / `make test` | `go vet ./...` / `go test ./...` |
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |
@@ -320,7 +347,7 @@ delivery 的主要配置段（默认值见 [config.yaml](../app/delivery/configs
 | `make migrate-<服务>` | 数据库迁移，`ARGS` 传子命令 |
 | `make grant-admin PHONE=…` | 设置管理员 |
 
-CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时执行：`buf lint`、`buf breaking`（PR 与基准分支比较，推送与上一次推送比较）、重新生成代码并检查与提交一致、`go mod tidy -diff`、`go vet`、`go build`、`go test -race`。e2e 需要 compose 环境，暂不在 CI 中运行。
+CI（`.github/workflows/ci.yml`）在推送到 `main`、`dev` 和提交 PR 时执行：`buf lint`、`buf breaking`（PR 与基准分支比较，推送与上一次推送比较）、安装前端依赖、重新生成代码（含前端 TS 代码）并检查与提交一致、`go mod tidy -diff`、`go vet`、`go build`、`go test -race`、前端检查（`pnpm check`）。e2e 需要 compose 环境，暂不在 CI 中运行。
 
 ## 死信队列
 

@@ -20,6 +20,7 @@
 | 表、索引、Redis 键 | [data-model.md](docs/architecture/data-model.md)（按重构步骤重写），设计原则见重构计划 |
 | 分层与横切约定 | [system.md](docs/architecture/system.md)（描述当前代码，按重构步骤更新） |
 | 运行、配置、部署 | [deployment.md](docs/deployment.md)（按重构步骤更新），完整端口表见重构计划 |
+| 前端与 UI | [前端设计](docs/design/frontend.md)、[前端计划](docs/plans/active/frontend-rewrite.md)、[ADR-0008](docs/architecture/adr/0008-react-frontend.md) |
 | 参考实现 | `tmp/teamgram-server/`（只读参考，被 git 忽略），对照清单见重构计划。需要阅读其他第三方源码时同样克隆到 `tmp/`，并切到 `go.mod` 中使用的版本，例如 `tmp/kratos` |
 
 ## 工作规则
@@ -38,7 +39,8 @@
 - 容器宿主机端口为默认端口 + 10000，只绑定 `127.0.0.1`；应用服务 HTTP 用 `18xx0`、gRPC 用 `19xx0`。完整端口表见重构计划。
 - 只操作 MarsChat 自己的容器、卷和镜像。本机还有其他项目的容器，例如 `pestle-redis` 使用 `redis:7` 镜像。
 - 不要把本机路径、IP、密钥提交进仓库；真实配置放在被忽略的本地文件中。
-- 后端依赖用 go mod。新增、升级依赖或修改 `go.mod` 前先征得开发者同意（重构计划中已列出的除外）。前端暂无代码。
+- 后端依赖用 go mod。新增、升级依赖或修改 `go.mod` 前先征得开发者同意（重构计划中已列出的除外）。
+- 前端在 `web/`，依赖用 pnpm；新增或升级依赖同样先征得同意（[前端设计](docs/design/frontend.md) 第 3.1 节已列出的除外）。设计变量在 `web/src/styles/tokens.css`，改颜色后要通过对比度测试；第三方源码按设计 3.3 节登记到 `web/THIRD_PARTY_NOTICES.md`。
 - WebSocket 帧或通话信令变化时，同步更新对应的 proto 定义和 `data-flow.md`。
 
 ## 验证要求
@@ -52,7 +54,8 @@ go build ./...
 go test ./...
 ```
 
-- 改了 proto 或 `wire.go` 后先 `make gen`，生成代码与源文件一起提交，CI 会检查两者一致。
+- 改了前端代码后运行 `make web-check`（lint → 类型检查 → 单元测试 → 构建）。
+- 改了 proto 或 `wire.go` 后先 `make gen`（会一并生成前端 TS 代码，需要先 `make web-install`），生成代码与源文件一起提交，CI 会检查两者一致。
 - `tmp/teamgram-server` 有自己的 `go.mod`，不在 `./...` 范围内。
 - 单元测试尽量不依赖外部服务；需要 Compose 环境的端到端测试放在 `test/e2e`（构建标签 `e2e`，用 `make e2e` 运行）。
 - 不为了通过检查而修改测试预期、跳过断言或吞掉错误。

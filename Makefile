@@ -26,7 +26,26 @@ wire: ## 生成依赖注入代码
 	$(WIRE) $(foreach s,$(SERVICES),./app/$(s)/cmd/$(s))
 
 .PHONY: gen
-gen: conf api wire ## 重新生成全部代码
+gen: conf api wire web-gen ## 重新生成全部代码（包括前端 TS 代码，需要先 make web-install）
+
+# 前端（web/，pnpm）。先删除再生成，避免删掉的 proto 留下过期的 TS 文件。
+.PHONY: web-gen
+web-gen: ## 生成前端用的接口 TS 代码到 web/src/gen
+	@test -d web/node_modules || { echo "missing web/node_modules: run make web-install first"; exit 1; }
+	rm -rf web/src/gen
+	buf generate --template buf.gen.web.yaml
+
+.PHONY: web-install
+web-install: ## 按锁文件安装前端依赖
+	cd web && pnpm install --frozen-lockfile
+
+.PHONY: web-dev
+web-dev: ## 启动前端开发服务器 http://localhost:5173，默认经网关；MARSCHAT_API_TARGET=host 直连宿主机上的服务
+	cd web && pnpm dev
+
+.PHONY: web-check
+web-check: ## 前端检查：lint、类型检查、单元测试、构建
+	cd web && pnpm check
 
 .PHONY: lint
 lint: ## proto 规范检查

@@ -160,21 +160,23 @@ React Bits 的组件在选定前要核对两点：
 
 #### 3.4.2 颜色
 
-对比度按 WCAG 2.x 的相对亮度公式计算（2026-11-20 用脚本核对）。
+对比度按 WCAG 2.x 的相对亮度公式计算。变量的权威定义在 [web/src/styles/tokens.css](../../web/src/styles/tokens.css)，`tokens.test.ts` 会逐项核对下表中的组合。变量名沿用 shadcn/ui 的约定（第 10 节第 3 条），下表是主要变量。
 
 | 变量 | 亮色 | 深色 | 用途 |
 |---|---|---|---|
-| `--brand` | `#E2452C` | `#FF6A4D` | 品牌色：大色块、图标、大号标题、装饰、焦点环 |
-| `--brand-strong` | `#C2361F` | `#C2361F` | 白字按钮、我方气泡、浅色背景上的红色文字 |
-| `--brand-tint` | `#FDEBE6` | `#2A1A16` | 选中的会话、悬停背景 |
-| `--bg` | `#FAF7F3`（月岩白） | `#0F0B0A`（夜色） | 页面背景 |
-| `--surface` | `#FFFFFF` | `#1A1412` | 面板、卡片 |
-| `--bubble-peer` | `#F1ECE6` | `#241C19` | 对方气泡 |
-| `--text` | `#17110F`（墨黑） | `#F5EFE9` | 正文 |
-| `--text-muted` | `#7A6F68`（尘灰） | `#A89C94` | 次要文字、时间 |
-| `--accent` | `#F0A23B`（沙金） | `#F0A23B` | 少量点缀，比如徽章，不跟红色抢主角 |
-| `--danger` | `#B42318` | `#FF8A80` | 错误 |
+| `--brand` | `#E2452C` | `#FF6A4D` | 品牌色：大色块、图标、大号标题、装饰 |
+| `--brand-strong`、`--primary` | `#C2361F` | `#C2361F` | 白字按钮、我方气泡 |
+| `--brand-text` | `#C2361F` | `#FF6A4D` | 普通背景上的红色文字、链接 |
+| `--accent` | `#FDEBE6` | `#2A1A16` | 选中的会话、悬停背景（shadcn 的 accent 含义） |
+| `--background` | `#FAF7F3`（月岩白） | `#0F0B0A`（夜色） | 页面背景 |
+| `--card`、`--popover` | `#FFFFFF` | `#1A1412` | 面板、卡片、弹出层 |
+| `--bubble-peer`、`--muted` | `#F1ECE6` | `#241C19` | 对方气泡、弱化背景 |
+| `--foreground` | `#17110F`（墨黑） | `#F5EFE9` | 正文 |
+| `--muted-foreground` | `#6E635C`（尘灰） | `#A89C94` | 次要文字、时间 |
+| `--gold` | `#F0A23B`（沙金） | `#F0A23B` | 少量点缀，比如未读徽章，不跟红色抢主角；上面的文字用 `--gold-foreground`（墨黑） |
+| `--destructive` | `#B42318` | `#FF8A80` | 错误 |
 | `--success` | `#187A4C` | `#3FBF86` | 成功 |
+| `--ring` | `#E2452C` | `#FF6A4D` | 焦点环 |
 
 关键组合的对比度：
 
@@ -185,7 +187,7 @@ React Bits 的组件在选定前要核对两点：
 | `#C2361F` 字 / 月岩白 | 5.12 | 满足；`#E2452C` 字 / 月岩白只有 3.84，只能用于大字 |
 | `#C2361F` 字 / `#FDEBE6` | 4.74 | 满足 |
 | 墨黑字 / 月岩白 | 17.50 | 满足 |
-| 尘灰字 / 月岩白、白色 | 4.57、4.88 | 满足 |
+| 尘灰字 `#6E635C` / 月岩白、白色、`#F1ECE6` | 5.46、5.83、4.96 | 满足；初稿的 `#7A6F68` 在 `#F1ECE6` 上只有 4.16，已调整（第 10 节第 2 条） |
 | 墨黑字 / `#E2452C`（Rig AI 式红底黑字） | 4.56 | 满足，用于登录页和营销式大色块 |
 | `#FF6A4D` / 深色面板 | 6.44 | 满足 |
 | `#A89C94` / 深色背景、深色面板 | 7.32、6.81 | 满足 |
@@ -633,3 +635,20 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
 1. **TypeScript 锁定 6.0.3**（2026-11-20，核对依赖时）：第 3.1 节写的是 7.0.2，但 typescript-eslint 8.73.0 的 peer 依赖要求 TypeScript `>=4.8.4 <6.1.0`。按第 7 节的应对方案，回退到 6.0 系列的最新版 6.0.3，ESLint 不变。
 
    Vite 官方 `react-ts` 模板（create-vite 9.3.4）已改用 TypeScript 7.0.2 加 oxlint，不再用 ESLint。改用 oxlint 属于更换依赖，需要开发者另外确认。typescript-eslint 支持 TypeScript 7 后，再升级。
+
+以下为第 1 阶段（工程骨架，2026-11-21）中的调整：
+
+2. **尘灰改为 `#6E635C`**：初稿的 `#7A6F68` 在月岩白上是 4.57，但放在 `--muted`（`#F1ECE6`）背景上只有 4.16。对比度测试覆盖了这个组合后发现问题，改为 `#6E635C`（4.96）。
+3. **变量名沿用 shadcn/ui 的约定**：`background`、`foreground`、`card`、`primary`、`muted`、`accent`、`destructive`、`ring` 等，shadcn 组件可以直接使用。shadcn 的 `accent` 表示悬停和选中背景，所以初稿中叫 `--accent` 的沙金色改名为 `--gold`。另外新增两个变量：
+   - `--brand-text`：红色文字。亮色主题用深火星红，深色主题用亮火星红，因为深火星红在深色背景上对比度不够；
+   - `--gold-foreground`：沙金背景上的文字颜色。
+   
+   圆角和阴影另外命名（`--card-radius`、`--card-shadow` 等），再在 `@theme inline` 中映射为 Tailwind 的 `rounded-card`、`shadow-card`，避免与 Tailwind 主题变量同名形成自引用。
+4. **shadcn 初始化**：
+   - 用 `shadcn init -b base -p nova`。组件库选 Base UI，这是 CLI 的默认值；初稿写的 `base-nova` 是 `components.json` 中的 style 名，不是 CLI 接受的预设名。
+   - shadcn 4 用 shadcn 维护的 `cn` 包（MIT，仓库 `shadcn-ui/cn`）替代 `clsx` 加 `tailwind-merge`；`shadcn` 包作为依赖提供 `shadcn/tailwind.css`。
+   - 预设顺带安装的字体包 `@fontsource-variable/geist` 已移除：字体在原型阶段对比后再请开发者确认。
+5. **tsconfig 不开启 `erasableSyntaxOnly`**：`protoc-gen-es` 默认把枚举生成为 TypeScript `enum`，与这个选项冲突。插件的替代选项 `erasable_syntax` 还是实验性的，所以保留生成器的默认输出，tsconfig 去掉这个选项。
+6. **暂不建 `pnpm-workspace.yaml`**：这次安装没有依赖需要批准安装脚本，等出现时再按 ADR-0004 的做法添加。
+7. **Vitest 读取 CSS**：Vitest 默认把 CSS 替换为空字符串，`?raw` 导入也拿到空串。所以在 `test.css.include` 中只对 `tokens.css` 开启处理。
+8. **依赖按需安装**：第 3.1 节中的 react-router、@tanstack/react-query、zustand、sonner、@tanstack/react-virtual、@testing-library/react、jsdom，在第一次用到的阶段再安装，不在骨架阶段预装。它们仍属于已同意的依赖。

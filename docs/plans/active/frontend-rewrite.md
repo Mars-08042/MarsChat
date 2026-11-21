@@ -28,13 +28,18 @@
 
 ### 1. 工程骨架
 
-- [ ] `web/`：Vite + React + TypeScript、Tailwind CSS、shadcn/ui 初始化、ESLint、Vitest、路径别名；`pnpm-workspace.yaml` 的 `allowBuilds` 只批准必要的依赖。
-- [ ] 把设计规范写成 `styles/tokens.css`（颜色、字体、圆角、阴影、动效参数，亮色和深色），用 `MotionConfig` 设置默认动效参数和 `reducedMotion="user"`。
-- [ ] 新增 `buf.gen.web.yaml`，生成 TS 代码到 `web/src/gen/`；验证 Windows 下调用本地插件的方式，以及依赖 proto 的生成方式（设计第 7 节）。`make gen` 同时生成 Go 和 TS。
-- [ ] Vite 代理支持 `gateway` 和 `host` 两种模式（设计第 3.10 节）。
-- [ ] Makefile 新增前端目标；`.gitignore` 忽略 `web/node_modules/`、`web/dist/`；CI 新增前端任务和 TS 生成代码一致性检查。
-- [ ] 新建 `web/THIRD_PARTY_NOTICES.md`。
-- 验证：`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build` 通过；`make gen` 连续执行两次结果一致；Go 侧的 `buf lint`、`go vet ./...`、`go build ./...` 不受影响。CI 要推送后才会运行。
+- [x] `web/`：Vite 8 + React 19 + TypeScript 6.0.3、Tailwind CSS 4、shadcn/ui（Base UI，nova 预设）、ESLint、Vitest、`@/` 路径别名。这次安装没有依赖需要批准安装脚本，暂不建 `pnpm-workspace.yaml`（设计第 10 节）。
+- [x] 设计变量写在 `web/src/styles/tokens.css`（颜色、圆角、阴影，亮色和深色），`index.css` 映射为 Tailwind 主题；动效参数在 `src/lib/motion.ts`，`MotionConfig` 设置默认参数和 `reducedMotion="user"`。`tokens.test.ts` 按 WCAG 公式核对 21 组颜色组合（两套主题共 42 项，加 1 项已知结论）；变异验证中，把尘灰改回初稿的 `#7A6F68` 时测试失败，于是调整为 `#6E635C`。
+- [x] 新增 `buf.gen.web.yaml`，生成 TS 代码到 `web/src/gen/`（18 个文件）。Windows 下用 `node` 直接运行插件入口；`include_imports` 一并生成 `buf/validate`、`google/api`；`make gen` 同时生成 Go 和 TS。
+- [x] Vite 代理支持 `gateway`（默认）和 `host` 两种模式（`MARSCHAT_API_TARGET`）。
+- [x] Makefile 新增 `web-gen`、`web-install`、`web-dev`、`web-check`；`.gitignore` 忽略 `node_modules/`、`web/dist/`；CI 新增 pnpm 与 Node 24、安装前端依赖（放在生成代码检查之前）和 `pnpm check`。
+- [x] 新建 `web/THIRD_PARTY_NOTICES.md`。
+- [x] 文档：`deployment.md`（运行依赖、前端开发、开发命令、CI）、`system.md`（仓库结构、代码生成）、`AGENTS.md`（导航、前端约束、验证命令）、设计第 3.4.2 节和第 10 节。
+- 验证（2026-11-21，`ui` 分支 worktree）：
+  - `pnpm lint`、`pnpm typecheck`、`pnpm test`（43 项）、`pnpm build` 通过，产物 JS 221.03 KB（gzip 69.28 KB）、CSS 11.64 KB（gzip 3.12 KB）；
+  - `make web-gen` 连续执行两次，18 个文件完全一致；`make gen` 后 Go 侧没有差异；`buf lint`、`go vet ./...`、`go build ./...` 通过；
+  - `pnpm dev` 首页正常返回；浏览器中亮色背景、正文颜色，以及 `.dark` 下的深色背景都与设计变量一致；后端未运行时，代理请求返回 502。
+  - 未验证：代理连到真实后端（第 3 阶段联调时验证）；CI（未推送）。
 
 ### 2. 视觉原型（假数据）
 
@@ -92,11 +97,17 @@
 
 ## 当前进度与下一步
 
-第 0 阶段已完成（2026-11-20）：设计已采纳，ADR-0008 已写好。核对依赖时，TypeScript 改为锁定 6.0.3（设计第 10 节）。
+第 0 阶段已完成（2026-11-20）：设计已采纳，ADR-0008 已写好。核对依赖时，TypeScript 改为锁定 6.0.3（设计第 10 节）。提交 `5966072`（`ui` 分支）。
 
-下一步：第 1 阶段（工程骨架）。
+第 1 阶段已完成（2026-11-21）。实施中的调整见设计第 10 节第 2～8 条。
+
+前端在 `ui` 分支开发，用独立的 worktree `D:\Desktop\Projects\MarsChat-ui`。主目录同时在 `dev` 上进行后端步骤 6（media），两边互不干扰；合并时注意 `Makefile`、`.gitignore`、`AGENTS.md`、`deployment.md` 两边都有改动。
+
+下一步：第 2 阶段（视觉原型）。
 
 ## 遇到的问题
 
 - 2026-11-20：调研时 Context7 两次连接失败（`ECONNRESET`），Motion 的 API 改为对照 motion.dev 官方文档核实；直连 `registry.npmjs.org` 超时，设计中的版本号来自 pnpm 当前配置的 npmmirror 镜像。
 - 2026-11-20：React Bits 的 WebGL 背景在浏览器截图时没有渲染出来，换成火星红后的实际效果留到第 2 阶段验证。
+- 2026-11-21：Vitest 默认把 CSS 替换为空字符串，对比度测试用 `?raw` 读取 `tokens.css` 时拿到空串，报找不到 `:root`。在 `test.css.include` 中对 `tokens.css` 开启处理后正常。
+- 2026-11-21：在 Git Bash 里用 curl 访问 `http://localhost:5173` 返回 502，响应头带 `Proxy-Connection`。原因是本机设置了系统 HTTP 代理，请求被发到了代理而不是 Vite。加 `--noproxy '*'` 后正常，已写入 `deployment.md`。
