@@ -41,10 +41,12 @@ type fakeSMTP struct {
 	tlsConf  *tls.Config
 	implicit bool // 隐式 TLS：监听端直接是 TLS
 	starttls bool // 明文监听时是否提供 STARTTLS
+
+	// mu 保护以下字段。authCode、silent 在服务器启动后由测试修改：测试先改再连接，
+	// 但这个先后关系只经过 TCP 传递，竞争检测器看不到，所以同样要加锁
+	mu       sync.Mutex
 	authCode string
 	silent   bool // 接受连接后不发问候，模拟卡住的服务器
-
-	mu       sync.Mutex
 	authUser string
 	authPass string
 	from     string
@@ -83,9 +85,24 @@ func (s *fakeSMTP) serve() {
 	}
 }
 
+func (s *fakeSMTP) setAuthCode(code string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.authCode = code
+}
+
+func (s *fakeSMTP) setSilent() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.silent = true
+}
+
 func (s *fakeSMTP) handle(conn net.Conn) {
 	defer conn.Close()
-	if s.silent {
+	s.mu.Lock()
+	silent, authCode := s.silent, s.authCode
+	s.mu.Unlock()
+	if silent {
 		_, _ = io.Copy(io.Discard, conn)
 		return
 	}
@@ -124,7 +141,7 @@ func (s *fakeSMTP) handle(conn net.Conn) {
 			}
 			s.sawTLS = isTLS
 			s.mu.Unlock()
-			w(s.authCode)
+			w(authCode)
 		case strings.HasPrefix(upper, "MAIL FROM:"):
 			s.mu.Lock()
 			s.from = strings.Trim(cmd[len("MAIL FROM:"):], "<> ")
@@ -249,7 +266,7 @@ func TestSMTPSenderRefusesPlainText(t *testing.T) {
 func TestSMTPSenderAuthFailure(t *testing.T) {
 	cert, client := testCert(t)
 	srv := newFakeSMTP(t, cert, true, false)
-	srv.authCode = "535 5.7.8 Authentication failed"
+	srv.setAuthCode("535 5.7.8 Authentication failed")
 	err := testSender(t, srv, client, true).Send(context.Background(), testTo, "123456", biz.PurposeLogin, time.Minute)
 	if err == nil || !strings.Contains(err.Error(), "smtp auth") {
 		t.Fatalf("got %v, want an auth error", err)
@@ -269,7 +286,7 @@ func TestSMTPSenderUntrustedCertificate(t *testing.T) {
 func TestSMTPSenderDeadline(t *testing.T) {
 	cert, client := testCert(t)
 	srv := newFakeSMTP(t, cert, false, true)
-	srv.silent = true
+	srv.setSilent()
 
 	s := testSender(t, srv, client, false)
 	s.timeout = 300 * time.Millisecond

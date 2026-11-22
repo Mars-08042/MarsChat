@@ -544,6 +544,8 @@ func TestCallRemoteCallee(t *testing.T) {
 	a.send(hangupFrame(2, id))
 	a.expectAck(2)
 
+	// 挂断先回复 CallAck 再转发结束事件，收到确认时转发可能还没发出
+	eventually(t, func() bool { return len(e.fwd.all()) >= 2 })
 	got := e.fwd.all()
 	if len(got) != 2 {
 		t.Fatalf("forwarded %d frames, want 2 (incoming, ended)", len(got))
@@ -588,6 +590,8 @@ func TestCallSignalPeerUnreachable(t *testing.T) {
 	a.login("ok-42-7")
 	a.send(inviteFrame(1, 43))
 	id := a.expectAck(1)
+	// 邀请先回复 CallAck 再转发来电：等来电转发完再让实例不可达，否则来电转发失败，邀请会按对方离线结束
+	eventually(t, func() bool { return len(e.fwd.all()) == 1 })
 	// 模拟其他实例上的 900 接听
 	call, _ := e.calls.Get(context.Background(), id)
 	if ok, _, err := e.calls.Accept(context.Background(), call.CallKey, 900, "10.0.0.2:19100", time.Now(), time.Minute); !ok || err != nil {

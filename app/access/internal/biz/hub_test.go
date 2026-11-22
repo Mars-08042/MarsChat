@@ -218,6 +218,7 @@ func newEnv(t *testing.T, mutate func(*conf.WebSocket)) *env {
 
 type client struct {
 	t  *testing.T
+	e  *env
 	ws *websocket.Conn
 }
 
@@ -229,7 +230,7 @@ func (e *env) dial(t *testing.T, subprotocols ...string) *client {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ws.Close() })
-	return &client{t: t, ws: ws}
+	return &client{t: t, e: e, ws: ws}
 }
 
 func (c *client) send(f *v1.ClientFrame) {
@@ -294,7 +295,9 @@ func sendFrame(rid uint64, clientMsgID string) *v1.ClientFrame {
 	}}}
 }
 
-// login 完成认证并返回连接 ID。
+// login 完成认证，等在线路由写入后返回。
+// 服务端先回复 AuthOk 再写路由（见 handleAuth），紧接着的呼叫若早于路由写入就找不到这个连接，
+// CI 开启 -race 时出现过被叫的第二个设备收不到来电。
 func (c *client) login(token string) *v1.AuthOk {
 	c.t.Helper()
 	c.send(authFrame(1, token))
@@ -303,6 +306,7 @@ func (c *client) login(token string) *v1.AuthOk {
 	if ok == nil || f.GetRequestId() != 1 {
 		c.t.Fatalf("want AuthOk with request_id 1, got %v", f)
 	}
+	eventually(c.t, func() bool { return c.e.routes.has(ok.GetUserId(), ok.GetConnectionId()) })
 	return ok
 }
 
