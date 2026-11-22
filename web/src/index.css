@@ -85,3 +85,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* 主题切换的圆形扩散（lib/theme.ts 的 switchTheme）：关掉默认的交叉淡入，新主题由脚本按 clip-path 展开 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}

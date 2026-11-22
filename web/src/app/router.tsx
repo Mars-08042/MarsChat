@@ -6,6 +6,7 @@ import { ChatPage } from "@/features/chat/ChatPage"
 import { ContactsPage } from "@/features/contacts/ContactsPage"
 import { GroupsPage } from "@/features/groups/GroupsPage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
+import { AdminPage } from "@/features/admin/AdminPage"
 import { HOME_PATH } from "@/lib/redirect"
 import { AppShell } from "./AppShell"
 import { RedirectIfSignedIn, RequireAuth } from "./guards"
@@ -38,6 +39,8 @@ export const router = createBrowserRouter([
       { path: "/contacts/*", element: <ContactsPage /> },
       { path: "/groups", element: <GroupsPage /> },
       { path: "/settings/*", element: <SettingsPage /> },
+      // 封禁与解封，只有系统管理员可用（页面内再判断一次角色）
+      { path: "/admin", element: <AdminPage /> },
     ],
   },
   { path: "*", element: <Navigate to={HOME_PATH} replace /> },

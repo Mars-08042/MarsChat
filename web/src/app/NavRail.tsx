@@ -5,11 +5,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { AccountMenu } from "./AccountMenu"
-import { NAV_ITEMS, type NavItem } from "./nav-items"
+import { useNavItems, type NavItem } from "./nav-items"
 import { useNavBadge } from "./use-unread-total"
 
 // 左侧导航栏。加 .dark 类做成深色岛，亮色主题下和浅色内容区形成对比
 export function NavRail({ className }: { className?: string }) {
+  const items = useNavItems()
   return (
     <nav
       aria-label="主导航"
@@ -17,7 +18,7 @@ export function NavRail({ className }: { className?: string }) {
     >
       <MarsLogo className="mb-6 size-9" />
       <ul className="flex flex-1 flex-col items-center gap-1.5">
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <li key={item.to}>
             <NavRailItem item={item} />
           </li>

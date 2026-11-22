@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Link, NavLink, useLocation, useNavigate } from "react-router"
+import { Link, useLocation, useNavigate } from "react-router"
 import { Ban, MessageCircle, Search, UserMinus, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import { errorText, reasonText } from "@/api/errors"
@@ -8,6 +8,7 @@ import { ActionMenu } from "@/components/common/ActionMenu"
 import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { CopyId } from "@/components/common/CopyId"
 import { ListState } from "@/components/common/ListState"
+import { PageTabs } from "@/components/common/PageTabs"
 import { UserAvatar } from "@/components/common/UserAvatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -74,31 +75,9 @@ export function ContactsPage() {
           </Button>
         </header>
 
-        <nav aria-label="联系人分类" className="mt-6 flex w-fit gap-1 rounded-xl bg-muted p-1">
-          {TABS.map((t) => (
-            <NavLink
-              key={t.tab}
-              to={t.to}
-              end
-              className={cn(
-                "relative rounded-lg px-4 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                tab === t.tab ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {tab === t.tab && (
-                <motion.span layoutId="contacts-tab" transition={springs.smooth} className="absolute inset-0 rounded-lg bg-background shadow-sm" />
-              )}
-              <span className="relative inline-flex items-center gap-1.5">
-                {t.label}
-                {t.tab === "requests" && pending > 0 && (
-                  <span className="min-w-4 rounded-full bg-gold px-1 text-center font-mono text-[10px] leading-4 font-semibold text-gold-foreground">
-                    {pending > 99 ? "99+" : pending}
-                  </span>
-                )}
-              </span>
-            </NavLink>
-          ))}
-        </nav>
+        <div className="mt-6">
+          <PageTabs label="联系人分类" tabs={TABS.map((t) => ({ ...t, badge: t.tab === "requests" ? pending : undefined }))} active={TABS.find((t) => t.tab === tab)?.to ?? "/contacts"} layoutId="contacts-tab" />
+        </div>
 
         <div className="mt-5">
           {tab === "friends" && <FriendsTab onAdd={() => setAdding(true)} />}

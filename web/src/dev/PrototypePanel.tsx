@@ -4,17 +4,16 @@ import { FlaskConical, X } from "lucide-react"
 import { router } from "@/app/router"
 import { FONT_PAIRS, LOGIN_BACKGROUNDS, useAppearance, type FontPair, type LoginBackground } from "@/lib/appearance"
 import { springs } from "@/lib/motion"
-import { readThemePreference, saveThemePreference, type ThemePreference } from "@/lib/theme"
+import { THEME_OPTIONS, type ThemePreference } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 
 // 视觉原型阶段的演示面板，只在开发环境挂载：切换页面和外观，方便截图评审。
 // 演示数据删除后，依赖演示会话和用户的消息、通话、文件模拟一并去掉；
 // 第 4 阶段接入真实的连接状态机后，连接状态的模拟也去掉了。
-// 外观偏好（主题、字体、登录页背景）第 6 阶段在设置页提供正式入口
+// 外观偏好的正式入口在设置页（第 6 阶段），这里和设置页读写同一个 store；未登录时只能在这里切换登录页背景
 export function PrototypePanel() {
   const [open, setOpen] = useState(false)
-  const [theme, setTheme] = useState<ThemePreference>(readThemePreference)
-  const { loginBackground, font, setLoginBackground, setFont } = useAppearance()
+  const { theme, loginBackground, font, setTheme, setLoginBackground, setFont } = useAppearance()
 
   return (
     // 固定深色，不受页面主题影响；放在右侧边缘中部，尽量不挡住页面元素
@@ -40,14 +39,7 @@ export function PrototypePanel() {
             </Section>
 
             <Section title="主题" hint="登录注册页固定深色">
-              <Seg<ThemePreference>
-                value={theme}
-                options={[["light", "亮色"], ["dark", "深色"], ["system", "跟随系统"]]}
-                onPick={(t) => {
-                  saveThemePreference(t)
-                  setTheme(t)
-                }}
-              />
+              <Seg<ThemePreference> value={theme} options={THEME_OPTIONS.map((t) => [t.id, t.label])} onPick={(t) => setTheme(t)} />
             </Section>
 
             <Section title="字体（英文标题 + 等宽）">

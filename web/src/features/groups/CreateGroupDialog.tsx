@@ -9,10 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { springs } from "@/lib/motion"
-import { cn } from "@/lib/utils"
+import { cn, codePoints } from "@/lib/utils"
 import { useUi } from "@/stores/ui"
 import { FriendPicker } from "./FriendPicker"
-import { codePoints, type GroupInfo, type JoinPolicy } from "./model"
+import type { GroupInfo, JoinPolicy } from "./model"
 import { createGroup } from "./queries"
 
 const NAME_MAX = 30

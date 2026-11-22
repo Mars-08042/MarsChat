@@ -78,9 +78,6 @@ export function groupBlock(
   return undefined
 }
 
-// 群名称与公告按 Unicode 码点计数，与 protovalidate 的 max_len 一致
-export const codePoints = (s: string) => [...s].length
-
 // 群主和管理员可以改资料、全员禁言、审批、邀请（social 的权限规则）
 export const isManager = (role: Role) => role === "owner" || role === "admin"
 

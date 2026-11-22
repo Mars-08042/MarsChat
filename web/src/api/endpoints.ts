@@ -1,6 +1,8 @@
 // 前端用到的 HTTP 接口，路径与 api/*/v1/*.proto 的 google.api.http 注解一致。
 
 import {
+  BanUserRequestSchema,
+  BanUserResponseSchema,
   GetMeRequestSchema,
   GetMeResponseSchema,
   GetUserRequestSchema,
@@ -9,14 +11,22 @@ import {
   LoginByEmailCodeResponseSchema,
   LoginByPasswordRequestSchema,
   LoginByPasswordResponseSchema,
+  ListSessionsRequestSchema,
+  ListSessionsResponseSchema,
   LogoutRequestSchema,
   LogoutResponseSchema,
   RefreshTokenRequestSchema,
   RefreshTokenResponseSchema,
   RegisterRequestSchema,
   RegisterResponseSchema,
+  RevokeSessionRequestSchema,
+  RevokeSessionResponseSchema,
   SendEmailCodeRequestSchema,
   SendEmailCodeResponseSchema,
+  UnbanUserRequestSchema,
+  UnbanUserResponseSchema,
+  UpdateMeRequestSchema,
+  UpdateMeResponseSchema,
 } from "@/gen/account/v1/account_pb"
 import {
   GetConversationRequestSchema,
@@ -93,7 +103,12 @@ export const loginByEmailCode = endpoint("POST", "/v1/auth/login/email-code", Lo
 export const refreshToken = endpoint("POST", "/v1/auth/refresh", RefreshTokenRequestSchema, RefreshTokenResponseSchema, false)
 export const logout = endpoint("POST", "/v1/auth/logout", LogoutRequestSchema, LogoutResponseSchema)
 export const getMe = endpoint("GET", "/v1/users/me", GetMeRequestSchema, GetMeResponseSchema)
+export const updateMe = endpoint("PATCH", "/v1/users/me", UpdateMeRequestSchema, UpdateMeResponseSchema)
 export const getUser = endpoint("GET", "/v1/users/{user_id}", GetUserRequestSchema, GetUserResponseSchema)
+export const listSessions = endpoint("GET", "/v1/sessions", ListSessionsRequestSchema, ListSessionsResponseSchema)
+export const revokeSession = endpoint("DELETE", "/v1/sessions/{session_id}", RevokeSessionRequestSchema, RevokeSessionResponseSchema)
+export const banUser = endpoint("POST", "/v1/admin/users/{user_id}/ban", BanUserRequestSchema, BanUserResponseSchema)
+export const unbanUser = endpoint("POST", "/v1/admin/users/{user_id}/unban", UnbanUserRequestSchema, UnbanUserResponseSchema)
 
 export const listConversations = endpoint("GET", "/v1/conversations", ListConversationsRequestSchema, ListConversationsResponseSchema)
 export const getConversation = endpoint("GET", "/v1/conversations/{conversation_id}", GetConversationRequestSchema, GetConversationResponseSchema)

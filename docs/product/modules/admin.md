@@ -1,6 +1,6 @@
 # 后台管理
 
-系统管理员的操作分在两个服务：封禁与解封用户在 account（`app/account/internal/biz/admin.go`），解散任意群在 social（`DismissGroup`，见 [group.md](group.md)）。没有单独的管理后台服务，管理界面随前端重构实现。
+系统管理员的操作分在两个服务：封禁与解封用户在 account（`app/account/internal/biz/admin.go`），解散任意群在 social（`DismissGroup`，见 [group.md](group.md)）。没有单独的管理后台服务；前端的管理页 `/admin` 只对系统管理员显示，按用户 ID 封禁与解封（后端没有用户列表接口）。
 
 | 方法 | HTTP | 说明 |
 |---|---|---|

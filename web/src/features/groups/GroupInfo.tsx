@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { cn } from "@/lib/utils"
+import { cn, codePoints } from "@/lib/utils"
 import { chat } from "@/realtime/client"
-import { codePoints, isManager, type GroupInfo as Group, type JoinPolicy } from "./model"
+import { isManager, type GroupInfo as Group, type JoinPolicy } from "./model"
 import { dismissGroup, leaveGroup, updateGroup, useGroup } from "./queries"
 
 const NAME_MAX = 30

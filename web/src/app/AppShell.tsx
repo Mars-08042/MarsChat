@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import { startRealtime } from "@/realtime/client"
 import { useSession } from "@/stores/session"
 import { useUi } from "@/stores/ui"
-import { NAV_ITEMS, type NavItem } from "./nav-items"
+import { useNavItems, type NavItem } from "./nav-items"
 import { NavRail } from "./NavRail"
 import { useNavBadge, useUnreadTitle } from "./use-unread-total"
 
@@ -76,9 +76,10 @@ function useRealtime() {
 }
 
 function MobileTabBar() {
+  const items = useNavItems()
   return (
     <nav aria-label="主导航" className="flex h-16 shrink-0 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden">
-      {NAV_ITEMS.map((item) => (
+      {items.map((item) => (
         <MobileTab key={item.to} item={item} />
       ))}
     </nav>

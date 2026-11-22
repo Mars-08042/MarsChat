@@ -9,7 +9,11 @@ type ShownReason = Exclude<EndReason, "logout">
 const TEXT: Record<ShownReason, { title: string; description: string }> = {
   expired: { title: "登录已过期", description: "为了账号安全，请重新登录。" },
   banned: { title: "账号已被封禁", description: "这个账号已被管理员封禁，暂时无法使用。如有疑问请联系管理员。" },
-  kicked: { title: "已在其他设备上被移出", description: "你的账号在其他设备上移除了这台设备的登录。如果不是你本人操作，请尽快修改密码。" },
+  // 还没有修改密码的功能（features.md），只能引导到登录设备页处理
+  kicked: {
+    title: "已在其他设备上被移出",
+    description: "你的账号在其他设备上让这台设备下线了。如果不是你本人操作，重新登录后可以在「设置 → 登录设备」里让陌生设备下线。",
+  },
   replaced: { title: "账号已重新登录", description: "这台设备上的账号重新登录了，当前页面已退出。" },
   reuse: { title: "登录凭证异常", description: "检测到登录凭证被重复使用，为了账号安全已退出，请重新登录。" },
   revoked: { title: "登录已失效", description: "这个登录已在服务端失效，请重新登录。" },

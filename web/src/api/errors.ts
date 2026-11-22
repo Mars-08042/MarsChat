@@ -81,6 +81,8 @@ const TEXT: Record<string, string | ((e: ApiError) => string)> = {
   USER_BANNED: "账号已被封禁",
   PERMISSION_DENIED: "没有权限执行这个操作",
   USER_NOT_FOUND: "用户不存在",
+  // 踢掉已经下线的设备（不存在和属于别人不做区分）
+  SESSION_NOT_FOUND: "这台设备已经下线",
   EMAIL_ALREADY_REGISTERED: "这个邮箱已经注册过了，可以直接登录",
   DEPENDENCY_UNAVAILABLE: "服务暂时不可用，请稍后再试",
   // 发消息（message 与 social 的拒绝原因，经 WebSocket 的 Error 帧返回）
