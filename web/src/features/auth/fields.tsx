@@ -1,18 +1,24 @@
 import { useState, type ComponentProps, type ReactNode } from "react"
 import { REGEXP_ONLY_DIGITS } from "input-otp"
-import { ArrowRight, Eye, EyeOff, LoaderCircle } from "lucide-react"
+import { ArrowRight, CircleAlert, Eye, EyeOff, LoaderCircle } from "lucide-react"
+import { api } from "@/api/client"
+import { sendEmailCode } from "@/api/endpoints"
+import { errorText, isApiError } from "@/api/errors"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
 import { useCountdown } from "@/lib/use-countdown"
+import type { CodePurpose } from "@/gen/account/v1/account_pb"
 import { cn } from "@/lib/utils"
 
 import { looksLikeEmail } from "./email"
 
-// 与后端 account 服务配置一致：同一邮箱两次发送至少间隔 60 秒，验证码 5 分钟内有效
+// 与后端 account 服务配置一致：同一邮箱两次发送至少间隔 60 秒（以响应的 cooldown_seconds 为准），验证码 5 分钟内有效
 const RESEND_SECONDS = 60
 const CODE_TTL_MINUTES = 5
+// 限流的剩余时间不超过这个值时在按钮上倒计时；更长（例如每日上限要等到第二天）只显示错误提示
+const MAX_COUNTDOWN_SECONDS = 600
 
 export function Field({ label, htmlFor, aside, children }: { label: string; htmlFor: string; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -49,24 +55,34 @@ export function PasswordInput(props: Omit<ComponentProps<typeof Input>, "type">)
 
 interface EmailCodeFieldProps {
   email: string
+  purpose: CodePurpose
   value: string
   onChange: (value: string) => void
 }
 
-// 6 位分格验证码，支持粘贴；「发送验证码」按钮的倒计时与后端发送间隔一致
-export function EmailCodeField({ email, value, onChange }: EmailCodeFieldProps) {
+// 6 位分格验证码，支持粘贴；「发送验证码」按钮按服务端返回的间隔倒计时
+export function EmailCodeField({ email, purpose, value, onChange }: EmailCodeFieldProps) {
   const { secondsLeft, start } = useCountdown()
   const [sending, setSending] = useState(false)
   const [sentTo, setSentTo] = useState<string | null>(null)
+  // 发送失败的提示只对当时的邮箱有效，改了邮箱就不再显示
+  const [error, setError] = useState<{ email: string; text: string } | null>(null)
+  const sendError = error?.email === email ? error.text : null
 
-  const send = () => {
+  const send = async () => {
     setSending(true)
-    // 原型阶段模拟请求耗时；第 3 阶段换成 SendEmailCode，限流时按 metadata 的剩余秒数倒计时
-    setTimeout(() => {
-      setSending(false)
+    setError(null)
+    try {
+      const res = await api.send(sendEmailCode, { email, purpose })
       setSentTo(email)
-      start(RESEND_SECONDS)
-    }, 500)
+      start(res.cooldownSeconds > 0 ? res.cooldownSeconds : RESEND_SECONDS)
+    } catch (e) {
+      setError({ email, text: errorText(e) })
+      const retry = isApiError(e) ? e.retryAfterSeconds : undefined
+      if (retry && retry <= MAX_COUNTDOWN_SECONDS) start(retry)
+    } finally {
+      setSending(false)
+    }
   }
 
   const canSend = looksLikeEmail(email) && secondsLeft === 0 && !sending
@@ -97,12 +113,32 @@ export function EmailCodeField({ email, value, onChange }: EmailCodeFieldProps) 
           ))}
         </InputOTPGroup>
       </InputOTP>
-      {sentTo && (
-        <p className="text-xs text-muted-foreground">
-          验证码已发送到 <span className="font-mono text-foreground/80">{sentTo}</span>，{CODE_TTL_MINUTES} 分钟内有效
+      {sendError ? (
+        <p role="alert" className="text-xs text-destructive">
+          {sendError}
         </p>
+      ) : (
+        sentTo && (
+          <p className="text-xs text-muted-foreground">
+            验证码已发送到 <span className="font-mono text-foreground/80">{sentTo}</span>，{CODE_TTL_MINUTES} 分钟内有效
+          </p>
+        )
       )}
     </Field>
+  )
+}
+
+// 提交失败的提示，放在提交按钮上方
+export function FormError({ message }: { message: string | null }) {
+  if (!message) return null
+  return (
+    <p
+      role="alert"
+      className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
+    >
+      <CircleAlert className="mt-0.5 size-4 shrink-0" />
+      {message}
+    </p>
   )
 }
 

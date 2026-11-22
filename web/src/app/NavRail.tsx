@@ -1,18 +1,15 @@
 import { motion } from "motion/react"
 import { NavLink, useMatch } from "react-router"
 import { MarsLogo } from "@/components/common/MarsLogo"
-import { UserAvatar } from "@/components/common/UserAvatar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useChatStore } from "@/features/chat/fake-store"
 import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
+import { AccountMenu } from "./AccountMenu"
 import { NAV_ITEMS, type NavItem } from "./nav-items"
 import { useUnreadTotal } from "./use-unread-total"
 
 // 左侧导航栏。加 .dark 类做成深色岛，亮色主题下和浅色内容区形成对比
 export function NavRail({ className }: { className?: string }) {
-  const me = useChatStore((s) => s.me)
-
   return (
     <nav
       aria-label="主导航"
@@ -26,7 +23,7 @@ export function NavRail({ className }: { className?: string }) {
           </li>
         ))}
       </ul>
-      <UserAvatar seed={me.id} name={me.nickname} size="md" className="ring-2 ring-border" />
+      <AccountMenu />
     </nav>
   )
 }

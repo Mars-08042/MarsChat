@@ -119,7 +119,7 @@ web/
     ├── app/                    入口、路由、全局 Provider、错误边界
     ├── api/                    HTTP 客户端、错误解析、令牌管理
     ├── realtime/               WebSocket 连接、帧编解码、同步引擎、发送队列、通话信令与 WebRTC（纯 TS，不依赖 React）
-    ├── stores/                 zustand store：连接状态、会话、时间线
+    ├── stores/                 zustand store：登录状态、连接状态、会话、时间线
     ├── features/               auth、chat、call、contacts、groups、settings、admin，每个目录放页面、业务组件、hooks
     ├── components/
     │   ├── ui/                 shadcn 生成的基础组件
@@ -845,3 +845,15 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
    - 前端：`features/chat/emoji-packs.ts` 负责 manifest 加载与校验、短代码切分、搜索，`EmojiText` 负责渲染。manifest 中的路径只接受脚本生成的命名，被改坏也不会指向其他地址。
 20. **表情来源仓库改放 `data/emoji-sources`**（2026-11-21，合并进 `dev` 后整理目录）：`tmp/` 只放临时文件和只读参考源码，可以随时清空；来源仓库约 780 MB，重新生成表情时还要用，改放被忽略的 `data/emoji-sources`，`make web-emoji` 与脚本的默认参数同步修改。
 21. **演示数据提前删除**（2026-11-21，开发者要求；计划原定第 9 阶段删除）：本地后端已有真实的测试用户、好友和群，原型的假用户、假会话和示例图片会和联调数据混在一起，于是删除 `fake-data.ts`、`fake-images.ts`。`fake-store.ts` 保留发送、上传、重试、连接状态的模拟逻辑，初始没有会话，当前用户在第 3 阶段登录后写入；只为演示数据服务的「收到消息」「下一次发送失败」一并删除。原型面板保留页面、主题、字体、登录页背景、连接状态，消息、通话、文件模拟依赖演示会话和用户，去掉；`fake-call-store.ts` 不含演示数据，留到第 8 阶段整体替换。会话列表为空时显示「还没有会话」。
+
+以下为第 3 阶段（认证，2026-11-21）中的调整：
+
+22. **主动退出与被动失效分开处理**：3.5 节只规定了未登录时带上原路径跳转。实现时：
+    - 主动退出（包括在其他标签页退出）回到不带参数的 `/login`，换账号登录时不会跳到上一个账号的会话；
+    - 刷新令牌失效时，按 3.6.6 先在原页面显示遮罩，确认后跳到 `/login?redirect=<原路径>`；其他标签页只收到 `storage` 事件，无法区分退出和失效，静默回到登录页；
+    - 登录成功后由登录页的路由守卫按 `redirect` 跳转。`redirect` 只接受站内路径：以 `/` 开头、不以 `//` 开头，不含反斜杠和空白字符（浏览器解析 URL 时会删掉制表符和换行），指向登录、注册页时回到 `/chat`。
+23. **封禁的提示要等第 4 阶段**：account 封禁用户时会吊销该用户的全部会话，刷新令牌先命中「会话已吊销」，返回 `REFRESH_TOKEN_INVALID`，所以 HTTP 路径上只能显示「登录已过期」；重新登录时才收到 `USER_BANNED`，显示「账号已被封禁」。令牌管理里刷新返回 `USER_BANNED` 的分支和「账号已被封禁」遮罩先保留；第 4 阶段接入 `Kicked`（`RevokeReason`）后，被封禁、被踢、在其他设备上退出等原因都在同一个遮罩里说明。
+24. **退出入口**：设计没有规定。桌面端放在导航栏底部的头像菜单（Base UI Menu，显示昵称、邮箱、设置、退出登录）；窄屏没有导航栏，`/settings/*` 先做过渡版本，只有账号信息和退出按钮，第 6 阶段换成完整的设置页。头像是 media 的文件 ID，换取下载地址在第 7 阶段接入，目前显示首字。
+25. **哪些 401 触发刷新**：只有带访问令牌的请求收到 401 时才刷新并重试一次，与 pkg/auth 的约定一致（受保护接口的 401 统一是 `UNAUTHORIZED`）。登录、刷新等免登录接口的 401（`INVALID_CREDENTIALS`、`REFRESH_TOKEN_INVALID`）直接作为业务错误返回。重试后仍是 401，说明会话已在服务端失效，结束登录状态。
+26. **不支持 Web Locks 时不加锁**：`navigator.locks` 只在安全上下文（localhost、HTTPS）中可用。不可用时退化为不加锁，多个标签页可能同时刷新，靠 `REFRESH_TOKEN_ROTATED` 改用 `localStorage` 中最新的令牌兜底；单元测试覆盖了这种情况。
+27. **主包变大约 227 KB**：接入接口后，主包 JS 从 815.83 KB（gzip 267.40 KB）变为 1,042.87 KB（gzip 328.46 KB），主要来自 protobuf-es 运行时和文件描述符。`account_pb` 的描述符依赖 `buf/validate`（生成的源码 236 KB）和 `google/api`。试验过在 `buf.gen.web.yaml` 的输入上加 `exclude_types: [buf.validate, google.api]`：前端不在客户端做 protovalidate 校验，生成的代码不再引用这两个包，主包降到 968.83 KB（gzip 313.94 KB）。这项改动会改写全部生成代码，留到第 9 阶段与按路由拆包一起处理，实施前先与开发者确认。
