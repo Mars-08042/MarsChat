@@ -58,7 +58,7 @@ function AccountCard() {
 
   return (
     <section className="mt-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
-      <UserAvatar seed={me.id} name={me.nickname} size="lg" />
+      <UserAvatar seed={me.id} name={me.nickname} avatarId={me.avatarId} size="lg" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate font-medium">{me.nickname}</p>

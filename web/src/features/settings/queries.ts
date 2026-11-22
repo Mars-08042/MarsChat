@@ -31,6 +31,8 @@ export interface ProfilePatch {
   // 空字符串表示清除
   birthday?: string
   signature?: string
+  // 头像文件 ID，空字符串表示移除
+  avatar?: string
 }
 
 // 只发送有变化的字段，返回修改后的完整资料；同时更新登录状态和聊天里自己的资料
@@ -41,6 +43,7 @@ export async function updateProfile(patch: ProfilePatch): Promise<User | undefin
     gender,
     birthday: patch.birthday,
     signature: patch.signature,
+    avatar: patch.avatar,
   })
   if (!user) return undefined
   const id = user.id.toString()
@@ -56,6 +59,7 @@ export async function updateProfile(patch: ProfilePatch): Promise<User | undefin
               nickname: user.nickname,
               gender: user.gender === Gender.MALE ? "male" : user.gender === Gender.FEMALE ? "female" : undefined,
               signature: user.signature || undefined,
+              avatarId: user.avatar || undefined,
             },
           },
         }

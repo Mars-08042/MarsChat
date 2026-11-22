@@ -51,7 +51,7 @@ export function MessageRow({
     >
       {firstInGroup ? (
         <ProfileCard userId={message.senderId} user={sender} conversation={conversation}>
-          <UserAvatar seed={message.senderId} name={senderName} src={sender?.avatarUrl} />
+          <UserAvatar seed={message.senderId} name={senderName} avatarId={sender?.avatarId} />
         </ProfileCard>
       ) : (
         <span aria-hidden="true" className="w-10 shrink-0" />

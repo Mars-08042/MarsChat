@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react"
 import { LoaderCircle } from "lucide-react"
 import { toast } from "sonner"
 import { errorText } from "@/api/errors"
-import { UserAvatar } from "@/components/common/UserAvatar"
+import { AvatarUpload } from "@/components/common/AvatarUpload"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -83,10 +83,12 @@ function ProfileForm({ user }: { user: User }) {
         if (valid && dirty && !saving) void save()
       }}
     >
-      <div className="flex items-center gap-4">
-        <UserAvatar seed={user.id.toString()} name={nickname.trim() || user.nickname} size="xl" />
-        <p className="text-sm text-muted-foreground">没有头像时显示昵称首字。上传头像要等文件功能接入后开放。</p>
-      </div>
+      <AvatarUpload
+        seed={user.id.toString()}
+        name={nickname.trim() || user.nickname}
+        avatarId={user.avatar || undefined}
+        onChange={async (avatar) => void (await updateProfile({ avatar }))}
+      />
 
       <Field label="昵称" htmlFor="profile-nickname" count={`${nicknameLength}/${NICKNAME_MAX}`} over={nicknameLength > NICKNAME_MAX}>
         <Input id="profile-nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} autoComplete="nickname" aria-invalid={nicknameLength === 0 || nicknameLength > NICKNAME_MAX} />

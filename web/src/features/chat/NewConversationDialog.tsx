@@ -127,7 +127,7 @@ function FriendPicker({ onPicked }: { onPicked: () => void }) {
                 onClick={() => pick(f)}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors outline-none hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <UserAvatar seed={f.id} name={f.nickname} />
+                <UserAvatar seed={f.id} name={f.nickname} avatarId={f.avatarId} />
                 <div className="min-w-0">
                   <p className="truncate font-medium">{f.nickname}</p>
                   <p className="font-mono text-xs text-muted-foreground">ID {f.id}</p>

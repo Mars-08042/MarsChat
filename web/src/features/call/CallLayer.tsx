@@ -124,7 +124,7 @@ function CallScreen({ call }: { call: Call }) {
         {!showVideo && (
           <div className="relative size-32">
             <Ripple active={ringing} />
-            <UserAvatar seed={call.peer.id} name={call.peer.nickname} src={call.peer.avatarUrl} size="hero" className="ring-4 ring-white/10" />
+            <UserAvatar seed={call.peer.id} name={call.peer.nickname} avatarId={call.peer.avatarId} size="hero" className="ring-4 ring-white/10" />
           </div>
         )}
         <div className="space-y-2" aria-live="polite">
@@ -268,7 +268,7 @@ function IncomingCallCard({ call }: { call: Call }) {
       <div className="relative flex items-center gap-4">
         <div className="relative size-14 shrink-0">
           <Ripple active />
-          <UserAvatar seed={call.peer.id} name={call.peer.nickname} src={call.peer.avatarUrl} size="xl" />
+          <UserAvatar seed={call.peer.id} name={call.peer.nickname} avatarId={call.peer.avatarId} size="xl" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate font-display text-lg font-semibold">{call.peer.nickname}</p>
@@ -315,7 +315,7 @@ function MiniCall({ call, constraintsRef }: { call: Call; constraintsRef: React.
       style={{ borderRadius: 20 }}
       className="dark fixed right-6 bottom-6 z-50 flex w-72 cursor-grab items-center gap-3 border border-white/10 bg-[#1A1412] p-3 text-[#F5EFE9] shadow-float active:cursor-grabbing"
     >
-      <UserAvatar seed={call.peer.id} name={call.peer.nickname} src={call.peer.avatarUrl} />
+      <UserAvatar seed={call.peer.id} name={call.peer.nickname} avatarId={call.peer.avatarId} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{call.peer.nickname}</p>
         <p className="text-xs text-[#3FBF86]">{statusText(call, now)}</p>

@@ -102,7 +102,7 @@ function ConversationItem({ row, active, now }: { row: Row; active: boolean; now
             className="absolute top-3 bottom-3 left-0 w-1 rounded-r-full bg-brand"
           />
         )}
-        <UserAvatar seed={c.peerId ?? c.id} name={c.title} shape={c.kind === "group" ? "square" : "circle"} />
+        <UserAvatar seed={c.peerId ?? c.id} name={c.title} avatarId={c.avatarId} shape={c.kind === "group" ? "square" : "circle"} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate font-medium">{c.title}</span>

@@ -2,6 +2,7 @@ import { useState } from "react"
 import { LogOut, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { errorText, isApiError } from "@/api/errors"
+import { AvatarUpload } from "@/components/common/AvatarUpload"
 import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { CopyId } from "@/components/common/CopyId"
 import { UserAvatar } from "@/components/common/UserAvatar"
@@ -25,7 +26,20 @@ export function GroupInfoTab({ group }: { group: Group }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col items-center gap-2 pt-2 text-center">
-        <UserAvatar seed={group.id} name={group.name} shape="square" size="xl" />
+        {/* 编辑表单以打开时的版本号为基准（第 47 条），编辑期间不能换头像，否则保存表单会被当成版本冲突 */}
+        {manager && !editing ? (
+          <AvatarUpload
+            compact
+            seed={group.id}
+            name={group.name}
+            avatarId={group.avatarId}
+            shape="square"
+            label="群头像"
+            onChange={async (avatar) => void (await updateGroup(group.id, group.version, { avatar }))}
+          />
+        ) : (
+          <UserAvatar seed={group.id} name={group.name} avatarId={group.avatarId} shape="square" size="xl" />
+        )}
         <p className="font-display text-lg font-semibold break-all">{group.name}</p>
         <CopyId id={group.id} label="群 ID" />
         <p className="text-xs text-muted-foreground">

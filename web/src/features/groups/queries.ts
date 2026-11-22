@@ -132,6 +132,8 @@ export interface GroupPatch {
   notice?: string
   joinMode?: JoinPolicy
   muteAll?: boolean
+  // 头像文件 ID，空字符串表示移除
+  avatar?: string
 }
 
 // 只发送变化的字段；version 是读到的资料版本，被别人改过时返回 GROUP_VERSION_CONFLICT
@@ -144,6 +146,7 @@ export async function updateGroup(groupId: string, version: number, patch: Group
       notice: patch.notice,
       joinMode: patch.joinMode === undefined ? undefined : patch.joinMode === "approval" ? JoinMode.APPROVAL : JoinMode.FREE,
       muteAll: patch.muteAll,
+      avatar: patch.avatar,
     })
     if (!group) throw new Error("update group response without group")
     const info = toGroupInfo(group)

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect } from "react"
 import { motion } from "motion/react"
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router"
+import { downloadUrls } from "@/api/client"
 import { Celebration } from "@/components/common/Celebration"
 import { CallLayer } from "@/features/call/CallLayer"
 import { springs } from "@/lib/motion"
@@ -63,14 +64,18 @@ function useRealtime() {
   const userId = useSession((s) => s.userId)
   useLayoutEffect(() => {
     if (!userId) return
-    // 好友、群等查询缓存属于上一个账号；被踢下线时保留到重新登录，这里统一清掉
+    // 好友、群等查询缓存和下载地址属于上一个账号；被踢下线时保留到重新登录，这里统一清掉
     queryClient.clear()
+    downloadUrls.clear()
     const stop = startRealtime(userId)
     return () => {
       const ended = useSession.getState().ended
       const keepData = ended !== null && ended !== "logout"
       stop({ keepData })
-      if (!keepData) queryClient.clear()
+      if (!keepData) {
+        queryClient.clear()
+        downloadUrls.clear()
+      }
     }
   }, [userId])
 }

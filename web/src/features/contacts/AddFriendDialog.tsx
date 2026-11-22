@@ -121,7 +121,7 @@ function Candidate({ userId, onDone }: { userId: string; onDone: () => void }) {
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
       <div className="flex items-center gap-3">
-        <UserAvatar seed={user.id} name={user.nickname} src={user.avatarUrl} size="lg" />
+        <UserAvatar seed={user.id} name={user.nickname} avatarId={user.avatarId} size="lg" />
         <div className="min-w-0">
           <p className="truncate font-semibold">{user.nickname}</p>
           <p className="truncate text-sm text-muted-foreground">{user.signature || "还没有填写个性签名"}</p>

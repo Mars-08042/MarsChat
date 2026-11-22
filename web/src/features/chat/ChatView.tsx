@@ -17,7 +17,8 @@ import { useSession } from "@/stores/session"
 import { useUi } from "@/stores/ui"
 import { Composer } from "./Composer"
 import { ConversationPanel } from "./ConversationPanel"
-import { formatBytes, MAX_CHAT_FILE_BYTES, MAX_THUMBNAIL_SOURCE_BYTES } from "./files"
+import { MAX_CHAT_FILE_BYTES, MAX_THUMBNAIL_SOURCE_BYTES } from "./files"
+import { formatBytes } from "@/lib/utils"
 import { MessageRow } from "./MessageRow"
 import { buildTimeline } from "./timeline"
 import { readMarkId, type ChatMessage, type ChatUser, type Conversation } from "./types"
@@ -27,8 +28,6 @@ const EMPTY: ChatMessage[] = []
 const BOTTOM_THRESHOLD_PX = 80
 // 距离顶部小于这个值时加载更早的一页
 const LOAD_OLDER_PX = 400
-// 文件和图片消息在第 7 阶段（文件）接入，在此之前选择、粘贴、拖放文件都只给出提示
-const FILES_UNAVAILABLE = "暂时还不能发送文件和图片，这个功能稍后开放"
 
 function scrollToBottom(el: HTMLElement | null, behavior: ScrollBehavior) {
   el?.scrollTo({ top: el.scrollHeight, behavior })
@@ -51,11 +50,15 @@ export function ChatView({ conversation, draftPeerId }: { conversation: Conversa
   const dismissNotice = useCallback(() => setNotice(null), [])
   const blocked = conversation.blockedReason !== undefined
 
-  const sendFiles = (files: File[]) => {
+  // 选择、粘贴、拖放都走这里（设计 3.6.9）。不能上传的文件在输入框上方提示：只列第一个，说明另有几个
+  const sendFiles = async (files: File[]) => {
     if (blocked || files.length === 0) return
-    setNotice({ text: FILES_UNAVAILABLE, at: Date.now() })
+    const rejected = await chat.sendFiles(draftPeerId ? { draftPeerId } : conversation, files)
+    if (rejected.length === 0) return
+    const more = rejected.length > 1 ? `，另有 ${rejected.length - 1} 个文件也没有发送` : ""
+    setNotice({ text: `${rejected[0]}${more}`, at: Date.now() })
   }
-  const drop = useFileDrop(sendFiles, blocked)
+  const drop = useFileDrop((files) => void sendFiles(files), blocked)
 
   return (
     <div className="relative flex min-h-0 flex-1">
@@ -67,9 +70,9 @@ export function ChatView({ conversation, draftPeerId }: { conversation: Conversa
         <Composer
           blockedReason={conversation.blockedReason}
           onSend={(text) => chat.sendText(draftPeerId ? { draftPeerId } : conversation, text)}
-          onFiles={sendFiles}
+          onFiles={(files) => void sendFiles(files)}
         />
-        <FileDropOverlay active={drop.active} title={conversation.title} blockedReason={conversation.blockedReason ?? FILES_UNAVAILABLE} />
+        <FileDropOverlay active={drop.active} title={conversation.title} blockedReason={conversation.blockedReason} />
       </div>
       <ConversationPanel conversation={conversation} />
     </div>
@@ -268,7 +271,7 @@ function ChatHeader({ conversation: c }: { conversation: Conversation }) {
       <Link to="/chat" aria-label="返回会话列表" className={cn(iconButton, "-ml-1 md:hidden")}>
         <ChevronLeft className="size-5" />
       </Link>
-      <UserAvatar seed={c.peerId ?? c.id} name={c.title} shape={c.kind === "group" ? "square" : "circle"} />
+      <UserAvatar seed={c.peerId ?? c.id} name={c.title} avatarId={c.avatarId} shape={c.kind === "group" ? "square" : "circle"} />
       <div className="min-w-0">
         <h2 className="truncate leading-tight font-semibold">{c.title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -530,7 +533,7 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
                 readMark={m.id === readId}
                 onRetry={chat.retry}
                 // 文件上传在第 7 阶段接入，目前没有上传中的消息
-                onCancelUpload={() => {}}
+                onCancelUpload={chat.cancelUpload}
               />
             )
           })}

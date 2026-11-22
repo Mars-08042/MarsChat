@@ -2,8 +2,9 @@
 // 业务代码从这里取客户端；单元测试直接用 createHttp、createTokenStore 并注入假依赖。
 
 import { deviceInfo } from "./device"
-import { refreshToken } from "./endpoints"
+import { getDownloadUrls, refreshToken } from "./endpoints"
 import { ApiError, UNKNOWN } from "./errors"
+import { createDownloadUrlCache, createUploader, toProxiedUrl } from "./files"
 import { createHttp } from "./http"
 import { AUTH_KEY, createTokenStore } from "./tokens"
 
@@ -23,6 +24,13 @@ export const tokens = createTokenStore({
 })
 
 export const currentDevice = () => deviceInfo(localStorage, navigator.userAgent)
+
+export const uploadFile = createUploader({ createXhr: () => new XMLHttpRequest(), tokens: () => tokens })
+
+export const downloadUrls = createDownloadUrlCache({
+  fetch: async (items) => (await api.send(getDownloadUrls, { items })).urls,
+  rewrite: import.meta.env.DEV ? toProxiedUrl : undefined,
+})
 
 // 其他标签页登录、退出或刷新令牌后同步；key 为 null 表示 localStorage 被整体清空
 window.addEventListener("storage", (e) => {

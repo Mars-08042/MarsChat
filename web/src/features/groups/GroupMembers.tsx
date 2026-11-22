@@ -102,7 +102,7 @@ export function GroupMembersTab({ group, conversation }: { group: GroupInfo; con
                 <motion.li key={m.user.id} layout exit={{ opacity: 0, x: -24 }} transition={springs.smooth}>
                   <div className="flex items-center gap-2.5 rounded-xl px-2 py-2 transition-colors hover:bg-muted/60">
                     <ProfileCard userId={m.user.id} user={m.user} conversation={conversation}>
-                      <UserAvatar seed={m.user.id} name={m.user.nickname} src={m.user.avatarUrl} size="sm" />
+                      <UserAvatar seed={m.user.id} name={m.user.nickname} avatarId={m.user.avatarId} size="sm" />
                     </ProfileCard>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">

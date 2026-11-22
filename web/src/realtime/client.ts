@@ -2,7 +2,7 @@
 // 并提供界面调用的动作。登录后由主框架启动，退出或登录状态结束时停止。
 
 import { toast } from "sonner"
-import { api, tokens } from "@/api/client"
+import { api, tokens, uploadFile } from "@/api/client"
 import {
   getConversation,
   getDifference,
@@ -19,7 +19,9 @@ import type { ConnectionStatus } from "@/components/common/ConnectionPill"
 import type { Notification, ServerFrame } from "@/gen/access/v1/frame_pb"
 import { RevokeReason } from "@/gen/account/v1/events_pb"
 import { ConversationType } from "@/gen/message/v1/message_pb"
-import type { ChatMessage, ChatUser, Conversation } from "@/features/chat/types"
+import { planChatUpload } from "@/features/chat/files"
+import { toLocalFile } from "@/features/chat/local-file"
+import type { ChatMessage, ChatUser, Conversation, MessageContent } from "@/features/chat/types"
 import { groupBlock, type GroupInfo, type MemberItem } from "@/features/groups/model"
 import { groupQuery, membersQuery } from "@/features/groups/queries"
 import { queryClient, queryKeys } from "@/lib/query"
@@ -30,8 +32,9 @@ import { SUBPROTOCOL } from "./codec"
 import { createConnection, type Connection, type ConnectionState, type OpenSocket } from "./connection"
 import { GROUP_DISMISSED_TEXT, messageId, toChatUser } from "./convert"
 import { createDeduper, namesNeeded, notificationEffects, type NotificationEffects, type SelfMember, type ToastAction } from "./notifications"
-import { createSendQueue, type Outgoing, type SendQueue } from "./send-queue"
+import { createSendQueue, type SendQueue } from "./send-queue"
 import { createSyncEngine, type SyncApi, type SyncEngine } from "./sync"
+import { createUploadManager, type OutgoingTarget, type UploadManager } from "./uploads"
 
 // 开发环境：这个模块持有当前连接实例，热替换后组件拿到新模块（实例为空），连接还在旧模块里，
 // 打开会话、退群等动作会静默失效。它和它依赖的同步引擎、连接状态机改动时整页刷新
@@ -85,6 +88,7 @@ interface Instance {
   conn: Connection
   engine: SyncEngine
   queue: SendQueue
+  uploads: UploadManager
   recheckGroup: (groupId: string) => Promise<void>
   forgetConversation: (conversationId: string) => void
 }
@@ -101,6 +105,15 @@ function replaceInOutbox(message: ChatMessage) {
     }
     const key = message.conversationId
     return { outbox: { ...s.outbox, [key]: [...(s.outbox[key] ?? []), message] } }
+  })
+}
+
+function removeFromOutbox(messageId: string) {
+  chatStore.setState((s) => {
+    for (const [key, list] of Object.entries(s.outbox)) {
+      if (list.some((m) => m.id === messageId)) return { outbox: { ...s.outbox, [key]: list.filter((m) => m.id !== messageId) } }
+    }
+    return {}
   })
 }
 
@@ -169,6 +182,13 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
       )
     },
     onRateLimited: (until) => patch({ rateLimitedUntil: until }),
+  })
+
+  const uploads = createUploadManager({
+    upload: uploadFile,
+    onUpdate: replaceInOutbox,
+    onRemove: removeFromOutbox,
+    onUploaded: (message, outgoing) => queue.enqueue(message, outgoing),
   })
 
   const onState = (state: ConnectionState) => {
@@ -270,9 +290,9 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
 
   const online = () => conn.setOnline(true)
   const offline = () => conn.setOnline(false)
-  // 还有没确认的消息时离开页面要确认：发送队列只在内存里（设计 3.9.4）
+  // 还有没确认的消息或正在上传的文件时离开页面要确认：发送队列和上传都只在内存里（设计 3.9.4）
   const beforeUnload = (e: BeforeUnloadEvent) => {
-    if (queue.hasUnconfirmed()) e.preventDefault()
+    if (queue.hasUnconfirmed() || uploads.hasActive()) e.preventDefault()
   }
   window.addEventListener("online", online)
   window.addEventListener("offline", offline)
@@ -395,7 +415,7 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
     if (effects.celebrate) useUi.getState().celebrate()
   }
 
-  const instance: Instance = { conn, engine, queue, recheckGroup, forgetConversation }
+  const instance: Instance = { conn, engine, queue, uploads, recheckGroup, forgetConversation }
   current = instance
   conn.start()
 
@@ -406,6 +426,7 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
     conn.stop()
     engine.dispose()
     queue.clear()
+    uploads.clear()
     muteTimers.forEach(clearTimeout)
     muteTimers.clear()
     if (current === instance) {
@@ -456,7 +477,11 @@ export const chat = {
   removeConversation: (conversationId: string) => current?.forgetConversation(conversationId),
   reportRead: (conversationId: string) => current?.engine.reportRead(conversationId),
   retryNow: () => current?.conn.retryNow(),
-  retry: (messageId: string) => current?.queue.retry(messageId),
+  // 上传阶段失败的重新上传，发送阶段失败的用同一个 client_msg_id 重发
+  retry: (messageId: string) => {
+    if (current && !current.uploads.retry(messageId)) current.queue.retry(messageId)
+  },
+  cancelUpload: (messageId: string) => current?.uploads.cancel(messageId),
 
   // 新建会话时选择好友；资料同时写入 users，草稿单聊的标题和头像从这里取
   loadFriends: async (): Promise<ChatUser[]> => {
@@ -481,30 +506,69 @@ export const chat = {
 
   sendText: (target: SendTarget, text: string) => {
     if (!current) return
-    const meId = chatStore.getState().meId
-    const clientMsgId = crypto.randomUUID()
-    let key: string
-    let outgoing: Outgoing
-    const content = { body: { case: "text" as const, value: { text } } }
-    if ("draftPeerId" in target) {
-      key = draftKey(target.draftPeerId)
-      outgoing = { peerType: ConversationType.SINGLE, peerId: BigInt(target.draftPeerId), clientMsgId, content }
-    } else if (target.kind === "single" && target.peerId) {
-      key = target.id
-      outgoing = { peerType: ConversationType.SINGLE, peerId: BigInt(target.peerId), clientMsgId, content }
-    } else {
-      // 群聊会话 ID 即群 ID
-      key = target.id
-      outgoing = { peerType: ConversationType.GROUP, peerId: BigInt(target.id), clientMsgId, content }
-    }
-    const message: ChatMessage = {
-      id: messageId(meId, clientMsgId),
-      conversationId: key,
-      senderId: meId,
-      content: { kind: "text", text },
-      sentAt: Date.now(),
-      status: "pending",
-    }
-    current.queue.enqueue(message, outgoing)
+    const { message, outgoing } = newOutgoing(target, { kind: "text", text }, "pending")
+    current.queue.enqueue(message, { ...outgoing, content: { body: { case: "text", value: { text } } } })
   },
+
+  // 每个文件一条消息（设计 3.6.9）：图片先在本地解码拿到宽高，判断按图片还是文件发送；
+  // 空文件、超过上限的文件不上传，返回给界面提示的原因
+  sendFiles: async (target: SendTarget, files: File[]): Promise<string[]> => {
+    const instance = current
+    if (!instance) return []
+    const rejected: string[] = []
+    for (const file of files) {
+      const local = await toLocalFile(file)
+      // 解码期间退出了登录
+      if (current !== instance) {
+        if (local.url) URL.revokeObjectURL(local.url)
+        return rejected
+      }
+      const plan = planChatUpload(local, local.width && local.height ? local.width * local.height : undefined)
+      // 不按图片发送的文件不需要本地预览
+      if (local.url && (!plan.ok || plan.as === "file")) URL.revokeObjectURL(local.url)
+      if (!plan.ok) {
+        rejected.push(`「${file.name}」${plan.reason}`)
+        continue
+      }
+      const meta = { fileId: "", accessKey: "", name: local.name, size: local.size, mimeType: local.type }
+      const content: MessageContent =
+        plan.as === "image" ? { kind: "image", image: { ...meta, width: local.width ?? 0, height: local.height ?? 0 } } : { kind: "file", file: meta }
+      const { message, outgoing } = newOutgoing(target, content, "uploading")
+      instance.uploads.start({
+        message: { ...message, upload: { progress: 0 }, localUrl: plan.as === "image" ? local.url : undefined },
+        file,
+        as: plan.as,
+        outgoing,
+      })
+    }
+    return rejected
+  },
+}
+
+// 新发出的消息：生成 client_msg_id，按发送目标算出发件箱的键和 OutgoingMessage 的接收方
+function newOutgoing(target: SendTarget, content: MessageContent, status: ChatMessage["status"]): { message: ChatMessage; outgoing: OutgoingTarget } {
+  const meId = chatStore.getState().meId
+  const clientMsgId = crypto.randomUUID()
+  let key: string
+  let outgoing: OutgoingTarget
+  if ("draftPeerId" in target) {
+    key = draftKey(target.draftPeerId)
+    outgoing = { peerType: ConversationType.SINGLE, peerId: BigInt(target.draftPeerId), clientMsgId }
+  } else if (target.kind === "single" && target.peerId) {
+    key = target.id
+    outgoing = { peerType: ConversationType.SINGLE, peerId: BigInt(target.peerId), clientMsgId }
+  } else {
+    // 群聊会话 ID 即群 ID
+    key = target.id
+    outgoing = { peerType: ConversationType.GROUP, peerId: BigInt(target.id), clientMsgId }
+  }
+  const message: ChatMessage = {
+    id: messageId(meId, clientMsgId),
+    conversationId: key,
+    senderId: meId,
+    content,
+    sentAt: Date.now(),
+    status,
+  }
+  return { message, outgoing }
 }

@@ -59,11 +59,11 @@ export const useSession = create<SessionState>()((set, get) => ({
 }))
 
 // 界面上展示的当前用户。资料还没加载或加载失败时名称显示「用户 <ID>」（设计 3.6.6）
-export function useMe(): { id: string; nickname: string; email: string } | null {
+export function useMe(): { id: string; nickname: string; email: string; avatarId?: string } | null {
   const userId = useSession((s) => s.userId)
   const user = useSession((s) => s.user)
   if (!userId) return null
-  return { id: userId, nickname: user?.nickname || `用户 ${userId}`, email: user?.email ?? "" }
+  return { id: userId, nickname: user?.nickname || `用户 ${userId}`, email: user?.email ?? "", avatarId: user?.avatar || undefined }
 }
 
 tokens.subscribe((session, reason) => {

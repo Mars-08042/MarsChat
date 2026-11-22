@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { motion } from "motion/react"
+import { toast } from "sonner"
 import {
   ArrowDownToLine,
   Check,
@@ -11,14 +12,21 @@ import {
   FilePlay,
   FileSpreadsheet,
   FileText,
+  ImageOff,
   LoaderCircle,
   Presentation,
+  RotateCw,
   X,
   type LucideIcon,
 } from "lucide-react"
+import { errorText } from "@/api/errors"
+import { Variant } from "@/gen/media/v1/media_pb"
 import { springs } from "@/lib/motion"
+import { useDownloadUrl } from "@/lib/use-download-url"
 import { cn } from "@/lib/utils"
-import { fileCategory, fitImage, formatBytes, splitFileName, type FileCategory } from "./files"
+import { formatBytes } from "@/lib/utils"
+import { fileCategory, fitImage, splitFileName, type FileCategory } from "./files"
+import { downloadFile } from "./download"
 import { ImageViewer } from "./ImageViewer"
 import type { ChatMessage, FileMeta, ImageMeta } from "./types"
 
@@ -39,9 +47,26 @@ export function ImageAttachment({
   const [loaded, setLoaded] = useState(false)
   const size = fitImage(image.width, image.height)
   const uploading = message.status === "uploading"
-  // 原型阶段直接用本地地址；第 7 阶段换成缩略图的下载地址，大图查看器里再换原图
-  const src = message.localUrl
+  // 自己发的图片一直用本地地址（上传期间和上传后都是），不再下载一遍；其余换取缩略图的下载地址
+  const thumb = useDownloadUrl(image.fileId || undefined, Variant.THUMBNAIL, image.accessKey, !message.localUrl)
+  const src = message.localUrl ?? thumb.url
   const layoutId = `image-${message.id}`
+
+  if (!src && (thumb.missing || thumb.failed)) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-1.5 rounded-[inherit] bg-muted text-xs text-muted-foreground" style={size}>
+        <ImageOff className="size-5" />
+        {thumb.missing ? (
+          "图片已失效"
+        ) : (
+          <button type="button" onClick={thumb.retry} className="flex items-center gap-1 rounded underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
+            <RotateCw className="size-3" />
+            加载失败，点击重试
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="relative overflow-hidden rounded-[inherit] bg-muted" style={size}>
@@ -61,12 +86,16 @@ export function ImageAttachment({
             alt={image.name}
             draggable={false}
             onLoad={() => setLoaded(true)}
+            // 下载地址过期或签名失效时重新换取一次
+            onError={message.localUrl ? undefined : thumb.onError}
             className={cn("size-full object-cover transition-opacity duration-300", loaded ? "opacity-100" : "opacity-0")}
           />
         </button>
       )}
       {uploading && <UploadRing progress={message.upload?.progress ?? 0} onCancel={onCancel} />}
-      {src && <ImageViewer open={open} onOpenChange={setOpen} layoutId={layoutId} src={src} image={image} senderName={senderName} />}
+      {src && (
+        <ImageViewer open={open} onOpenChange={setOpen} layoutId={layoutId} src={src} localUrl={message.localUrl} image={image} senderName={senderName} />
+      )}
     </div>
   )
 }
@@ -173,7 +202,7 @@ export function FileAttachment({
             <X className="size-4" />
           </button>
         ) : (
-          <DownloadButton mine={mine} disabled={message.status === "failed"} />
+          <DownloadButton mine={mine} file={file} />
         )}
       </div>
       {uploading && (
@@ -190,22 +219,31 @@ export function FileAttachment({
   )
 }
 
-// 点击后先换取下载地址再下载（10 分钟有效，过期前复用）。原型阶段只演示状态变化
-function DownloadButton({ mine, disabled }: { mine: boolean; disabled: boolean }) {
+// 点击后先换取下载地址再下载（10 分钟有效，剩余不到 1 分钟的不复用）。上传失败的文件没有文件 ID，不能下载
+function DownloadButton({ mine, file }: { mine: boolean; file: FileMeta }) {
   const [state, setState] = useState<"idle" | "resolving" | "done">("idle")
+  const disabled = !file.fileId
 
-  const download = () => {
+  const download = async () => {
     setState("resolving")
-    setTimeout(() => {
+    try {
+      if (!(await downloadFile(file))) {
+        toast("文件已失效，无法下载")
+        setState("idle")
+        return
+      }
       setState("done")
       setTimeout(() => setState("idle"), 1500)
-    }, 600)
+    } catch (e) {
+      toast(errorText(e))
+      setState("idle")
+    }
   }
 
   return (
     <button
       type="button"
-      onClick={download}
+      onClick={() => void download()}
       disabled={disabled || state !== "idle"}
       aria-label={state === "resolving" ? "正在获取下载地址" : state === "done" ? "已开始下载" : "下载"}
       className={cn(

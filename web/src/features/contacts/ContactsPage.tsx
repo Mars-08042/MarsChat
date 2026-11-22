@@ -94,7 +94,7 @@ function UserRow({ user, children, sub }: { user: ChatUser; sub?: ReactNode; chi
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-muted/60">
       <ProfileCard userId={user.id} user={user}>
-        <UserAvatar seed={user.id} name={user.nickname} src={user.avatarUrl} />
+        <UserAvatar seed={user.id} name={user.nickname} avatarId={user.avatarId} />
       </ProfileCard>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{user.nickname}</p>
@@ -280,7 +280,7 @@ function ReceivedCard({ request: r }: { request: FriendRequestItem }) {
   return (
     <div className="flex items-start gap-3 rounded-xl border bg-card p-3.5">
       <ProfileCard userId={r.peer.id} user={r.peer}>
-        <UserAvatar seed={r.peer.id} name={r.peer.nickname} src={r.peer.avatarUrl} />
+        <UserAvatar seed={r.peer.id} name={r.peer.nickname} avatarId={r.peer.avatarId} />
       </ProfileCard>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">

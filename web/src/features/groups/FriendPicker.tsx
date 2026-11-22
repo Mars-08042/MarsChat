@@ -65,7 +65,7 @@ export function FriendPicker({ selected, onToggle, disabledIds, max }: FriendPic
                     >
                       {checked && <Check className="size-3.5" strokeWidth={3} />}
                     </span>
-                    <UserAvatar seed={f.user.id} name={f.user.nickname} src={f.user.avatarUrl} size="sm" />
+                    <UserAvatar seed={f.user.id} name={f.user.nickname} avatarId={f.user.avatarId} size="sm" />
                     <span className="min-w-0 flex-1 truncate text-sm">{f.user.nickname}</span>
                     {locked && <span className="shrink-0 text-xs text-muted-foreground">已在群里</span>}
                   </button>

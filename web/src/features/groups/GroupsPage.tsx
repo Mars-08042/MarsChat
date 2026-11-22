@@ -82,7 +82,7 @@ function GroupRow({ group: g }: { group: GroupInfo }) {
       to={`/chat/${g.id}`}
       className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <UserAvatar seed={g.id} name={g.name} shape="square" />
+      <UserAvatar seed={g.id} name={g.name} avatarId={g.avatarId} shape="square" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate font-medium">{g.name}</span>

@@ -30,7 +30,7 @@ export function AccountMenu() {
         className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         {/* 头像是 media 的文件 ID，换取下载地址在第 7 阶段接入，目前显示首字 */}
-        <UserAvatar seed={me.id} name={me.nickname} size="md" className="ring-2 ring-border" />
+        <UserAvatar seed={me.id} name={me.nickname} avatarId={me.avatarId} size="md" className="ring-2 ring-border" />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="right" align="end" sideOffset={10} className="z-50 outline-none">

@@ -268,7 +268,7 @@ const displayName = (u: User) => u.nickname || `用户 ${u.id}`
 function UserName({ user, self, badge }: { user: User; self: boolean; badge?: ReactNode }) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      <UserAvatar seed={user.id.toString()} name={user.nickname} size="sm" />
+      <UserAvatar seed={user.id.toString()} name={user.nickname} avatarId={user.avatar} size="sm" />
       <span className="truncate font-medium">{displayName(user)}</span>
       {self && <Tag className="bg-muted text-muted-foreground">你</Tag>}
       {user.role === Role.ADMIN && <Tag className="bg-brand/10 text-brand-text">管理员</Tag>}

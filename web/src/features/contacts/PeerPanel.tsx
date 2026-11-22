@@ -40,7 +40,7 @@ export function PeerPanel({ peerId }: { peerId: string }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col items-center gap-2 pt-2 text-center">
-        <UserAvatar seed={peerId} name={name} src={user?.avatarUrl} size="xl" />
+        <UserAvatar seed={peerId} name={name} avatarId={user?.avatarId} size="xl" />
         <div className="flex items-center gap-1.5">
           <p className="font-display text-lg font-semibold break-all">{name}</p>
           {user?.gender === "male" && <Mars aria-label="男" className="size-4 text-muted-foreground" />}

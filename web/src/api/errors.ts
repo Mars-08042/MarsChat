@@ -1,6 +1,8 @@
 // HTTP 错误统一解析为 ApiError（设计 3.7）：Kratos 错误 {code, reason, message, metadata}、
 // 网关限流的 {error_msg}、网络错误。错误原因到提示文案的映射只在这里维护（设计 3.6.6）。
 
+import { formatBytes } from "@/lib/utils"
+
 // 不是后端 reason 的几种情况
 export const NETWORK = "NETWORK"
 export const GATEWAY_RATE_LIMITED = "GATEWAY_RATE_LIMITED"
@@ -93,6 +95,13 @@ const TEXT: Record<string, string | ((e: ApiError) => string)> = {
   GROUP_MUTED: "群已开启全员禁言，只有群主和管理员可以发言",
   GROUP_DISMISSED: "群已解散，不能发送消息",
   FILE_INVALID: "文件已失效，请重新选择",
+  // 上传（media）。限流、依赖不可用、网络中断在上传场景下的文案见 UPLOAD_OVERRIDES
+  FILE_TOO_LARGE: (e) => {
+    const max = Number(e.metadata.max_bytes)
+    return Number.isFinite(max) && max > 0 ? `文件超过 ${formatBytes(max)} 上限` : "文件太大，超过了上传上限"
+  },
+  UNSUPPORTED_FILE_TYPE: "头像只支持 JPEG、PNG、GIF、WebP 图片",
+  UPLOAD_INCOMPLETE: "网络中断，文件没有传完",
   CONVERSATION_NOT_FOUND: "会话不存在或你已不是成员",
   UPSTREAM_UNAVAILABLE: "服务暂时不可用，请稍后再试",
   CIRCUITBREAKER: "服务暂时不可用，请稍后再试",
@@ -118,15 +127,26 @@ const TEXT: Record<string, string | ((e: ApiError) => string)> = {
   [NETWORK]: "网络连接失败，请检查网络后重试",
 }
 
+export type ErrorOverrides = Readonly<Record<string, string | ((e: ApiError) => string)>>
+
 // 给用户看的错误提示。没有登记的原因按状态码给出通用文案，不直接展示服务端的 message。
 // 同一个 reason 在不同场景含义不同（例如 NOT_FRIENDS 在发消息和邀请入群时），由 overrides 按场景替换
-export function errorText(e: unknown, overrides?: Readonly<Record<string, string>>): string {
+export function errorText(e: unknown, overrides?: ErrorOverrides): string {
   if (!isApiError(e)) return "操作失败，请稍后再试"
   const text = overrides?.[e.reason] ?? TEXT[e.reason]
   if (typeof text === "function") return text(e)
   if (text) return text
   return e.status >= 500 ? "服务暂时不可用，请稍后再试" : "操作失败，请稍后再试"
 }
+
+// 上传文件和头像时的错误提示（设计 3.6.9 的错误表）
+const UPLOAD_OVERRIDES: ErrorOverrides = {
+  RATE_LIMITED: (e) => `上传太频繁，请 ${wait(e)}后再试`,
+  DEPENDENCY_UNAVAILABLE: "文件服务暂时不可用，请稍后重试",
+  [NETWORK]: "网络中断，文件没有传完",
+}
+
+export const uploadErrorText = (e: unknown) => errorText(e, UPLOAD_OVERRIDES)
 
 // 只按 reason 取文案（没有 ApiError 的场合，例如根据群资料推算出的「不能发言」原因）
 export function reasonText(reason: string): string | undefined {

@@ -96,6 +96,7 @@ import {
   UpdateGroupRequestSchema,
   UpdateGroupResponseSchema,
 } from "@/gen/social/v1/social_pb"
+import { GetDownloadUrlsRequestSchema, GetDownloadUrlsResponseSchema } from "@/gen/media/v1/media_pb"
 import { endpoint } from "./http"
 
 export const sendEmailCode = endpoint("POST", "/v1/auth/email-codes", SendEmailCodeRequestSchema, SendEmailCodeResponseSchema, false)
@@ -145,3 +146,6 @@ export const muteGroupMember = endpoint("PUT", "/v1/groups/{group_id}/members/{u
 export const transferGroupOwner = endpoint("POST", "/v1/groups/{group_id}/transfer", TransferGroupOwnerRequestSchema, TransferGroupOwnerResponseSchema)
 export const leaveGroup = endpoint("POST", "/v1/groups/{group_id}/leave", LeaveGroupRequestSchema, LeaveGroupResponseSchema)
 export const dismissGroup = endpoint("POST", "/v1/groups/{group_id}/dismiss", DismissGroupRequestSchema, DismissGroupResponseSchema)
+
+// media：上传是二进制请求体，不经过这里，见 api/files.ts
+export const getDownloadUrls = endpoint("POST", "/v1/files/download-urls", GetDownloadUrlsRequestSchema, GetDownloadUrlsResponseSchema)

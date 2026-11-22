@@ -68,6 +68,7 @@ export function toChatUser(p: UserProfile): ChatUser {
   if (p.gender === Gender.MALE) user.gender = "male"
   if (p.gender === Gender.FEMALE) user.gender = "female"
   if (p.signature) user.signature = p.signature
+  if (p.avatar) user.avatarId = p.avatar
   return user
 }
 
@@ -92,6 +93,7 @@ export function toConversation(c: PbConversation, prev?: Conversation): Conversa
       kind: "group",
       // social 不可用时群资料只有 ID
       title: c.group?.name || `群聊 ${id}`,
+      avatarId: c.group?.avatar || undefined,
       memberCount: c.group?.memberCount,
       dismissed: dismissed || undefined,
       blockedReason: dismissed ? GROUP_DISMISSED_TEXT : base.blockedReason,
@@ -104,5 +106,6 @@ export function toConversation(c: PbConversation, prev?: Conversation): Conversa
     peerId,
     // account 不可用时对方资料只有 ID
     title: c.peerUser?.nickname || `用户 ${peerId ?? id}`,
+    avatarId: c.peerUser?.avatar || undefined,
   }
 }

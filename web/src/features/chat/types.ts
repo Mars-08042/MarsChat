@@ -4,8 +4,8 @@
 export interface ChatUser {
   id: string
   nickname: string
-  // media 的头像文件 ID 换到的地址，第 7 阶段接入
-  avatarUrl?: string
+  // media 的头像文件 ID，由 UserAvatar 换取下载地址；没有设置时为空
+  avatarId?: string
   // 资料卡显示；未设置时为空
   gender?: "male" | "female"
   signature?: string
@@ -15,7 +15,8 @@ export interface Conversation {
   id: string
   kind: "single" | "group"
   title: string
-  avatarUrl?: string
+  // 群头像或单聊对方头像的文件 ID
+  avatarId?: string
   // 单聊对方的用户 ID
   peerId?: string
   memberCount?: number

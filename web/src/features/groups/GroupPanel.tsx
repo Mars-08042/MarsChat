@@ -125,7 +125,7 @@ function JoinRequestCard({ request: r }: { request: JoinRequestItem }) {
   return (
     <div className="flex items-start gap-3 rounded-xl border bg-card p-3">
       <ProfileCard userId={r.user.id} user={r.user}>
-        <UserAvatar seed={r.user.id} name={r.user.nickname} src={r.user.avatarUrl} size="sm" />
+        <UserAvatar seed={r.user.id} name={r.user.nickname} avatarId={r.user.avatarId} size="sm" />
       </ProfileCard>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">

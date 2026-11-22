@@ -98,7 +98,7 @@ function GroupCandidate({ groupId, onDone }: { groupId: string; onDone: () => vo
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
       <div className="flex items-center gap-3">
-        <UserAvatar seed={g.id} name={g.name} shape="square" size="lg" />
+        <UserAvatar seed={g.id} name={g.name} avatarId={g.avatarId} shape="square" size="lg" />
         <div className="min-w-0">
           <p className="truncate font-semibold">{g.name}</p>
           <p className="text-sm text-muted-foreground">

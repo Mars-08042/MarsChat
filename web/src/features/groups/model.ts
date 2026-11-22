@@ -9,6 +9,8 @@ export type JoinPolicy = "free" | "approval"
 export interface GroupInfo {
   id: string
   name: string
+  // 群头像的文件 ID，没有设置时为空
+  avatarId?: string
   // 非成员查询时为空
   notice: string
   ownerId: string
@@ -53,6 +55,7 @@ export function toGroupInfo(g: PbGroup): GroupInfo {
   return {
     id: g.id.toString(),
     name: g.name || `群聊 ${g.id}`,
+    avatarId: g.avatar || undefined,
     notice: g.notice,
     ownerId: g.ownerId.toString(),
     joinMode: g.joinMode === JoinMode.APPROVAL ? "approval" : "free",

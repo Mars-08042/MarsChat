@@ -77,7 +77,7 @@ function useDraft(userId: string | undefined): { conversation?: Conversation; re
             kind: "single",
             peerId: userId,
             title: peer?.nickname ?? `用户 ${userId}`,
-            avatarUrl: peer?.avatarUrl,
+            avatarId: peer?.avatarId,
             maxSeq: 0,
             readSeq: 0,
             peerReadSeq: 0,

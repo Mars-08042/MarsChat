@@ -90,7 +90,7 @@ function CardContent({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-3">
-        <UserAvatar seed={userId} name={name} src={user?.avatarUrl} size="lg" />
+        <UserAvatar seed={userId} name={name} avatarId={user?.avatarId} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-base font-semibold">{name}</span>
