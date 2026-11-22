@@ -1,11 +1,11 @@
-import { useEffect } from "react"
+import { useEffect, useLayoutEffect } from "react"
 import { motion } from "motion/react"
 import { NavLink, Outlet, useMatch } from "react-router"
 import { CallLayer } from "@/features/call/CallLayer"
-import { useChatStore } from "@/features/chat/fake-store"
 import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { useMe, useSession } from "@/stores/session"
+import { startRealtime } from "@/realtime/client"
+import { useSession } from "@/stores/session"
 import { NAV_ITEMS } from "./nav-items"
 import { NavRail } from "./NavRail"
 import { useUnreadTitle, useUnreadTotal } from "./use-unread-total"
@@ -15,6 +15,7 @@ export function AppShell() {
   const inConversation = useMatch("/chat/:conversationId") !== null
   useUnreadTitle()
   useCurrentUser()
+  useRealtime()
 
   return (
     <div className="flex h-svh overflow-hidden bg-background text-foreground">
@@ -35,19 +36,25 @@ function useCurrentUser() {
   const userId = useSession((s) => s.userId)
   const loaded = useSession((s) => s.user !== null)
   const loadMe = useSession((s) => s.loadMe)
-  const me = useMe()
 
   useEffect(() => {
     // 失败时不重试：界面用「用户 <ID>」占位，不影响使用；令牌失效由令牌管理处理
     if (userId && !loaded) loadMe().catch(() => {})
   }, [userId, loaded, loadMe])
+}
 
-  // 聊天界面的过渡状态仍从 fake-store 读取当前用户，第 4 阶段由同步引擎取代
-  const id = me?.id
-  const nickname = me?.nickname
-  useEffect(() => {
-    if (id && nickname) useChatStore.setState({ me: { id, nickname } })
-  }, [id, nickname])
+// 登录期间保持实时连接；登录状态结束（userId 变为空）或换了账号时停止。
+// 用 layout effect：子页面（ChatPage）在 effect 里打开会话，要在实时客户端启动之后
+function useRealtime() {
+  const userId = useSession((s) => s.userId)
+  useLayoutEffect(() => {
+    if (!userId) return
+    const stop = startRealtime(userId)
+    return () => {
+      const ended = useSession.getState().ended
+      stop({ keepData: ended !== null && ended !== "logout" })
+    }
+  }, [userId])
 }
 
 function MobileTabBar() {

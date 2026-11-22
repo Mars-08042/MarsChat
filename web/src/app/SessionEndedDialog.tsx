@@ -1,20 +1,30 @@
+import { useState } from "react"
 import { AlertDialog } from "@base-ui/react/alert-dialog"
+import type { EndReason } from "@/api/tokens"
 import { Button } from "@/components/ui/button"
 import { useSession } from "@/stores/session"
 
-const TEXT = {
+type ShownReason = Exclude<EndReason, "logout">
+
+const TEXT: Record<ShownReason, { title: string; description: string }> = {
   expired: { title: "登录已过期", description: "为了账号安全，请重新登录。" },
   banned: { title: "账号已被封禁", description: "这个账号已被管理员封禁，暂时无法使用。如有疑问请联系管理员。" },
-} as const
+  kicked: { title: "已在其他设备上被移出", description: "你的账号在其他设备上移除了这台设备的登录。如果不是你本人操作，请尽快修改密码。" },
+  replaced: { title: "账号已重新登录", description: "这台设备上的账号重新登录了，当前页面已退出。" },
+  reuse: { title: "登录凭证异常", description: "检测到登录凭证被重复使用，为了账号安全已退出，请重新登录。" },
+  revoked: { title: "登录已失效", description: "这个登录已在服务端失效，请重新登录。" },
+}
 
-// 刷新令牌失效或用户被封禁时的全屏遮罩（设计 3.6.6）。本地登录状态已经清除，确认后由路由守卫跳到登录页。
-// 被踢下线（WebSocket 4002）在第 4 阶段接入连接状态机后复用这里
+// 登录状态被动结束时的全屏遮罩（设计 3.6.6）：刷新令牌失效，或长连接收到 Kicked。
+// 本地登录状态已经清除，确认后由路由守卫跳到登录页
 export function SessionEndedDialog() {
   const ended = useSession((s) => s.ended)
   const dismiss = useSession((s) => s.dismissEnded)
-  const reason = ended === "expired" || ended === "banned" ? ended : null
-  // 关闭动画期间保留文案
-  const text = TEXT[reason ?? "expired"]
+  const reason = ended && ended !== "logout" ? ended : null
+  // 关闭动画期间沿用上一次的文案
+  const [shown, setShown] = useState<ShownReason>("expired")
+  if (reason && reason !== shown) setShown(reason)
+  const text = TEXT[reason ?? shown]
 
   return (
     <AlertDialog.Root open={reason !== null} onOpenChange={(open) => !open && dismiss()}>

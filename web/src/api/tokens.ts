@@ -30,8 +30,10 @@ export interface TokenGrant {
   refreshExpiresIn: number
 }
 
-// 登录状态结束的原因。logout 是本浏览器主动退出（包括在其他标签页退出），不显示失效提示
-export type EndReason = "logout" | "expired" | "banned"
+// 登录状态结束的原因。logout 是本浏览器主动退出（包括在其他标签页退出），不显示失效提示；
+// 其余显示失效遮罩：expired 刷新令牌失效，后四种来自长连接的 Kicked（data-flow 3.2）：
+// banned 被封禁，kicked 在其他设备上被移出，replaced 同一设备重新登录，reuse 刷新令牌疑似泄露，revoked 心跳复查发现令牌已吊销
+export type EndReason = "logout" | "expired" | "banned" | "kicked" | "replaced" | "reuse" | "revoked"
 
 // session 为空表示登录状态已结束，reason 为结束原因
 export type SessionListener = (session: Session | null, reason?: EndReason) => void

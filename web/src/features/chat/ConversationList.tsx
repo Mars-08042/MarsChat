@@ -9,8 +9,9 @@ import { springs } from "@/lib/motion"
 import { formatListTime } from "@/lib/time"
 import { useNow } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
+import { useChat } from "@/stores/chat"
 import { EmojiText } from "./EmojiText"
-import { useChatStore } from "./fake-store"
+import { NewConversationDialog } from "./NewConversationDialog"
 import { contentPreview, type ChatMessage, type Conversation } from "./types"
 
 interface Row {
@@ -19,27 +20,34 @@ interface Row {
 }
 
 export function ConversationList({ activeId, className }: { activeId?: string; className?: string }) {
-  const conversations = useChatStore((s) => s.conversations)
-  const messages = useChatStore((s) => s.messages)
+  const conversations = useChat((s) => s.conversations)
+  const outbox = useChat((s) => s.outbox)
+  const listLoaded = useChat((s) => s.listLoaded)
   const [query, setQuery] = useState("")
+  const [creating, setCreating] = useState(false)
   const now = useNow()
 
-  // 按最后一条消息的时间倒序；搜索只过滤已加载的会话名称（后端没有搜索接口）
+  // 按最后一条消息的时间倒序，发送中和失败的消息也算；搜索只过滤已加载的会话名称（后端没有搜索接口）
   const rows = useMemo<Row[]>(() => {
     const keyword = query.trim().toLowerCase()
     return Object.values(conversations)
       .filter((c) => keyword === "" || c.title.toLowerCase().includes(keyword))
-      .map((c) => ({ conversation: c, last: messages[c.id]?.at(-1) }))
+      .map((c) => {
+        const pending = outbox[c.id]?.at(-1)
+        const last = pending && pending.sentAt > (c.last?.sentAt ?? 0) ? pending : c.last
+        return { conversation: c, last }
+      })
       .sort((a, b) => (b.last?.sentAt ?? 0) - (a.last?.sentAt ?? 0))
-  }, [conversations, messages, query])
+  }, [conversations, outbox, query])
 
   return (
     <aside className={cn("flex w-full shrink-0 flex-col border-r bg-card md:w-80 xl:w-[22rem]", className)}>
       <div className="flex h-16 shrink-0 items-center justify-between px-5">
         <h1 className="font-display text-xl font-semibold tracking-tight">消息</h1>
-        <Button variant="ghost" size="icon" aria-label="新建会话">
+        <Button variant="ghost" size="icon" aria-label="新建会话" onClick={() => setCreating(true)}>
           <SquarePen />
         </Button>
+        <NewConversationDialog open={creating} onOpenChange={setCreating} />
       </div>
       <div className="px-3 pb-2">
         <div className="relative">
@@ -59,7 +67,9 @@ export function ConversationList({ activeId, className }: { activeId?: string; c
           <ConversationItem key={row.conversation.id} row={row} active={row.conversation.id === activeId} now={now} />
         ))}
         {rows.length === 0 && (
-          <li className="px-3 py-10 text-center text-sm text-muted-foreground">{query.trim() ? "没有找到相关会话" : "还没有会话"}</li>
+          <li className="px-3 py-10 text-center text-sm text-muted-foreground">
+            {query.trim() ? "没有找到相关会话" : listLoaded ? "还没有会话" : "正在加载会话…"}
+          </li>
         )}
       </motion.ul>
     </aside>
@@ -68,8 +78,8 @@ export function ConversationList({ activeId, className }: { activeId?: string; c
 
 function ConversationItem({ row, active, now }: { row: Row; active: boolean; now: number }) {
   const { conversation: c, last } = row
-  const me = useChatStore((s) => s.me)
-  const users = useChatStore((s) => s.users)
+  const meId = useChat((s) => s.meId)
+  const senderName = useChat((s) => (last ? s.users[last.senderId]?.nickname : undefined))
 
   return (
     // 收到新消息时会话平滑移到顶部（设计 3.6.2）
@@ -98,7 +108,7 @@ function ConversationItem({ row, active, now }: { row: Row; active: boolean; now
             )}
           </div>
           <div className="mt-0.5 flex items-center justify-between gap-2">
-            <Preview conversation={c} last={last} meId={me.id} senderName={last ? users[last.senderId]?.nickname : undefined} />
+            <Preview conversation={c} last={last} meId={meId} senderName={senderName} />
             {c.unread > 0 && <UnreadBadge count={c.unread} />}
           </div>
         </div>

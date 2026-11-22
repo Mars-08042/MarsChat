@@ -83,6 +83,17 @@ const TEXT: Record<string, string | ((e: ApiError) => string)> = {
   USER_NOT_FOUND: "用户不存在",
   EMAIL_ALREADY_REGISTERED: "这个邮箱已经注册过了，可以直接登录",
   DEPENDENCY_UNAVAILABLE: "服务暂时不可用，请稍后再试",
+  // 发消息（message 与 social 的拒绝原因，经 WebSocket 的 Error 帧返回）
+  NOT_FRIENDS: "你们还不是好友，不能发送消息",
+  BLOCKED: "你们之间存在拉黑关系，不能发送消息",
+  NOT_GROUP_MEMBER: "你已不在这个群里，不能发送消息",
+  MEMBER_MUTED: "你已被禁言",
+  GROUP_MUTED: "群已开启全员禁言，只有群主和管理员可以发言",
+  GROUP_DISMISSED: "群已解散，不能发送消息",
+  FILE_INVALID: "文件已失效，请重新选择",
+  CONVERSATION_NOT_FOUND: "会话不存在或你已不是成员",
+  UPSTREAM_UNAVAILABLE: "服务暂时不可用，请稍后再试",
+  CIRCUITBREAKER: "服务暂时不可用，请稍后再试",
   // 各服务通用
   UNAUTHORIZED: "登录已失效，请重新登录",
   VALIDATOR: "填写的内容格式不正确",

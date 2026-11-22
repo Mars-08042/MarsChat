@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { Platform } from "@/gen/account/v1/account_pb"
-import { getMe, loginByPassword, logout } from "./endpoints"
+import { DifferenceResult } from "@/gen/message/v1/message_pb"
+import { getDifference, getMe, listConversations, loginByPassword, logout, markRead } from "./endpoints"
 import { NETWORK } from "./errors"
 import { createHttp } from "./http"
 import type { TokenStore } from "./tokens"
@@ -71,6 +72,34 @@ describe("请求格式", () => {
     expect(headers(0)["Content-Type"]).toBeUndefined()
     expect(headers(0).Authorization).toBe("Bearer a1")
     expect(res.user?.id).toBe(42n)
+  })
+
+  it("GET：路径参数取同名字段，其余字段放进查询串，默认值不出现", async () => {
+    const { http, fetch } = setup([
+      json(200, { result: "DIFFERENCE_RESULT_COMPLETE", maxSeq: "9" }),
+      json(200, { conversations: [] }),
+    ])
+    const res = await http.send(getDifference, { conversationId: 117696723410747392n, fromSeq: 5n, limit: 200 })
+    expect(fetch.mock.calls[0][0]).toBe("/v1/conversations/117696723410747392/difference?fromSeq=5&limit=200")
+    expect(fetch.mock.calls[0][1]?.body).toBeUndefined()
+    expect(res.result).toBe(DifferenceResult.COMPLETE)
+    expect(res.maxSeq).toBe(9n)
+
+    await http.send(listConversations, { cursor: 0n, limit: 100 })
+    expect(fetch.mock.calls[1][0]).toBe("/v1/conversations?limit=100")
+  })
+
+  it("POST：路径参数同时保留在请求体里", async () => {
+    const { http, fetch } = setup([json(200, { readSeq: "7" })])
+    await http.send(markRead, { conversationId: 42n, seq: 7n })
+    expect(fetch.mock.calls[0][0]).toBe("/v1/conversations/42/read")
+    expect(JSON.parse(fetch.mock.calls[0][1]?.body as string)).toEqual({ conversationId: "42", seq: "7" })
+  })
+
+  it("缺少路径参数时不发请求", async () => {
+    const { http, fetch } = setup([])
+    await expect(http.send(getDifference, { fromSeq: 1n })).rejects.toThrow("missing path parameter conversation_id")
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it("空响应体按空消息解析", async () => {

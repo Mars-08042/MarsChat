@@ -1,10 +1,10 @@
 // 聊天界面使用的数据结构。字段对应 message 服务的会话与消息、media 服务的文件（设计第 4 节），
-// 原型阶段由假数据填充，第 4 阶段改由同步引擎写入。
+// 由同步引擎（realtime/sync.ts）从接口和推送转换而来：ID 用字符串，seq 用 number（会话内连续递增，不会超出安全整数）。
 
 export interface ChatUser {
   id: string
   nickname: string
-  // media 的头像文件 ID 换到的地址；原型阶段直接是图片地址
+  // media 的头像文件 ID 换到的地址，第 7 阶段接入
   avatarUrl?: string
 }
 
@@ -15,9 +15,11 @@ export interface Conversation {
   avatarUrl?: string
   // 单聊对方的用户 ID
   peerId?: string
-  // 群成员，原型阶段用来挑选模拟消息的发送者
-  memberIds?: string[]
   memberCount?: number
+  // 会话最新消息的 seq
+  maxSeq: number
+  // 最新一条消息，用于会话列表的摘要和排序；还没有消息时为空
+  last?: ChatMessage
   // 我已读到的 seq
   readSeq: number
   // 对方已读到的 seq，只有单聊有意义
@@ -57,7 +59,8 @@ export interface UploadState {
 export type SendStatus = "uploading" | "pending" | "sent" | "failed"
 
 export interface ChatMessage {
-  // client_msg_id：发送前生成，重试时保持不变，服务端据此去重
+  // 发送者 ID 与 client_msg_id 的组合（realtime/convert.ts 的 messageId）。client_msg_id 发送前生成，
+  // 重试时保持不变，服务端据此去重；确认前后 ID 不变，界面不会把它当成新消息
   id: string
   conversationId: string
   senderId: string

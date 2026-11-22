@@ -31,6 +31,8 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: "/chat/:conversationId?", element: <ChatPage /> },
+      // 和好友还没有会话时的草稿单聊，第一条消息确认后替换为 /chat/:conversationId
+      { path: "/chat/with/:userId", element: <ChatPage /> },
       { path: "/contacts/*", element: <ComingSoon title="联系人" stage={5} /> },
       { path: "/groups", element: <ComingSoon title="群组" stage={5} /> },
       { path: "/settings/*", element: <SettingsPage /> },

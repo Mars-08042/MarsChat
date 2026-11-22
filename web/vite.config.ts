@@ -80,7 +80,8 @@ export default defineConfig({
     proxy: apiProxy(),
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    // 组件测试是 .test.tsx，文件开头用 // @vitest-environment jsdom 切换环境
+    include: ["src/**/*.test.{ts,tsx}"],
     // Vitest 默认把 CSS 替换为空字符串；tokens.test.ts 要读取 tokens.css 原文核对对比度
     css: { include: [/styles\/tokens\.css/] },
   },

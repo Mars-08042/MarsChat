@@ -3,6 +3,7 @@
 // 第 7 阶段的上传换成 XMLHttpRequest。
 
 import { create } from "zustand"
+import type { LocalFile } from "./local-file"
 import type { ConnectionStatus } from "@/components/common/ConnectionPill"
 import { planChatUpload, type UploadPlan } from "./files"
 import type { ChatMessage, ChatUser, Conversation, MessageContent } from "./types"
@@ -14,16 +15,6 @@ const UPLOAD_BYTES_PER_SECOND = 8 * 1024 * 1024
 const UPLOAD_TICK_MS = 100
 // 未登录时的当前用户：空 ID 不会和任何消息的发送者相同
 const NOBODY: ChatUser = { id: "", nickname: "" }
-
-// 待上传的本地文件。真实文件由组件转换：图片带 object URL 和解码出的宽高
-export interface LocalFile {
-  name: string
-  size: number
-  type: string
-  url?: string
-  width?: number
-  height?: number
-}
 
 interface ChatStore {
   me: ChatUser

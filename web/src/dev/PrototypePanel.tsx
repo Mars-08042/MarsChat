@@ -1,24 +1,20 @@
 import { useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { FlaskConical, Play, X } from "lucide-react"
+import { FlaskConical, X } from "lucide-react"
 import { router } from "@/app/router"
-import type { ConnectionStatus } from "@/components/common/ConnectionPill"
-import { useChatStore } from "@/features/chat/fake-store"
 import { FONT_PAIRS, LOGIN_BACKGROUNDS, useAppearance, type FontPair, type LoginBackground } from "@/lib/appearance"
 import { springs } from "@/lib/motion"
 import { readThemePreference, saveThemePreference, type ThemePreference } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 
-// 视觉原型阶段的演示面板，只在开发环境挂载：切换外观和连接状态，方便截图评审。
-// 演示数据删除后，依赖演示会话和用户的消息、通话、文件模拟一并去掉。
+// 视觉原型阶段的演示面板，只在开发环境挂载：切换页面和外观，方便截图评审。
+// 演示数据删除后，依赖演示会话和用户的消息、通话、文件模拟一并去掉；
+// 第 4 阶段接入真实的连接状态机后，连接状态的模拟也去掉了。
 // 外观偏好（主题、字体、登录页背景）第 6 阶段在设置页提供正式入口
 export function PrototypePanel() {
   const [open, setOpen] = useState(false)
   const [theme, setTheme] = useState<ThemePreference>(readThemePreference)
   const { loginBackground, font, setLoginBackground, setFont } = useAppearance()
-  const chat = useChatStore()
-
-  const connection = (status: ConnectionStatus) => () => chat.setConnection(status)
 
   return (
     // 固定深色，不受页面主题影响；放在右侧边缘中部，尽量不挡住页面元素
@@ -62,20 +58,6 @@ export function PrototypePanel() {
               <Seg<LoginBackground> value={loginBackground} options={LOGIN_BACKGROUNDS.map((b) => [b.id, b.label])} onPick={setLoginBackground} />
             </Section>
 
-            <Section title="连接状态">
-              <div className="flex flex-wrap gap-1.5">
-                <Chip onClick={connection({ kind: "connecting" })}>连接中</Chip>
-                <Chip onClick={connection({ kind: "syncing", count: 23 })}>同步中</Chip>
-                <Chip onClick={connection({ kind: "synced" })}>已同步</Chip>
-                <Chip onClick={() => chat.setConnection({ kind: "reconnecting", retryAt: Date.now() + 5000 })}>重连等待</Chip>
-                <Chip onClick={connection({ kind: "offline" })}>网络断开</Chip>
-                <Chip onClick={connection({ kind: "maintenance" })}>服务器维护</Chip>
-                <Chip onClick={chat.playReconnect} accent>
-                  <Play className="size-3" />
-                  演示断线重连
-                </Chip>
-              </div>
-            </Section>
           </motion.div>
         )}
       </AnimatePresence>
