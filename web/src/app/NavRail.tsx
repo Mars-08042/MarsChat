@@ -6,7 +6,7 @@ import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { AccountMenu } from "./AccountMenu"
 import { NAV_ITEMS, type NavItem } from "./nav-items"
-import { useUnreadTotal } from "./use-unread-total"
+import { useNavBadge } from "./use-unread-total"
 
 // 左侧导航栏。加 .dark 类做成深色岛，亮色主题下和浅色内容区形成对比
 export function NavRail({ className }: { className?: string }) {
@@ -30,7 +30,7 @@ export function NavRail({ className }: { className?: string }) {
 
 function NavRailItem({ item }: { item: NavItem }) {
   const active = useMatch({ path: item.to, end: false }) !== null
-  const unread = useUnreadTotal()
+  const count = useNavBadge(item.badge)
   const Icon = item.icon
 
   return (
@@ -56,9 +56,9 @@ function NavRailItem({ item }: { item: NavItem }) {
           />
         )}
         <Icon className="relative size-5" strokeWidth={active ? 2.25 : 2} />
-        {item.showUnread && unread > 0 && (
+        {count > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-gold px-1 text-center font-mono text-[10px] leading-4 font-semibold text-gold-foreground ring-2 ring-background">
-            {unread > 99 ? "99+" : unread}
+            {count > 99 ? "99+" : count}
           </span>
         )}
       </TooltipTrigger>

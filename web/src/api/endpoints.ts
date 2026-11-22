@@ -31,10 +31,58 @@ import {
   MarkReadResponseSchema,
 } from "@/gen/message/v1/message_pb"
 import {
+  AcceptFriendRequestRequestSchema,
+  AcceptFriendRequestResponseSchema,
+  AcceptGroupJoinRequestRequestSchema,
+  AcceptGroupJoinRequestResponseSchema,
+  AddGroupMembersRequestSchema,
+  AddGroupMembersResponseSchema,
+  BlockUserRequestSchema,
+  BlockUserResponseSchema,
+  CreateGroupRequestSchema,
+  CreateGroupResponseSchema,
+  DeleteFriendRequestSchema,
+  DeleteFriendResponseSchema,
+  DismissGroupRequestSchema,
+  DismissGroupResponseSchema,
+  GetGroupRequestSchema,
+  GetGroupResponseSchema,
+  JoinGroupRequestSchema,
+  JoinGroupResponseSchema,
+  LeaveGroupRequestSchema,
+  LeaveGroupResponseSchema,
+  ListBlockedUsersRequestSchema,
+  ListBlockedUsersResponseSchema,
   ListFriendsRequestSchema,
   ListFriendsResponseSchema,
+  ListGroupJoinRequestsRequestSchema,
+  ListGroupJoinRequestsResponseSchema,
   ListGroupMembersRequestSchema,
   ListGroupMembersResponseSchema,
+  ListMyGroupsRequestSchema,
+  ListMyGroupsResponseSchema,
+  ListReceivedFriendRequestsRequestSchema,
+  ListReceivedFriendRequestsResponseSchema,
+  ListSentFriendRequestsRequestSchema,
+  ListSentFriendRequestsResponseSchema,
+  MuteGroupMemberRequestSchema,
+  MuteGroupMemberResponseSchema,
+  RejectFriendRequestRequestSchema,
+  RejectFriendRequestResponseSchema,
+  RejectGroupJoinRequestRequestSchema,
+  RejectGroupJoinRequestResponseSchema,
+  RemoveGroupMemberRequestSchema,
+  RemoveGroupMemberResponseSchema,
+  SendFriendRequestRequestSchema,
+  SendFriendRequestResponseSchema,
+  SetGroupMemberRoleRequestSchema,
+  SetGroupMemberRoleResponseSchema,
+  TransferGroupOwnerRequestSchema,
+  TransferGroupOwnerResponseSchema,
+  UnblockUserRequestSchema,
+  UnblockUserResponseSchema,
+  UpdateGroupRequestSchema,
+  UpdateGroupResponseSchema,
 } from "@/gen/social/v1/social_pb"
 import { endpoint } from "./http"
 
@@ -53,5 +101,29 @@ export const listMessages = endpoint("GET", "/v1/conversations/{conversation_id}
 export const getDifference = endpoint("GET", "/v1/conversations/{conversation_id}/difference", GetDifferenceRequestSchema, GetDifferenceResponseSchema)
 export const markRead = endpoint("POST", "/v1/conversations/{conversation_id}/read", MarkReadRequestSchema, MarkReadResponseSchema)
 
+export const sendFriendRequest = endpoint("POST", "/v1/friend-requests", SendFriendRequestRequestSchema, SendFriendRequestResponseSchema)
+export const listReceivedFriendRequests = endpoint("GET", "/v1/friend-requests/received", ListReceivedFriendRequestsRequestSchema, ListReceivedFriendRequestsResponseSchema)
+export const listSentFriendRequests = endpoint("GET", "/v1/friend-requests/sent", ListSentFriendRequestsRequestSchema, ListSentFriendRequestsResponseSchema)
+export const acceptFriendRequest = endpoint("POST", "/v1/friend-requests/{request_id}/accept", AcceptFriendRequestRequestSchema, AcceptFriendRequestResponseSchema)
+export const rejectFriendRequest = endpoint("POST", "/v1/friend-requests/{request_id}/reject", RejectFriendRequestRequestSchema, RejectFriendRequestResponseSchema)
 export const listFriends = endpoint("GET", "/v1/friends", ListFriendsRequestSchema, ListFriendsResponseSchema)
+export const deleteFriend = endpoint("DELETE", "/v1/friends/{user_id}", DeleteFriendRequestSchema, DeleteFriendResponseSchema)
+export const blockUser = endpoint("POST", "/v1/blocks", BlockUserRequestSchema, BlockUserResponseSchema)
+export const unblockUser = endpoint("DELETE", "/v1/blocks/{user_id}", UnblockUserRequestSchema, UnblockUserResponseSchema)
+export const listBlockedUsers = endpoint("GET", "/v1/blocks", ListBlockedUsersRequestSchema, ListBlockedUsersResponseSchema)
+export const createGroup = endpoint("POST", "/v1/groups", CreateGroupRequestSchema, CreateGroupResponseSchema)
+export const getGroup = endpoint("GET", "/v1/groups/{group_id}", GetGroupRequestSchema, GetGroupResponseSchema)
+export const updateGroup = endpoint("PATCH", "/v1/groups/{group_id}", UpdateGroupRequestSchema, UpdateGroupResponseSchema)
+export const listMyGroups = endpoint("GET", "/v1/groups", ListMyGroupsRequestSchema, ListMyGroupsResponseSchema)
+export const joinGroup = endpoint("POST", "/v1/groups/{group_id}/join", JoinGroupRequestSchema, JoinGroupResponseSchema)
+export const listGroupJoinRequests = endpoint("GET", "/v1/groups/{group_id}/join-requests", ListGroupJoinRequestsRequestSchema, ListGroupJoinRequestsResponseSchema)
+export const acceptGroupJoinRequest = endpoint("POST", "/v1/group-join-requests/{request_id}/accept", AcceptGroupJoinRequestRequestSchema, AcceptGroupJoinRequestResponseSchema)
+export const rejectGroupJoinRequest = endpoint("POST", "/v1/group-join-requests/{request_id}/reject", RejectGroupJoinRequestRequestSchema, RejectGroupJoinRequestResponseSchema)
+export const addGroupMembers = endpoint("POST", "/v1/groups/{group_id}/members", AddGroupMembersRequestSchema, AddGroupMembersResponseSchema)
 export const listGroupMembers = endpoint("GET", "/v1/groups/{group_id}/members", ListGroupMembersRequestSchema, ListGroupMembersResponseSchema)
+export const removeGroupMember = endpoint("DELETE", "/v1/groups/{group_id}/members/{user_id}", RemoveGroupMemberRequestSchema, RemoveGroupMemberResponseSchema)
+export const setGroupMemberRole = endpoint("PUT", "/v1/groups/{group_id}/members/{user_id}/role", SetGroupMemberRoleRequestSchema, SetGroupMemberRoleResponseSchema)
+export const muteGroupMember = endpoint("PUT", "/v1/groups/{group_id}/members/{user_id}/mute", MuteGroupMemberRequestSchema, MuteGroupMemberResponseSchema)
+export const transferGroupOwner = endpoint("POST", "/v1/groups/{group_id}/transfer", TransferGroupOwnerRequestSchema, TransferGroupOwnerResponseSchema)
+export const leaveGroup = endpoint("POST", "/v1/groups/{group_id}/leave", LeaveGroupRequestSchema, LeaveGroupResponseSchema)
+export const dismissGroup = endpoint("POST", "/v1/groups/{group_id}/dismiss", DismissGroupRequestSchema, DismissGroupResponseSchema)

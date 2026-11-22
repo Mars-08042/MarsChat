@@ -1,6 +1,6 @@
 # MarsChat 架构总览
 
-后端由六个 Kratos v3 微服务组成，接口用 protobuf 定义，同一份 proto 生成 HTTP 与 gRPC。客户端经 APISIX 网关访问：HTTP 接口按路径直达业务服务，WebSocket 只连接入服务 access。消息按会话存一份（读扩散），写库与发布事件在同一事务中（Outbox），经 Kafka 由 delivery 定向推送到持有连接的 access 实例；推送尽力而为，断线后按会话 seq 补拉。前端在 `web/` 用 React + Vite + pnpm 重写，已接入认证（登录、注册、令牌刷新、退出），其他功能尚未接入后端，见 [ADR-0008](docs/architecture/adr/0008-react-frontend.md) 和[前端计划](docs/plans/active/frontend-rewrite.md)。
+后端由六个 Kratos v3 微服务组成，接口用 protobuf 定义，同一份 proto 生成 HTTP 与 gRPC。客户端经 APISIX 网关访问：HTTP 接口按路径直达业务服务，WebSocket 只连接入服务 access。消息按会话存一份（读扩散），写库与发布事件在同一事务中（Outbox），经 Kafka 由 delivery 定向推送到持有连接的 access 实例；推送尽力而为，断线后按会话 seq 补拉。前端在 `web/` 用 React + Vite + pnpm 重写，已接入认证、实时消息、联系人与群组，设置、文件、通话尚未接入后端，见 [ADR-0008](docs/architecture/adr/0008-react-frontend.md) 和[前端计划](docs/plans/active/frontend-rewrite.md)。
 
 ![当前架构](docs/images/proposed-distributed-architecture.svg)
 
@@ -47,7 +47,7 @@
 
 ## 主要约束
 
-- 前端接入了认证和实时消息（文字消息、已读、多端同步、断线补拉），联系人、文件、通话等仍在重写中；音视频的 TURN 中继（coturn）、ICE 服务器下发和群通话随前端重构实现。
+- 前端接入了认证、实时消息（文字消息、已读、多端同步、断线补拉）和联系人与群组（含好友与群的实时通知），设置、文件、通话等仍在重写中；音视频的 TURN 中继（coturn）、ICE 服务器下发和群通话随前端重构实现。
 - 服务间调用没有认证，依赖内网隔离（TD-26）；media 只有一个实例，多实例需要共享存储目录或使用 OSS。
 - Compose 是唯一的部署方式，组件本身不做高可用；压测数据只作为这台开发机上的对比基线。
 - 已知问题见 [tech-debt.md](docs/plans/tech-debt.md)。

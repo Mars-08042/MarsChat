@@ -9,6 +9,8 @@ import { createRoot } from "react-dom/client"
 
 export interface Mounted {
   container: HTMLElement
+  // 用新的属性重新渲染同一棵树，组件状态保留
+  rerender: (ui: ReactNode) => void
   unmount: () => void
 }
 
@@ -19,6 +21,7 @@ export function mount(ui: ReactNode): Mounted {
   act(() => root.render(ui))
   return {
     container,
+    rerender: (next) => act(() => root.render(next)),
     unmount: () => {
       act(() => root.unmount())
       container.remove()

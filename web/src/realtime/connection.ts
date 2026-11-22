@@ -1,5 +1,5 @@
 // WebSocket 连接状态机（设计 3.9.1、3.9.2；data-flow 第 3、7 节）：
-// 打开后立即发 Auth；AuthOk 后按服务端给的间隔发 Ping，连续 2 个心跳周期收不到任何帧就判定失联；
+// 打开后立即发 Auth；AuthOk 后按服务端给的间隔发 Ping，Ping 发出后一个心跳周期内收不到任何帧就判定失联；
 // 按关闭码决定刷新令牌、重连还是停在被踢状态；重连按 backoff.ts 退避。
 // 不依赖 React 和浏览器：WebSocket 由 openSocket 注入，单元测试用假的 socket 和假定时器。
 
@@ -17,8 +17,6 @@ export const CLOSE_HEARTBEAT_TIMEOUT = 4000
 const CLIENT_BUG_CODES = new Set([4008, 1009])
 // AuthOk 没给心跳间隔时的默认值，与后端一致
 const DEFAULT_HEARTBEAT_SECONDS = 30
-// 连续这么多个心跳周期没有收到任何帧，判定服务端失联
-const MISSED_HEARTBEATS = 2
 
 export interface SocketHandlers {
   open: () => void
@@ -91,6 +89,8 @@ export function createConnection(deps: ConnectionDeps): Connection {
   let retryTimer: ReturnType<typeof setTimeout> | undefined
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined
   let lastFrameAt = 0
+  // 最早一个还没有回音的 Ping 的发送时间
+  let unansweredSince: number | undefined
   // request_id 在整个页面生命周期内递增，不随重连归零，迟到的确认不会和新请求混淆
   let nextRequestId = 1n
   let tokenUsed = ""
@@ -176,15 +176,22 @@ export function createConnection(deps: ConnectionDeps): Connection {
     write(0n, { case: "auth", value: { accessToken: token } })
   }
 
+  // 按「发出的 Ping 有没有回音」判断失联，而不是「多久没收到帧」：隐藏较久的标签页里定时器
+  // 会被浏览器节流到约每分钟一次，Ping 发得少，回来的帧也少，按静默时长判断会把节流误判成失联。
+  // 不节流时 Ping 在第一个周期末发出，第二个周期末仍无回音就断开，和按静默时长判断一样快
   const startHeartbeat = (seconds: number) => {
     const interval = (seconds > 0 ? seconds : DEFAULT_HEARTBEAT_SECONDS) * 1000
+    unansweredSince = undefined
     heartbeatTimer = setInterval(() => {
-      if (now() - lastFrameAt >= interval * MISSED_HEARTBEATS) {
+      const t = now()
+      if (unansweredSince !== undefined && lastFrameAt >= unansweredSince) unansweredSince = undefined
+      if (unansweredSince !== undefined && t - unansweredSince >= interval) {
         deps.log?.warn("heartbeat timeout, reconnecting")
         drop(CLOSE_HEARTBEAT_TIMEOUT, "heartbeat timeout")
         scheduleReconnect()
         return
       }
+      unansweredSince ??= t
       write(0n, { case: "ping", value: {} })
     }, interval)
   }

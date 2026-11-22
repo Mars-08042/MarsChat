@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react"
 import { motion } from "motion/react"
 import { Link } from "react-router"
-import { CircleExclamationPoint, Clock3, Search, SquarePen } from "lucide-react"
+import { CircleExclamationPoint, Search, SquarePen } from "lucide-react"
 import { UserAvatar } from "@/components/common/UserAvatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { CreateGroupDialog } from "@/features/groups/CreateGroupDialog"
 import { springs } from "@/lib/motion"
 import { formatListTime } from "@/lib/time"
 import { useNow } from "@/lib/use-countdown"
@@ -25,6 +26,7 @@ export function ConversationList({ activeId, className }: { activeId?: string; c
   const listLoaded = useChat((s) => s.listLoaded)
   const [query, setQuery] = useState("")
   const [creating, setCreating] = useState(false)
+  const [creatingGroup, setCreatingGroup] = useState(false)
   const now = useNow()
 
   // 按最后一条消息的时间倒序，发送中和失败的消息也算；搜索只过滤已加载的会话名称（后端没有搜索接口）
@@ -47,7 +49,8 @@ export function ConversationList({ activeId, className }: { activeId?: string; c
         <Button variant="ghost" size="icon" aria-label="新建会话" onClick={() => setCreating(true)}>
           <SquarePen />
         </Button>
-        <NewConversationDialog open={creating} onOpenChange={setCreating} />
+        <NewConversationDialog open={creating} onOpenChange={setCreating} onCreateGroup={() => setCreatingGroup(true)} />
+        <CreateGroupDialog open={creatingGroup} onOpenChange={setCreatingGroup} />
       </div>
       <div className="px-3 pb-2">
         <div className="relative">
@@ -134,8 +137,8 @@ function Preview({
 
   return (
     <span className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+      {/* 与时间线一致，只标失败；发送中和成功都不加标记 */}
       {mine && last.status === "failed" && <CircleExclamationPoint className="size-3.5 shrink-0 text-destructive" aria-label="发送失败" />}
-      {mine && (last.status === "pending" || last.status === "uploading") && <Clock3 className="size-3.5 shrink-0" aria-label="发送中" />}
       <span className="truncate">
         {prefix}
         <EmojiText text={contentPreview(last.content)} />

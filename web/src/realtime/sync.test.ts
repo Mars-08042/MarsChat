@@ -101,6 +101,38 @@ describe("会话列表", () => {
     expect(t.conv(GROUP)).toBeUndefined()
     expect(t.timeline(GROUP)).toBeUndefined()
   })
+
+  it("收到退群通知时直接删除会话、时间线和分隔线记录，再次进群后重新加载成员", async () => {
+    const t = setup()
+    t.server.addGroup(GROUP, "火星基地", [{ id: ME, nickname: "阿星" }, LIN])
+    t.server.post(GROUP, LIN.id, "hi")
+    await t.engine.syncAll()
+    t.engine.open(GROUP.toString())
+    await t.settle()
+
+    t.engine.removeConversation(GROUP.toString())
+    expect(t.conv(GROUP)).toBeUndefined()
+    expect(t.timeline(GROUP)).toBeUndefined()
+    expect(GROUP.toString() in t.s().unreadMarker).toBe(false)
+
+    const before = t.server.calls.filter((c) => c === `listGroupMembers:${GROUP}`).length
+    t.engine.open(undefined)
+    t.engine.open(GROUP.toString())
+    await t.settle()
+    expect(t.server.calls.filter((c) => c === `listGroupMembers:${GROUP}`).length).toBe(before + 1)
+  })
+
+  it("说明条可以设置和清除，刷新会话列表时保留", async () => {
+    const t = setup()
+    t.server.addSingle(DM, LIN)
+    await t.engine.syncAll()
+    t.engine.setBlocked(DM.toString(), "你们还不是好友，不能发送消息")
+    expect(t.conv(DM).blockedReason).toBe("你们还不是好友，不能发送消息")
+    await t.engine.syncAll()
+    expect(t.conv(DM).blockedReason).toBe("你们还不是好友，不能发送消息")
+    t.engine.setBlocked(DM.toString(), undefined)
+    expect(t.conv(DM).blockedReason).toBeUndefined()
+  })
 })
 
 describe("打开会话与历史", () => {

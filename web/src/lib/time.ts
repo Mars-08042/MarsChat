@@ -44,12 +44,36 @@ export function formatDuration(ms: number): string {
   return h > 0 ? `${h}:${mmss}` : mmss
 }
 
-// 时间线的日期分隔线：今天、昨天、11月18日 周三；不是今年时带年份
-export function formatDateDivider(ts: number, now: number): string {
+// 时间线的时间分隔线（参考微信）：今天只显示时刻，昨天、一周内带「昨天」或星期，
+// 今年显示月日，更早带年份，例如「14:05」「昨天 14:05」「周三 14:05」「11月18日 14:05」
+export function formatTimeDivider(ts: number, now: number): string {
   const diff = dayDiff(ts, now)
   const d = new Date(ts)
-  if (diff <= 0) return "今天"
-  if (diff === 1) return "昨天"
-  const date = `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]}`
+  const clock = formatClock(ts)
+  if (diff <= 0) return clock
+  if (diff === 1) return `昨天 ${clock}`
+  if (diff < 7) return `${WEEKDAYS[d.getDay()]} ${clock}`
+  const date = `${d.getMonth() + 1}月${d.getDate()}日 ${clock}`
   return d.getFullYear() === new Date(now).getFullYear() ? date : `${d.getFullYear()}年${date}`
+}
+
+// 禁言等未来时刻的截止时间：今天、明天只写日子和时刻，更晚写月日，不是今年时带年份，
+// 例如「今天 18:30」「明天 09:00」「11月25日 14:00」
+export function formatMuteEnd(ts: number, now: number): string {
+  const ahead = -dayDiff(ts, now)
+  const d = new Date(ts)
+  const clock = formatClock(ts)
+  if (ahead <= 0) return `今天 ${clock}`
+  if (ahead === 1) return `明天 ${clock}`
+  const date = `${d.getMonth() + 1}月${d.getDate()}日 ${clock}`
+  return d.getFullYear() === new Date(now).getFullYear() ? date : `${d.getFullYear()}年${date}`
+}
+
+// 剩余时长的口语写法，用于禁言剩余时间：不足一小时按分钟（向上取整），不足一天按小时，否则按天
+export function formatRemaining(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000))
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时`
+  return `${Math.floor(hours / 24)} 天`
 }

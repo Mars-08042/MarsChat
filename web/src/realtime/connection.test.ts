@@ -112,7 +112,7 @@ describe("认证与心跳", () => {
     expect(h.frames).toEqual([])
   })
 
-  it("连续 2 个心跳周期没有收到任何帧：主动关闭并重连", async () => {
+  it("Ping 发出后一个心跳周期内没有任何回音：主动关闭并重连", async () => {
     const h = harness()
     h.conn.start()
     await h.connectOk(30)
@@ -124,6 +124,21 @@ describe("认证与心跳", () => {
     expect(waitMs(h.state())).toBe(1000)
     await vi.advanceTimersByTimeAsync(1000)
     expect(h.sockets).toHaveLength(2)
+  })
+
+  it("后台标签页的定时器被节流时，只要 Ping 有回音就不判定失联", async () => {
+    const h = harness()
+    h.conn.start()
+    await h.connectOk(30)
+    for (let i = 0; i < 5; i++) {
+      // 浏览器把 30 秒的定时器推迟到约每分钟才执行一次：时钟走过 65 秒，定时器只触发一次
+      vi.setSystemTime(Date.now() + 35_000)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(h.state().kind).toBe("open")
+      h.last().push({ body: { case: "pong", value: {} } })
+    }
+    expect(h.last().bodies().filter((b) => b === "ping")).toHaveLength(5)
+    expect(h.sockets).toHaveLength(1)
   })
 
   it("收到的任何帧都算存活", async () => {

@@ -6,6 +6,9 @@ export interface ChatUser {
   nickname: string
   // media 的头像文件 ID 换到的地址，第 7 阶段接入
   avatarUrl?: string
+  // 资料卡显示；未设置时为空
+  gender?: "male" | "female"
+  signature?: string
 }
 
 export interface Conversation {
@@ -16,6 +19,8 @@ export interface Conversation {
   // 单聊对方的用户 ID
   peerId?: string
   memberCount?: number
+  // 群已解散：头部显示「已解散」而不是成员数（解散后成员数为 0）
+  dismissed?: boolean
   // 会话最新消息的 seq
   maxSeq: number
   // 最新一条消息，用于会话列表的摘要和排序；还没有消息时为空
@@ -75,13 +80,18 @@ export interface ChatMessage {
   localUrl?: string
 }
 
-export type DisplayStatus = SendStatus | "read"
-
-// 已读只看单聊的 peer_read_seq（设计 3.6.3），不单独存储
-export function displayStatus(message: ChatMessage, conversation: Conversation): DisplayStatus {
-  if (message.status !== "sent") return message.status
-  const read = conversation.kind === "single" && message.seq !== undefined && message.seq <= conversation.peerReadSeq
-  return read ? "read" : "sent"
+// 单聊里标「已读」的消息（设计 3.6.3）：只标我方最新一条已确认的消息，并且要求它之后对方没有再发言
+// （对方回复了自然是看过了）。发送中和失败的消息跳过，新消息确认前「已读」留在上一条上，不会闪烁。
+// 已读只看单聊的 peer_read_seq，不单独存储
+export function readMarkId(messages: readonly ChatMessage[], conversation: Conversation, meId: string): string | undefined {
+  if (conversation.kind !== "single") return undefined
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.senderId !== meId) return undefined
+    if (m.status !== "sent" || m.seq === undefined) continue
+    return m.seq <= conversation.peerReadSeq ? m.id : undefined
+  }
+  return undefined
 }
 
 // 会话列表的摘要（设计 3.6.2）

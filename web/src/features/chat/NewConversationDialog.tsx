@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Dialog } from "@base-ui/react/dialog"
 import { useNavigate } from "react-router"
-import { Search, X } from "lucide-react"
+import { ChevronRight, Search, UsersRound, X } from "lucide-react"
 import { UserAvatar } from "@/components/common/UserAvatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,8 +12,16 @@ import type { ChatUser } from "./types"
 type Load = { kind: "loading" } | { kind: "error"; message: string } | { kind: "done"; friends: ChatUser[] }
 
 // 新建会话：从好友里选一位，进入草稿单聊 /chat/with/:userId；已有会话时由 ChatPage 跳到原会话。
-// 创建群聊在第 5 阶段（联系人与群）接入
-export function NewConversationDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+// 顶部的「创建群聊」关闭这个对话框，打开建群向导
+export function NewConversationDialog({
+  open,
+  onOpenChange,
+  onCreateGroup,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCreateGroup: () => void
+}) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -24,6 +32,22 @@ export function NewConversationDialog({ open, onOpenChange }: { open: boolean; o
             <Dialog.Close render={<Button variant="ghost" size="icon" aria-label="关闭" />}>
               <X />
             </Dialog.Close>
+          </div>
+          <div className="px-5 pb-3">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenChange(false)
+                onCreateGroup()
+              }}
+              className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors outline-none hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="flex size-9 items-center justify-center rounded-[30%] bg-brand/10 text-brand">
+                <UsersRound className="size-5" />
+              </span>
+              <span className="flex-1 text-sm font-medium">创建群聊</span>
+              <ChevronRight className="size-4 text-muted-foreground" />
+            </button>
           </div>
           {/* 每次打开重新加载，好友列表可能在其他设备上变化 */}
           {open && <FriendPicker onPicked={() => onOpenChange(false)} />}

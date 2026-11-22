@@ -86,6 +86,13 @@ describe("errorText", () => {
     expect(errorText(new ApiError(0, NETWORK, "Failed to fetch"))).toBe("网络连接失败，请检查网络后重试")
   })
 
+  it("overrides 按场景替换文案，没有覆盖的原因仍用默认文案", () => {
+    const overrides = { NOT_FRIENDS: "只能邀请好友入群" }
+    expect(errorText(new ApiError(403, "NOT_FRIENDS", ""), overrides)).toBe("只能邀请好友入群")
+    expect(errorText(new ApiError(403, "NOT_FRIENDS", ""))).toBe("你们还不是好友，不能发送消息")
+    expect(errorText(new ApiError(409, "GROUP_FULL", ""), overrides)).toBe("群成员已达上限")
+  })
+
   it("没有登记的原因按状态码给出通用文案", () => {
     expect(errorText(new ApiError(502, UNKNOWN, "<html>"))).toBe("服务暂时不可用，请稍后再试")
     expect(errorText(new ApiError(400, "SOMETHING_NEW", "x"))).toBe("操作失败，请稍后再试")

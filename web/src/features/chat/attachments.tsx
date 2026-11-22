@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { motion } from "motion/react"
 import {
   ArrowDownToLine,
@@ -27,14 +27,12 @@ export function ImageAttachment({
   message,
   image,
   senderName,
-  footer,
   onCancel,
 }: {
   message: ChatMessage
   image: ImageMeta
   senderName: string
   // 时间和发送状态，叠在图片右下角
-  footer: ReactNode
   onCancel: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -68,9 +66,6 @@ export function ImageAttachment({
         </button>
       )}
       {uploading && <UploadRing progress={message.upload?.progress ?? 0} onCancel={onCancel} />}
-      <span className="pointer-events-none absolute right-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 font-mono text-[11px] leading-4 text-white backdrop-blur-sm">
-        {footer}
-      </span>
       {src && <ImageViewer open={open} onOpenChange={setOpen} layoutId={layoutId} src={src} image={image} senderName={senderName} />}
     </div>
   )
@@ -133,13 +128,11 @@ export function FileAttachment({
   message,
   file,
   mine,
-  footer,
   onCancel,
 }: {
   message: ChatMessage
   file: FileMeta
   mine: boolean
-  footer: ReactNode
   onCancel: () => void
 }) {
   const Icon = CATEGORY_ICON[fileCategory(file.name, file.mimeType)]
@@ -193,9 +186,6 @@ export function FileAttachment({
           />
         </div>
       )}
-      <div className={cn("mt-1.5 flex items-center justify-end gap-1 font-mono text-[11px] leading-none", mine ? "text-white/90" : "text-muted-foreground")}>
-        {footer}
-      </div>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 // 接口与推送中的 protobuf 消息转换为界面使用的数据结构（features/chat/types.ts）。
 
 import { timestampMs } from "@bufbuild/protobuf/wkt"
-import type { UserProfile } from "@/gen/account/v1/account_pb"
+import { Gender, type UserProfile } from "@/gen/account/v1/account_pb"
 import {
   ConversationType,
   type Conversation as PbConversation,
@@ -64,7 +64,11 @@ export function toChatMessage(m: PbMessage): ChatMessage {
 
 export function toChatUser(p: UserProfile): ChatUser {
   const id = p.id.toString()
-  return { id, nickname: p.nickname || `用户 ${id}` }
+  const user: ChatUser = { id, nickname: p.nickname || `用户 ${id}` }
+  if (p.gender === Gender.MALE) user.gender = "male"
+  if (p.gender === Gender.FEMALE) user.gender = "female"
+  if (p.signature) user.signature = p.signature
+  return user
 }
 
 // prev 是本地已有的会话：发送失败得到的「不能发言」原因只存在本地，刷新列表时保留
@@ -89,6 +93,7 @@ export function toConversation(c: PbConversation, prev?: Conversation): Conversa
       // social 不可用时群资料只有 ID
       title: c.group?.name || `群聊 ${id}`,
       memberCount: c.group?.memberCount,
+      dismissed: dismissed || undefined,
       blockedReason: dismissed ? GROUP_DISMISSED_TEXT : base.blockedReason,
     }
   }

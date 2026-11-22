@@ -1,12 +1,16 @@
-import { AnimatePresence, motion } from "motion/react"
-import { Check, CheckCheck, CircleExclamationPoint, Clock3, CloudUpload, RotateCw } from "lucide-react"
+import { useEffect, useState } from "react"
+import { motion } from "motion/react"
+import { CircleExclamationPoint, LoaderCircle, RotateCw } from "lucide-react"
 import { UserAvatar } from "@/components/common/UserAvatar"
+import { ProfileCard } from "@/features/contacts/ProfileCard"
 import { springs } from "@/lib/motion"
-import { formatClock } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { FileAttachment, ImageAttachment } from "./attachments"
 import { EmojiText } from "./EmojiText"
-import { displayStatus, type ChatMessage, type ChatUser, type Conversation, type DisplayStatus } from "./types"
+import type { ChatMessage, ChatUser, Conversation, SendStatus } from "./types"
+
+// 发送中超过这个时间才显示转圈，网络正常时确认在几十毫秒内到达，不必闪一下
+export const PENDING_SPINNER_DELAY_MS = 1000
 
 interface MessageRowProps {
   message: ChatMessage
@@ -15,6 +19,8 @@ interface MessageRowProps {
   mine: boolean
   firstInGroup: boolean
   lastInGroup: boolean
+  // 单聊里对方已读到的我方最新一条消息，在它下方显示「已读」
+  readMark?: boolean
   onRetry: (messageId: string) => void
   onCancelUpload: (messageId: string) => void
 }
@@ -26,10 +32,10 @@ export function MessageRow({
   mine,
   firstInGroup,
   lastInGroup,
+  readMark = false,
   onRetry,
   onCancelUpload,
 }: MessageRowProps) {
-  const status = displayStatus(message, conversation)
   // 仿微信：单聊和群聊里双方都显示头像，每组只在第一条消息旁显示一次、顶部对齐；昵称只在群聊里显示（设计 3.6.3）
   const showName = conversation.kind === "group" && !mine
   const senderName = sender?.nickname ?? `用户 ${message.senderId}`
@@ -44,22 +50,36 @@ export function MessageRow({
       className={cn("flex items-start gap-2.5 px-4 md:px-6", mine && "flex-row-reverse", firstInGroup ? "mt-4" : "mt-1")}
     >
       {firstInGroup ? (
-        <UserAvatar seed={message.senderId} name={senderName} src={sender?.avatarUrl} className="shrink-0" />
+        <ProfileCard userId={message.senderId} user={sender} conversation={conversation}>
+          <UserAvatar seed={message.senderId} name={senderName} src={sender?.avatarUrl} />
+        </ProfileCard>
       ) : (
         <span aria-hidden="true" className="w-10 shrink-0" />
       )}
 
       <div className={cn("flex max-w-[min(72%,38rem)] min-w-0 flex-col", mine ? "items-end" : "items-start")}>
         {showName && firstInGroup && <span className="mb-1 ml-1 text-xs font-medium text-muted-foreground">{senderName}</span>}
-        <Bubble
-          message={message}
-          mine={mine}
-          status={status}
-          senderName={senderName}
-          lastInGroup={lastInGroup}
-          onCancelUpload={() => onCancelUpload(message.id)}
-        />
-        {status === "failed" && <FailedHint reason={message.failReason} onRetry={() => onRetry(message.id)} />}
+        <div className={cn("flex items-center gap-2", mine && "flex-row-reverse")}>
+          <Bubble
+            message={message}
+            mine={mine}
+            senderName={senderName}
+            lastInGroup={lastInGroup}
+            onCancelUpload={() => onCancelUpload(message.id)}
+          />
+          {mine && <SendingMark status={message.status} />}
+        </div>
+        {message.status === "failed" && <FailedHint reason={message.failReason} onRetry={() => onRetry(message.id)} />}
+        {readMark && message.status === "sent" && (
+          <motion.span
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={springs.smooth}
+            className="mt-1 mr-1 text-[11px] leading-none text-muted-foreground"
+          >
+            已读
+          </motion.span>
+        )}
       </div>
     </motion.div>
   )
@@ -68,25 +88,17 @@ export function MessageRow({
 function Bubble({
   message,
   mine,
-  status,
   senderName,
   lastInGroup,
   onCancelUpload,
 }: {
   message: ChatMessage
   mine: boolean
-  status: DisplayStatus
   senderName: string
   lastInGroup: boolean
   onCancelUpload: () => void
 }) {
   const { content } = message
-  const footer = (
-    <>
-      {formatClock(message.sentAt)}
-      {mine && <StatusIcon status={status} />}
-    </>
-  )
   const shape = cn(
     "rounded-bubble",
     // 靠头像一侧的上角总是收窄，第一条像从头像引出的对话框；同一组内相邻的下角也收窄，读起来像一串
@@ -94,14 +106,13 @@ function Bubble({
     mine && !lastInGroup && "rounded-br-bubble-tail",
     !mine && "rounded-tl-bubble-tail",
     !mine && !lastInGroup && "rounded-bl-bubble-tail",
-    status === "pending" && "opacity-70",
   )
 
   // 图片不加气泡底色和内边距，直接按气泡形状裁切
   if (content.kind === "image") {
     return (
-      <div className={cn(shape, "overflow-hidden ring-1 ring-border/60 transition-opacity")}>
-        <ImageAttachment message={message} image={content.image} senderName={senderName} footer={footer} onCancel={onCancelUpload} />
+      <div className={cn(shape, "overflow-hidden ring-1 ring-border/60")}>
+        <ImageAttachment message={message} image={content.image} senderName={senderName} onCancel={onCancelUpload} />
       </div>
     )
   }
@@ -110,62 +121,38 @@ function Bubble({
 
   if (content.kind === "file") {
     return (
-      <div className={cn(shape, colors, "px-3 pt-3 pb-2 transition-opacity")}>
-        <FileAttachment message={message} file={content.file} mine={mine} footer={footer} onCancel={onCancelUpload} />
+      <div className={cn(shape, colors, "p-3")}>
+        <FileAttachment message={message} file={content.file} mine={mine} onCancel={onCancelUpload} />
       </div>
     )
   }
 
   return (
-    <div className={cn(shape, colors, "px-3.5 py-2 text-[15px] leading-relaxed break-words whitespace-pre-wrap transition-opacity")}>
+    <div className={cn(shape, colors, "px-3.5 py-2 text-[15px] leading-relaxed break-words whitespace-pre-wrap")}>
       <EmojiText text={content.text} />
-      {/* 时间和状态浮在最后一行右侧；白字透明度不低于 90%，在 #C2361F 上对比度约 4.7 */}
-      <span
-        className={cn(
-          "float-right mt-1.5 ml-3 inline-flex translate-y-0.5 items-center gap-1 font-mono text-[11px] leading-none select-none",
-          mine ? "text-white/90" : "text-muted-foreground",
-        )}
-      >
-        {footer}
-      </span>
     </div>
   )
 }
 
-const STATUS_LABEL: Record<DisplayStatus, string> = {
-  uploading: "上传中",
-  pending: "发送中",
-  sent: "已发送",
-  read: "已读",
-  failed: "发送失败",
-}
+// 参考微信：发送成功不显示任何标记，没有失败提示就是成功；只有确认迟迟不到时，在气泡旁显示转圈
+function SendingMark({ status }: { status: SendStatus }) {
+  const pending = status === "pending"
+  const [slow, setSlow] = useState(false)
 
-const STATUS_ICON: Partial<Record<DisplayStatus, typeof Check>> = {
-  uploading: CloudUpload,
-  pending: Clock3,
-  sent: Check,
-  read: CheckCheck,
-}
+  useEffect(() => {
+    if (!pending) return
+    const timer = setTimeout(() => setSlow(true), PENDING_SPINNER_DELAY_MS)
+    return () => {
+      clearTimeout(timer)
+      setSlow(false)
+    }
+  }, [pending])
 
-function StatusIcon({ status }: { status: DisplayStatus }) {
-  const Icon = STATUS_ICON[status]
+  if (!pending || !slow) return null
   return (
-    <span className="relative inline-flex size-3.5" title={STATUS_LABEL[status]}>
-      <span className="sr-only">{STATUS_LABEL[status]}</span>
-      <AnimatePresence mode="popLayout" initial={false}>
-        {Icon && (
-          <motion.span
-            key={status}
-            initial={{ scale: 0.4, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.4, opacity: 0 }}
-            transition={springs.snappy}
-            className="absolute inset-0"
-          >
-            <Icon className="size-3.5" strokeWidth={2.5} />
-          </motion.span>
-        )}
-      </AnimatePresence>
+    <span role="status" className="text-muted-foreground">
+      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+      <span className="sr-only">发送中</span>
     </span>
   )
 }

@@ -60,7 +60,12 @@ export interface SyncEngine {
   loadOlder(conversationId: string): Promise<void>
   // 界面在会话可见、窗口有焦点、滚动到底部时调用
   reportRead(conversationId: string): void
+  // 取会话信息并合并到本地；群资料、成员数、解散状态变化后也用它刷新
   ensureConversation(id: string): Promise<Conversation | undefined>
+  // 自己退群或被移出后看不到这个会话了：连同时间线一起删除
+  removeConversation(id: string): void
+  // 设置或清除「不能发言」的原因（说明条）
+  setBlocked(id: string, reason: string | undefined): void
   dispose(): void
 }
 
@@ -437,6 +442,23 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
     },
 
     ensureConversation,
+
+    removeConversation: (id) => {
+      membersLoaded.delete(id)
+      set((s) => {
+        if (!s.conversations[id]) return {}
+        const conversations = { ...s.conversations }
+        const timelines = { ...s.timelines }
+        const unreadMarker = { ...s.unreadMarker }
+        delete conversations[id]
+        delete timelines[id]
+        delete unreadMarker[id]
+        return { conversations, timelines, unreadMarker }
+      })
+    },
+
+    setBlocked: (id, reason) =>
+      patchConversation(id, (c) => (c.blockedReason === reason ? c : { ...c, blockedReason: reason })),
 
     dispose: () => {
       disposed = true

@@ -94,6 +94,20 @@ const TEXT: Record<string, string | ((e: ApiError) => string)> = {
   CONVERSATION_NOT_FOUND: "会话不存在或你已不是成员",
   UPSTREAM_UNAVAILABLE: "服务暂时不可用，请稍后再试",
   CIRCUITBREAKER: "服务暂时不可用，请稍后再试",
+  // 好友与群（social 的 HTTP 接口）。上面发消息的几条文案带「不能发送消息」，在好友、群页面调用时用 overrides 换掉
+  CANNOT_TARGET_SELF: "不能对自己执行这个操作",
+  FRIEND_REQUEST_NOT_ALLOWED: "你们之间存在拉黑关系，不能申请好友",
+  GROUP_PERMISSION_DENIED: "你在群里的身份不能执行这个操作",
+  FRIEND_REQUEST_NOT_FOUND: "好友申请不存在",
+  GROUP_NOT_FOUND: "群不存在",
+  GROUP_JOIN_REQUEST_NOT_FOUND: "入群申请不存在",
+  GROUP_MEMBER_NOT_FOUND: "对方已不在群里",
+  ALREADY_FRIENDS: "你们已经是好友了",
+  REQUEST_ALREADY_HANDLED: "申请已被处理",
+  ALREADY_GROUP_MEMBER: "已经是群成员了",
+  GROUP_FULL: "群成员已达上限",
+  GROUP_VERSION_CONFLICT: "群资料刚被其他人修改过，已显示最新内容，请确认后重新保存",
+  OWNER_CANNOT_LEAVE: "群主需要先转让群主才能退群",
   // 各服务通用
   UNAUTHORIZED: "登录已失效，请重新登录",
   VALIDATOR: "填写的内容格式不正确",
@@ -102,11 +116,18 @@ const TEXT: Record<string, string | ((e: ApiError) => string)> = {
   [NETWORK]: "网络连接失败，请检查网络后重试",
 }
 
-// 给用户看的错误提示。没有登记的原因按状态码给出通用文案，不直接展示服务端的 message
-export function errorText(e: unknown): string {
+// 给用户看的错误提示。没有登记的原因按状态码给出通用文案，不直接展示服务端的 message。
+// 同一个 reason 在不同场景含义不同（例如 NOT_FRIENDS 在发消息和邀请入群时），由 overrides 按场景替换
+export function errorText(e: unknown, overrides?: Readonly<Record<string, string>>): string {
   if (!isApiError(e)) return "操作失败，请稍后再试"
-  const text = TEXT[e.reason]
+  const text = overrides?.[e.reason] ?? TEXT[e.reason]
   if (typeof text === "function") return text(e)
   if (text) return text
   return e.status >= 500 ? "服务暂时不可用，请稍后再试" : "操作失败，请稍后再试"
+}
+
+// 只按 reason 取文案（没有 ApiError 的场合，例如根据群资料推算出的「不能发言」原因）
+export function reasonText(reason: string): string | undefined {
+  const text = TEXT[reason]
+  return typeof text === "string" ? text : undefined
 }

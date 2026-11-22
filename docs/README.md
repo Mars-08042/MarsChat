@@ -66,6 +66,8 @@ docs/
 | [innodb-gap-lock-register-deadlock.md](lessons/innodb-gap-lock-register-deadlock.md) | 注册事务中查不到行的 `SELECT ... FOR UPDATE` 锁住索引末尾的间隙，新用户 ID 递增，并发注册互相死锁 |
 | [race-ci-test-timing.md](lessons/race-ci-test-timing.md) | 竞争检测器看不到经 TCP 传递的先后关系；服务端先回复再推送，测试把回复当完成信号，在 CI 的 `-race` 下偶发失败 |
 | [consul-no-leader-resolver.md](lessons/consul-no-leader-resolver.md) | 服务在 Consul 选出 leader 之前启动，第一次服务发现查询失败后 contrib 留下空的登记，到下游的 gRPC 调用一直超时，直到重启 |
+| [background-tab-heartbeat-throttling.md](lessons/background-tab-heartbeat-throttling.md) | 后台标签页的定时器被节流到约每分钟一次，按「多久没收到帧」判断心跳超时会误判失联；改为按 `Ping` 有没有回音判断 |
+| [vite-hmr-module-singleton.md](lessons/vite-hmr-module-singleton.md) | 持有连接单例的模块被热替换后，组件拿到实例为空的新模块，打开会话、退群跳转静默失效；改为这个模块改动时整页刷新 |
 
 ## 编写规则
 

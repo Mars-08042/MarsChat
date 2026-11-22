@@ -8,17 +8,19 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useCallStore } from "@/features/call/fake-call-store"
 import { springs } from "@/lib/motion"
-import { formatDateDivider } from "@/lib/time"
+import { formatTimeDivider } from "@/lib/time"
 import { useNow, useSecondsUntil } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
 import { chat } from "@/realtime/client"
 import { useChat, type Timeline as TimelineData } from "@/stores/chat"
 import { useSession } from "@/stores/session"
+import { useUi } from "@/stores/ui"
 import { Composer } from "./Composer"
+import { ConversationPanel } from "./ConversationPanel"
 import { formatBytes, MAX_CHAT_FILE_BYTES, MAX_THUMBNAIL_SOURCE_BYTES } from "./files"
 import { MessageRow } from "./MessageRow"
 import { buildTimeline } from "./timeline"
-import type { ChatMessage, ChatUser, Conversation } from "./types"
+import { readMarkId, type ChatMessage, type ChatUser, type Conversation } from "./types"
 
 const EMPTY: ChatMessage[] = []
 // 距离底部小于这个值视为「在底部」，新消息到达时自动跟随
@@ -56,17 +58,20 @@ export function ChatView({ conversation, draftPeerId }: { conversation: Conversa
   const drop = useFileDrop(sendFiles, blocked)
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
-      <ChatHeader conversation={conversation} />
-      <Timeline conversation={conversation} draft={draftPeerId !== undefined} />
-      <RateLimitNotice />
-      <UploadNotice notice={notice} onDismiss={dismissNotice} />
-      <Composer
-        blockedReason={conversation.blockedReason}
-        onSend={(text) => chat.sendText(draftPeerId ? { draftPeerId } : conversation, text)}
-        onFiles={sendFiles}
-      />
-      <FileDropOverlay active={drop.active} title={conversation.title} blockedReason={conversation.blockedReason ?? FILES_UNAVAILABLE} />
+    <div className="relative flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...drop.handlers}>
+        <ChatHeader conversation={conversation} />
+        <Timeline conversation={conversation} draft={draftPeerId !== undefined} />
+        <RateLimitNotice />
+        <UploadNotice notice={notice} onDismiss={dismissNotice} />
+        <Composer
+          blockedReason={conversation.blockedReason}
+          onSend={(text) => chat.sendText(draftPeerId ? { draftPeerId } : conversation, text)}
+          onFiles={sendFiles}
+        />
+        <FileDropOverlay active={drop.active} title={conversation.title} blockedReason={conversation.blockedReason ?? FILES_UNAVAILABLE} />
+      </div>
+      <ConversationPanel conversation={conversation} />
     </div>
   )
 }
@@ -267,16 +272,32 @@ function ChatHeader({ conversation: c }: { conversation: Conversation }) {
       <div className="min-w-0">
         <h2 className="truncate leading-tight font-semibold">{c.title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {c.kind === "group" ? `${c.memberCount ?? 0} 位成员` : <span className="font-mono">ID {c.peerId}</span>}
+          {c.kind === "group" ? (c.dismissed ? "已解散" : `${c.memberCount ?? 0} 位成员`) : <span className="font-mono">ID {c.peerId}</span>}
         </p>
       </div>
       <div className="ml-auto flex items-center gap-0.5">
         {c.kind === "single" && c.peerId && <CallButtons peerId={c.peerId} blocked={c.blockedReason !== undefined} />}
-        <Button variant="ghost" size="icon" aria-label="会话资料">
-          <PanelRight />
-        </Button>
+        <PanelToggle conversationId={c.id} />
       </div>
     </header>
+  )
+}
+
+function PanelToggle({ conversationId }: { conversationId: string }) {
+  const open = useUi((s) => s.panel?.conversationId === conversationId)
+  const openPanel = useUi((s) => s.openPanel)
+  const closePanel = useUi((s) => s.closePanel)
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={open ? "关闭会话资料" : "会话资料"}
+      aria-pressed={open}
+      onClick={() => (open ? closePanel() : openPanel(conversationId))}
+      className={cn(open && "bg-muted text-foreground")}
+    >
+      <PanelRight />
+    </Button>
   )
 }
 
@@ -336,6 +357,7 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
     return [...confirmed, ...outbox.filter((m) => !ids.has(m.id))]
   }, [confirmed, outbox])
   const items = useMemo(() => buildTimeline(messages, marker), [messages, marker])
+  const readId = readMarkId(messages, conversation, meId)
 
   const hasOlder = timeline?.hasOlder ?? false
   const loadingOlder = timeline?.loadingOlder ?? false
@@ -404,6 +426,11 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
     if (last.senderId === meId || atBottomRef.current) scrollToBottom(scrollRef.current, "smooth")
   }, [lastId, messages, meId])
 
+  // 「已读」出现或移动会让内容变高；原本在底部就继续贴底，不让它被输入框挡住一半
+  useLayoutEffect(() => {
+    if (readId && atBottomRef.current) scrollToBottom(scrollRef.current, "smooth")
+  }, [readId])
+
   // 每次提交后记录内容高度，供下一次插入更早的消息时计算差值
   useLayoutEffect(() => {
     if (scrollRef.current) heightRef.current = scrollRef.current.scrollHeight
@@ -467,17 +494,17 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
           </div>
         )}
         {messages.length === 0 && !hasOlder && (
-          <p className="px-6 py-16 text-center text-sm text-muted-foreground">还没有消息，打个招呼吧</p>
+          <p className="px-6 py-16 text-center text-sm text-muted-foreground">
+            {conversation.blockedReason ? "还没有消息" : "还没有消息，打个招呼吧"}
+          </p>
         )}
         {/* 已在页面上的消息不播放入场动画，只有之后新增的才播放 */}
         <AnimatePresence initial={false}>
           {items.map((item) => {
-            if (item.kind === "date") {
+            if (item.kind === "time") {
               return (
-                <div key={item.key} className="my-5 flex justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                    {formatDateDivider(item.at, now)}
-                  </span>
+                <div key={item.key} className="mt-5 mb-1 px-6 text-center text-xs text-muted-foreground">
+                  {formatTimeDivider(item.at, now)}
                 </div>
               )
             }
@@ -500,6 +527,7 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
                 mine={m.senderId === meId}
                 firstInGroup={item.firstInGroup}
                 lastInGroup={item.lastInGroup}
+                readMark={m.id === readId}
                 onRetry={chat.retry}
                 // 文件上传在第 7 阶段接入，目前没有上传中的消息
                 onCancelUpload={() => {}}
