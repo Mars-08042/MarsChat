@@ -64,6 +64,7 @@ docs/
 | [redis-dial-stall-docker-dns.md](lessons/redis-dial-stall-docker-dns.md) | Redis 容器停止后，go-redis 的拨号重试把每条命令拖到几秒，本该放行的调用变成请求超时 |
 | [smtp-465-tls-interception.md](lessons/smtp-465-tls-interception.md) | 开发机到 465 端口的 TLS 连接被截获，SMTP 发信报证书不受信任；改用 587（STARTTLS），不要关闭证书校验 |
 | [innodb-gap-lock-register-deadlock.md](lessons/innodb-gap-lock-register-deadlock.md) | 注册事务中查不到行的 `SELECT ... FOR UPDATE` 锁住索引末尾的间隙，新用户 ID 递增，并发注册互相死锁 |
+| [race-ci-test-timing.md](lessons/race-ci-test-timing.md) | 竞争检测器看不到经 TCP 传递的先后关系；服务端先回复再推送，测试把回复当完成信号，在 CI 的 `-race` 下偶发失败 |
 
 ## 编写规则
 
