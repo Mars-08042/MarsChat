@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -261,6 +262,53 @@ func (r *userRepo) EvictCache(ctx context.Context, id int64) {
 func (r *userRepo) OnRegistered(ctx context.Context, id int64) {
 	r.bloom.Add(ctx, id)
 }
+
+func (r *userRepo) List(ctx context.Context, f biz.UserFilter, before int64, limit int) ([]*biz.User, error) {
+	q := r.filtered(ctx, f)
+	if before > 0 {
+		q = q.Where("id < ?", before)
+	}
+	var pos []userPO
+	if err := q.Omit("password_hash").Order("id DESC").Limit(limit).Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	out := make([]*biz.User, len(pos))
+	for i := range pos {
+		out[i] = pos[i].toBiz()
+	}
+	return out, nil
+}
+
+func (r *userRepo) Count(ctx context.Context, f biz.UserFilter) (int64, error) {
+	var n int64
+	err := r.filtered(ctx, f).Count(&n).Error
+	return n, err
+}
+
+// filtered 按筛选条件构造查询。ID 走主键，邮箱前缀走 uk_email，状态走 idx_status_id，
+// Text 含昵称包含匹配，只能扫表。
+func (r *userRepo) filtered(ctx context.Context, f biz.UserFilter) *gorm.DB {
+	q := r.d.DB(ctx).Model(&userPO{})
+	if f.ID > 0 {
+		q = q.Where("id = ?", f.ID)
+	}
+	if f.EmailPrefix != "" {
+		q = q.Where("email LIKE ?", escapeLike(f.EmailPrefix)+"%")
+	}
+	if f.Text != "" {
+		like := escapeLike(f.Text)
+		q = q.Where("(nickname LIKE ? OR email LIKE ?)", "%"+like+"%", like+"%")
+	}
+	if f.Status != 0 {
+		q = q.Where("status = ?", f.Status)
+	}
+	return q
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// escapeLike 转义 LIKE 的通配符，MySQL 默认的转义字符是反斜杠。
+func escapeLike(s string) string { return likeEscaper.Replace(s) }
 
 // scanIDs 供布隆过滤器重建时分页扫描全部用户 ID。
 func (r *userRepo) scanIDs(ctx context.Context, after int64, limit int) ([]int64, error) {

@@ -1923,6 +1923,138 @@ func (*UnbanUserResponse) Descriptor() ([]byte, []int) {
 	return file_account_v1_account_proto_rawDescGZIP(), []int{30}
 }
 
+type ListUsersRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 去掉首尾空白后为空表示不筛选。全是数字时按用户 ID 精确匹配，含 @ 时按邮箱前缀匹配，
+	// 其他情况按昵称包含或邮箱前缀匹配。都不区分大小写。
+	Keyword string `protobuf:"bytes,1,opt,name=keyword,proto3" json:"keyword,omitempty"`
+	// USER_STATUS_UNSPECIFIED 表示全部。
+	Status        UserStatus `protobuf:"varint,2,opt,name=status,proto3,enum=account.v1.UserStatus" json:"status,omitempty"`
+	Cursor        int64      `protobuf:"varint,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit         int32      `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListUsersRequest) Reset() {
+	*x = ListUsersRequest{}
+	mi := &file_account_v1_account_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListUsersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListUsersRequest) ProtoMessage() {}
+
+func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_account_v1_account_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListUsersRequest.ProtoReflect.Descriptor instead.
+func (*ListUsersRequest) Descriptor() ([]byte, []int) {
+	return file_account_v1_account_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ListUsersRequest) GetKeyword() string {
+	if x != nil {
+		return x.Keyword
+	}
+	return ""
+}
+
+func (x *ListUsersRequest) GetStatus() UserStatus {
+	if x != nil {
+		return x.Status
+	}
+	return UserStatus_USER_STATUS_UNSPECIFIED
+}
+
+func (x *ListUsersRequest) GetCursor() int64 {
+	if x != nil {
+		return x.Cursor
+	}
+	return 0
+}
+
+func (x *ListUsersRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListUsersResponse struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Users      []*User                `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
+	NextCursor int64                  `protobuf:"varint,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	// 满足筛选条件的总数，与 cursor 无关。
+	Total         int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListUsersResponse) Reset() {
+	*x = ListUsersResponse{}
+	mi := &file_account_v1_account_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListUsersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListUsersResponse) ProtoMessage() {}
+
+func (x *ListUsersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_account_v1_account_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListUsersResponse.ProtoReflect.Descriptor instead.
+func (*ListUsersResponse) Descriptor() ([]byte, []int) {
+	return file_account_v1_account_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListUsersResponse) GetUsers() []*User {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+func (x *ListUsersResponse) GetNextCursor() int64 {
+	if x != nil {
+		return x.NextCursor
+	}
+	return 0
+}
+
+func (x *ListUsersResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
 var File_account_v1_account_proto protoreflect.FileDescriptor
 
 const file_account_v1_account_proto_rawDesc = "" +
@@ -2045,7 +2177,17 @@ const file_account_v1_account_proto_rawDesc = "" +
 	"\x0fBanUserResponse\"4\n" +
 	"\x10UnbanUserRequest\x12 \n" +
 	"\auser_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\x06userId\"\x13\n" +
-	"\x11UnbanUserResponse*^\n" +
+	"\x11UnbanUserResponse\"\xb2\x01\n" +
+	"\x10ListUsersRequest\x12\"\n" +
+	"\akeyword\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xfe\x01R\akeyword\x128\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x16.account.v1.UserStatusB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06status\x12\x1f\n" +
+	"\x06cursor\x18\x03 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\x06cursor\x12\x1f\n" +
+	"\x05limit\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x182(\x00R\x05limit\"r\n" +
+	"\x11ListUsersResponse\x12&\n" +
+	"\x05users\x18\x01 \x03(\v2\x10.account.v1.UserR\x05users\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\x03R\n" +
+	"nextCursor\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total*^\n" +
 	"\vCodePurpose\x12\x1c\n" +
 	"\x18CODE_PURPOSE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CODE_PURPOSE_REGISTER\x10\x01\x12\x16\n" +
@@ -2069,7 +2211,7 @@ const file_account_v1_account_proto_rawDesc = "" +
 	"UserStatus\x12\x1b\n" +
 	"\x17USER_STATUS_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12USER_STATUS_NORMAL\x10\x01\x12\x16\n" +
-	"\x12USER_STATUS_BANNED\x10\x022\x9a\v\n" +
+	"\x12USER_STATUS_BANNED\x10\x022\xfd\v\n" +
 	"\x0eAccountService\x12u\n" +
 	"\rSendEmailCode\x12 .account.v1.SendEmailCodeRequest\x1a!.account.v1.SendEmailCodeResponse\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/auth/email-codes\x12c\n" +
 	"\bRegister\x12\x1b.account.v1.RegisterRequest\x1a\x1c.account.v1.RegisterResponse\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/auth/register\x12~\n" +
@@ -2083,7 +2225,8 @@ const file_account_v1_account_proto_rawDesc = "" +
 	"\fListSessions\x12\x1f.account.v1.ListSessionsRequest\x1a .account.v1.ListSessionsResponse\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/sessions\x12w\n" +
 	"\rRevokeSession\x12 .account.v1.RevokeSessionRequest\x1a!.account.v1.RevokeSessionResponse\"!\x82\xd3\xe4\x93\x02\x1b*\x19/v1/sessions/{session_id}\x12l\n" +
 	"\aBanUser\x12\x1a.account.v1.BanUserRequest\x1a\x1b.account.v1.BanUserResponse\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/admin/users/{user_id}/ban\x12t\n" +
-	"\tUnbanUser\x12\x1c.account.v1.UnbanUserRequest\x1a\x1d.account.v1.UnbanUserResponse\"*\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/admin/users/{user_id}/unbanB2Z0github.com/Mars-08042/MarsChat/api/account/v1;v1b\x06proto3"
+	"\tUnbanUser\x12\x1c.account.v1.UnbanUserRequest\x1a\x1d.account.v1.UnbanUserResponse\"*\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/admin/users/{user_id}/unban\x12a\n" +
+	"\tListUsers\x12\x1c.account.v1.ListUsersRequest\x1a\x1d.account.v1.ListUsersResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/admin/usersB2Z0github.com/Mars-08042/MarsChat/api/account/v1;v1b\x06proto3"
 
 var (
 	file_account_v1_account_proto_rawDescOnce sync.Once
@@ -2098,7 +2241,7 @@ func file_account_v1_account_proto_rawDescGZIP() []byte {
 }
 
 var file_account_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_account_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_account_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_account_v1_account_proto_goTypes = []any{
 	(CodePurpose)(0),                 // 0: account.v1.CodePurpose
 	(Platform)(0),                    // 1: account.v1.Platform
@@ -2136,19 +2279,21 @@ var file_account_v1_account_proto_goTypes = []any{
 	(*BanUserResponse)(nil),          // 33: account.v1.BanUserResponse
 	(*UnbanUserRequest)(nil),         // 34: account.v1.UnbanUserRequest
 	(*UnbanUserResponse)(nil),        // 35: account.v1.UnbanUserResponse
-	(*timestamppb.Timestamp)(nil),    // 36: google.protobuf.Timestamp
+	(*ListUsersRequest)(nil),         // 36: account.v1.ListUsersRequest
+	(*ListUsersResponse)(nil),        // 37: account.v1.ListUsersResponse
+	(*timestamppb.Timestamp)(nil),    // 38: google.protobuf.Timestamp
 }
 var file_account_v1_account_proto_depIdxs = []int32{
 	1,  // 0: account.v1.Device.platform:type_name -> account.v1.Platform
 	2,  // 1: account.v1.User.gender:type_name -> account.v1.Gender
 	3,  // 2: account.v1.User.role:type_name -> account.v1.Role
 	4,  // 3: account.v1.User.status:type_name -> account.v1.UserStatus
-	36, // 4: account.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	38, // 4: account.v1.User.created_at:type_name -> google.protobuf.Timestamp
 	2,  // 5: account.v1.UserProfile.gender:type_name -> account.v1.Gender
 	4,  // 6: account.v1.UserProfile.status:type_name -> account.v1.UserStatus
 	1,  // 7: account.v1.Session.platform:type_name -> account.v1.Platform
-	36, // 8: account.v1.Session.created_at:type_name -> google.protobuf.Timestamp
-	36, // 9: account.v1.Session.last_active_at:type_name -> google.protobuf.Timestamp
+	38, // 8: account.v1.Session.created_at:type_name -> google.protobuf.Timestamp
+	38, // 9: account.v1.Session.last_active_at:type_name -> google.protobuf.Timestamp
 	0,  // 10: account.v1.SendEmailCodeRequest.purpose:type_name -> account.v1.CodePurpose
 	5,  // 11: account.v1.RegisterRequest.device:type_name -> account.v1.Device
 	7,  // 12: account.v1.RegisterResponse.user:type_name -> account.v1.User
@@ -2165,37 +2310,41 @@ var file_account_v1_account_proto_depIdxs = []int32{
 	7,  // 23: account.v1.UpdateMeResponse.user:type_name -> account.v1.User
 	8,  // 24: account.v1.GetUserResponse.user:type_name -> account.v1.UserProfile
 	9,  // 25: account.v1.ListSessionsResponse.sessions:type_name -> account.v1.Session
-	10, // 26: account.v1.AccountService.SendEmailCode:input_type -> account.v1.SendEmailCodeRequest
-	12, // 27: account.v1.AccountService.Register:input_type -> account.v1.RegisterRequest
-	14, // 28: account.v1.AccountService.LoginByPassword:input_type -> account.v1.LoginByPasswordRequest
-	16, // 29: account.v1.AccountService.LoginByEmailCode:input_type -> account.v1.LoginByEmailCodeRequest
-	18, // 30: account.v1.AccountService.RefreshToken:input_type -> account.v1.RefreshTokenRequest
-	20, // 31: account.v1.AccountService.Logout:input_type -> account.v1.LogoutRequest
-	22, // 32: account.v1.AccountService.GetMe:input_type -> account.v1.GetMeRequest
-	24, // 33: account.v1.AccountService.UpdateMe:input_type -> account.v1.UpdateMeRequest
-	26, // 34: account.v1.AccountService.GetUser:input_type -> account.v1.GetUserRequest
-	28, // 35: account.v1.AccountService.ListSessions:input_type -> account.v1.ListSessionsRequest
-	30, // 36: account.v1.AccountService.RevokeSession:input_type -> account.v1.RevokeSessionRequest
-	32, // 37: account.v1.AccountService.BanUser:input_type -> account.v1.BanUserRequest
-	34, // 38: account.v1.AccountService.UnbanUser:input_type -> account.v1.UnbanUserRequest
-	11, // 39: account.v1.AccountService.SendEmailCode:output_type -> account.v1.SendEmailCodeResponse
-	13, // 40: account.v1.AccountService.Register:output_type -> account.v1.RegisterResponse
-	15, // 41: account.v1.AccountService.LoginByPassword:output_type -> account.v1.LoginByPasswordResponse
-	17, // 42: account.v1.AccountService.LoginByEmailCode:output_type -> account.v1.LoginByEmailCodeResponse
-	19, // 43: account.v1.AccountService.RefreshToken:output_type -> account.v1.RefreshTokenResponse
-	21, // 44: account.v1.AccountService.Logout:output_type -> account.v1.LogoutResponse
-	23, // 45: account.v1.AccountService.GetMe:output_type -> account.v1.GetMeResponse
-	25, // 46: account.v1.AccountService.UpdateMe:output_type -> account.v1.UpdateMeResponse
-	27, // 47: account.v1.AccountService.GetUser:output_type -> account.v1.GetUserResponse
-	29, // 48: account.v1.AccountService.ListSessions:output_type -> account.v1.ListSessionsResponse
-	31, // 49: account.v1.AccountService.RevokeSession:output_type -> account.v1.RevokeSessionResponse
-	33, // 50: account.v1.AccountService.BanUser:output_type -> account.v1.BanUserResponse
-	35, // 51: account.v1.AccountService.UnbanUser:output_type -> account.v1.UnbanUserResponse
-	39, // [39:52] is the sub-list for method output_type
-	26, // [26:39] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	4,  // 26: account.v1.ListUsersRequest.status:type_name -> account.v1.UserStatus
+	7,  // 27: account.v1.ListUsersResponse.users:type_name -> account.v1.User
+	10, // 28: account.v1.AccountService.SendEmailCode:input_type -> account.v1.SendEmailCodeRequest
+	12, // 29: account.v1.AccountService.Register:input_type -> account.v1.RegisterRequest
+	14, // 30: account.v1.AccountService.LoginByPassword:input_type -> account.v1.LoginByPasswordRequest
+	16, // 31: account.v1.AccountService.LoginByEmailCode:input_type -> account.v1.LoginByEmailCodeRequest
+	18, // 32: account.v1.AccountService.RefreshToken:input_type -> account.v1.RefreshTokenRequest
+	20, // 33: account.v1.AccountService.Logout:input_type -> account.v1.LogoutRequest
+	22, // 34: account.v1.AccountService.GetMe:input_type -> account.v1.GetMeRequest
+	24, // 35: account.v1.AccountService.UpdateMe:input_type -> account.v1.UpdateMeRequest
+	26, // 36: account.v1.AccountService.GetUser:input_type -> account.v1.GetUserRequest
+	28, // 37: account.v1.AccountService.ListSessions:input_type -> account.v1.ListSessionsRequest
+	30, // 38: account.v1.AccountService.RevokeSession:input_type -> account.v1.RevokeSessionRequest
+	32, // 39: account.v1.AccountService.BanUser:input_type -> account.v1.BanUserRequest
+	34, // 40: account.v1.AccountService.UnbanUser:input_type -> account.v1.UnbanUserRequest
+	36, // 41: account.v1.AccountService.ListUsers:input_type -> account.v1.ListUsersRequest
+	11, // 42: account.v1.AccountService.SendEmailCode:output_type -> account.v1.SendEmailCodeResponse
+	13, // 43: account.v1.AccountService.Register:output_type -> account.v1.RegisterResponse
+	15, // 44: account.v1.AccountService.LoginByPassword:output_type -> account.v1.LoginByPasswordResponse
+	17, // 45: account.v1.AccountService.LoginByEmailCode:output_type -> account.v1.LoginByEmailCodeResponse
+	19, // 46: account.v1.AccountService.RefreshToken:output_type -> account.v1.RefreshTokenResponse
+	21, // 47: account.v1.AccountService.Logout:output_type -> account.v1.LogoutResponse
+	23, // 48: account.v1.AccountService.GetMe:output_type -> account.v1.GetMeResponse
+	25, // 49: account.v1.AccountService.UpdateMe:output_type -> account.v1.UpdateMeResponse
+	27, // 50: account.v1.AccountService.GetUser:output_type -> account.v1.GetUserResponse
+	29, // 51: account.v1.AccountService.ListSessions:output_type -> account.v1.ListSessionsResponse
+	31, // 52: account.v1.AccountService.RevokeSession:output_type -> account.v1.RevokeSessionResponse
+	33, // 53: account.v1.AccountService.BanUser:output_type -> account.v1.BanUserResponse
+	35, // 54: account.v1.AccountService.UnbanUser:output_type -> account.v1.UnbanUserResponse
+	37, // 55: account.v1.AccountService.ListUsers:output_type -> account.v1.ListUsersResponse
+	42, // [42:56] is the sub-list for method output_type
+	28, // [28:42] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_account_v1_account_proto_init() }
@@ -2210,7 +2359,7 @@ func file_account_v1_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_v1_account_proto_rawDesc), len(file_account_v1_account_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   31,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

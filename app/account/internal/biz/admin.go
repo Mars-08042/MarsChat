@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -81,6 +82,85 @@ func (uc *AdminUsecase) Unban(ctx context.Context, admin auth.Principal, userID 
 	uc.users.EvictCache(ctx, userID)
 	uc.logger.Info("user unbanned", slog.Int64("user_id", userID), slog.Int64("admin_id", admin.UserID))
 	return nil
+}
+
+const (
+	defaultUserPageSize = 20
+	maxUserPageSize     = 50
+)
+
+// UserPage 是用户列表的一页。Total 是满足筛选条件的总数，与游标无关。
+type UserPage struct {
+	Users      []*User
+	NextCursor int64
+	Total      int64
+}
+
+// List 按注册时间倒序（ID 倒序）列出用户。直接读库，不经资料缓存，封禁、解封后立即可见。
+// 按昵称包含匹配用不上索引，只能扫表；管理员低频使用，当前规模可以接受（设计 9.2）。
+// 邮箱入库时已转为小写，users 表的排序规则也不区分大小写，匹配都不区分大小写。
+func (uc *AdminUsecase) List(ctx context.Context, admin auth.Principal, keyword string, status int32, cursor int64, limit int32) (*UserPage, error) {
+	if !admin.IsAdmin() {
+		return nil, ErrPermissionDenied()
+	}
+	f, ok := parseUserKeyword(keyword)
+	if !ok {
+		return &UserPage{}, nil
+	}
+	f.Status = status
+	n := int(limit)
+	switch {
+	case n <= 0:
+		n = defaultUserPageSize
+	case n > maxUserPageSize:
+		n = maxUserPageSize
+	}
+	// 多查一条判断是否还有下一页
+	users, err := uc.users.List(ctx, f, cursor, n+1)
+	if err != nil {
+		return nil, err
+	}
+	total, err := uc.users.Count(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	page := &UserPage{Users: users, Total: total}
+	if len(users) > n {
+		page.Users = users[:n]
+		page.NextCursor = users[n-1].ID
+	}
+	return page, nil
+}
+
+// parseUserKeyword 把关键词转成筛选条件：全是数字按 ID 精确匹配，含 @ 按邮箱前缀匹配，
+// 其他按昵称包含或邮箱前缀匹配（昵称包含已经要扫表，顺带匹配邮箱不增加代价）。
+// 数字超出 int64 时不可能有这个用户，返回 false。
+func parseUserKeyword(keyword string) (UserFilter, bool) {
+	k := strings.TrimSpace(keyword)
+	switch {
+	case k == "":
+		return UserFilter{}, true
+	case isDigits(k):
+		id, err := strconv.ParseInt(k, 10, 64)
+		if err != nil || id == 0 {
+			return UserFilter{}, false
+		}
+		return UserFilter{ID: id}, true
+	case strings.Contains(k, "@"):
+		// 邮箱入库时统一转为小写
+		return UserFilter{EmailPrefix: strings.ToLower(k)}, true
+	default:
+		return UserFilter{Text: k}, true
+	}
+}
+
+func isDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (uc *AdminUsecase) check(admin auth.Principal, userID int64) error {

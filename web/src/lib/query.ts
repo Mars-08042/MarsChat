@@ -29,6 +29,8 @@ export const queryKeys = {
   members: (groupId: string) => ["group", groupId, "members"] as const,
   joinRequests: (groupId: string) => ["group", groupId, "join-requests"] as const,
   sessions: ["sessions"] as const,
+  adminUsers: ["admin", "users"] as const,
+  adminUserPage: (keyword: string, status: number, cursor: bigint) => ["admin", "users", keyword, status, cursor.toString()] as const,
 }
 
 // 列表接口都是游标分页（cursor 为 0 表示第一页，next_cursor 为 0 表示没有下一页）。好友、群成员、

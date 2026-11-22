@@ -21,6 +21,7 @@ const OperationAccountServiceBanUser = "/account.v1.AccountService/BanUser"
 const OperationAccountServiceGetMe = "/account.v1.AccountService/GetMe"
 const OperationAccountServiceGetUser = "/account.v1.AccountService/GetUser"
 const OperationAccountServiceListSessions = "/account.v1.AccountService/ListSessions"
+const OperationAccountServiceListUsers = "/account.v1.AccountService/ListUsers"
 const OperationAccountServiceLoginByEmailCode = "/account.v1.AccountService/LoginByEmailCode"
 const OperationAccountServiceLoginByPassword = "/account.v1.AccountService/LoginByPassword"
 const OperationAccountServiceLogout = "/account.v1.AccountService/Logout"
@@ -40,6 +41,9 @@ type AccountServiceHTTPServer interface {
 	GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error)
 	// ListSessions 列出自己当前有效的登录设备。
 	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
+	// ListUsers 列出用户（管理员），按注册时间倒序游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+	// next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 50。直接读库，封禁、解封后立即可见。
+	ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error)
 	// LoginByEmailCode 邮箱加验证码登录。
 	LoginByEmailCode(context.Context, *LoginByEmailCodeRequest) (*LoginByEmailCodeResponse, error)
 	// LoginByPassword 邮箱加密码登录。
@@ -76,6 +80,7 @@ func RegisterAccountServiceHTTPServer(s *http.Server, srv AccountServiceHTTPServ
 	r.Handle("DELETE", "/v1/sessions/{session_id}", _AccountService_RevokeSession0_HTTP_Handler(srv))
 	r.Handle("POST", "/v1/admin/users/{user_id}/ban", _AccountService_BanUser0_HTTP_Handler(srv))
 	r.Handle("POST", "/v1/admin/users/{user_id}/unban", _AccountService_UnbanUser0_HTTP_Handler(srv))
+	r.Handle("GET", "/v1/admin/users", _AccountService_ListUsers0_HTTP_Handler(srv))
 }
 
 func _AccountService_SendEmailCode0_HTTP_Handler(srv AccountServiceHTTPServer) func(ctx http.Context) error {
@@ -337,6 +342,25 @@ func _AccountService_UnbanUser0_HTTP_Handler(srv AccountServiceHTTPServer) func(
 	}
 }
 
+func _AccountService_ListUsers0_HTTP_Handler(srv AccountServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListUsersRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationAccountServiceListUsers)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListUsers(ctx, req.(*ListUsersRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListUsersResponse)
+		return ctx.Result(200, reply)
+	}
+}
+
 type AccountServiceHTTPClient interface {
 	// BanUser 封禁用户（管理员）：吊销其全部会话，之后无法登录。
 	BanUser(ctx context.Context, req *BanUserRequest, opts ...http.CallOption) (rsp *BanUserResponse, err error)
@@ -346,6 +370,9 @@ type AccountServiceHTTPClient interface {
 	GetUser(ctx context.Context, req *GetUserRequest, opts ...http.CallOption) (rsp *GetUserResponse, err error)
 	// ListSessions 列出自己当前有效的登录设备。
 	ListSessions(ctx context.Context, req *ListSessionsRequest, opts ...http.CallOption) (rsp *ListSessionsResponse, err error)
+	// ListUsers 列出用户（管理员），按注册时间倒序游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+	// next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 50。直接读库，封禁、解封后立即可见。
+	ListUsers(ctx context.Context, req *ListUsersRequest, opts ...http.CallOption) (rsp *ListUsersResponse, err error)
 	// LoginByEmailCode 邮箱加验证码登录。
 	LoginByEmailCode(ctx context.Context, req *LoginByEmailCodeRequest, opts ...http.CallOption) (rsp *LoginByEmailCodeResponse, err error)
 	// LoginByPassword 邮箱加密码登录。
@@ -435,6 +462,24 @@ func (c *AccountServiceHTTPClientImpl) ListSessions(ctx context.Context, in *Lis
 	opts = append([]http.CallOption{
 		http.Accept("application/protojson"),
 		http.Operation(OperationAccountServiceListSessions),
+		http.PathTemplate(pattern),
+	}, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListUsers 列出用户（管理员），按注册时间倒序游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+// next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 50。直接读库，封禁、解封后立即可见。
+func (c *AccountServiceHTTPClientImpl) ListUsers(ctx context.Context, in *ListUsersRequest, opts ...http.CallOption) (*ListUsersResponse, error) {
+	var out ListUsersResponse
+	pattern := "/v1/admin/users"
+	path := http.BuildPath(pattern, in, http.WithQueryParams())
+	opts = append([]http.CallOption{
+		http.Accept("application/protojson"),
+		http.Operation(OperationAccountServiceListUsers),
 		http.PathTemplate(pattern),
 	}, opts...)
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)

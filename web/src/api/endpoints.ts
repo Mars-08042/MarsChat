@@ -13,6 +13,8 @@ import {
   LoginByPasswordResponseSchema,
   ListSessionsRequestSchema,
   ListSessionsResponseSchema,
+  ListUsersRequestSchema,
+  ListUsersResponseSchema,
   LogoutRequestSchema,
   LogoutResponseSchema,
   RefreshTokenRequestSchema,
@@ -109,6 +111,7 @@ export const listSessions = endpoint("GET", "/v1/sessions", ListSessionsRequestS
 export const revokeSession = endpoint("DELETE", "/v1/sessions/{session_id}", RevokeSessionRequestSchema, RevokeSessionResponseSchema)
 export const banUser = endpoint("POST", "/v1/admin/users/{user_id}/ban", BanUserRequestSchema, BanUserResponseSchema)
 export const unbanUser = endpoint("POST", "/v1/admin/users/{user_id}/unban", UnbanUserRequestSchema, UnbanUserResponseSchema)
+export const listUsers = endpoint("GET", "/v1/admin/users", ListUsersRequestSchema, ListUsersResponseSchema)
 
 export const listConversations = endpoint("GET", "/v1/conversations", ListConversationsRequestSchema, ListConversationsResponseSchema)
 export const getConversation = endpoint("GET", "/v1/conversations/{conversation_id}", GetConversationRequestSchema, GetConversationResponseSchema)

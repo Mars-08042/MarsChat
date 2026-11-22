@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +107,46 @@ func (f *fakeUsers) LockStatus(ctx context.Context, id int64) (int32, error) {
 		return 0, err
 	}
 	return u.Status, nil
+}
+
+// matching 按 ID 倒序返回满足条件的用户；匹配不区分大小写，与 MySQL 的 ci 排序规则一致。
+func (f *fakeUsers) matching(flt UserFilter) []*User {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*User
+	lower := strings.ToLower
+	for _, u := range f.byID {
+		emailHas := func(prefix string) bool { return strings.HasPrefix(lower(u.Email), lower(prefix)) }
+		if (flt.ID > 0 && u.ID != flt.ID) ||
+			(flt.EmailPrefix != "" && !emailHas(flt.EmailPrefix)) ||
+			(flt.Text != "" && !strings.Contains(lower(u.Nickname), lower(flt.Text)) && !emailHas(flt.Text)) ||
+			(flt.Status != 0 && u.Status != flt.Status) {
+			continue
+		}
+		cp := *u
+		cp.PasswordHash = ""
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out
+}
+
+func (f *fakeUsers) List(_ context.Context, flt UserFilter, before int64, limit int) ([]*User, error) {
+	var out []*User
+	for _, u := range f.matching(flt) {
+		if before > 0 && u.ID >= before {
+			continue
+		}
+		if len(out) == limit {
+			break
+		}
+		out = append(out, u)
+	}
+	return out, nil
+}
+
+func (f *fakeUsers) Count(_ context.Context, flt UserFilter) (int64, error) {
+	return int64(len(f.matching(flt))), nil
 }
 
 func (f *fakeUsers) GetCached(ctx context.Context, id int64) (*User, error) {

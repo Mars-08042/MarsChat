@@ -31,7 +31,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 ### 2.1 account（`marschat_account`）
 
-迁移：`000001_init`、`000002_email`、`000003_outbox_trace_parent`。
+迁移：`000001_init`、`000002_email`、`000003_outbox_trace_parent`、`000004_user_status_index`。
 
 **users**
 
@@ -46,7 +46,7 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 | `birthday` | `DATE NULL` | |
 | `signature` | `VARCHAR(100)` | |
 | `role` | `TINYINT` | 1 普通用户、2 管理员 |
-| `status` | `TINYINT` | 1 正常、2 封禁 |
+| `status` | `TINYINT` | 1 正常、2 封禁；索引 `idx_status_id (status, id)`（`000004`） |
 | `created_at` / `updated_at` | `DATETIME(3)` | |
 
 **sessions**（一台设备的一次登录）
@@ -66,12 +66,15 @@ access 和 delivery 不持有数据库，状态放在 Redis。
 
 **outbox_events**：结构见 [pkg/outbox](../../pkg/outbox/outbox.go)，各服务同构。account 写入的事件为 `SessionRevoked`、`UserBanned`（topic `marschat.account.events`，分区键为用户 ID），由 Outbox 发布器发布到 Kafka，见 [data-flow.md](data-flow.md#6-事件与-outbox)。步骤 8 新增列 `trace_parent VARCHAR(64) NOT NULL DEFAULT ''`（位于 `payload` 之后）：写入事件时的 W3C `traceparent`（55 个字符），没有 Trace 上下文时为空字符串；发布时转成 Kafka 记录头，见 [data-flow.md](data-flow.md#10-链路追踪)。只追加列、带默认值，旧版本的服务不写它也能正常运行，回滚迁移只是丢掉这一列。
 
-索引与查询（`EXPLAIN` 于 2026-11-18 在 MySQL 9.7.4 上核对，`uk_email` 于 2026-11-20 核对）：
+索引与查询（`EXPLAIN` 于 2026-11-18 在 MySQL 9.7.4 上核对，`uk_email` 于 2026-11-20 核对；管理员用户列表于 2026-11-22 在临时库中造 5 万个用户（1% 封禁）并 `ANALYZE` 后核对）：
 
 | 索引 | 查询 | 说明 |
 |---|---|---|
 | `users.uk_email` | 登录、发码前判断是否注册：`WHERE email = ?` | 常量查找；同时兜底并发注册（唯一键冲突转成 `EMAIL_ALREADY_REGISTERED`） |
-| `users.PRIMARY` | 资料回源、批量资料 `WHERE id IN (...)`、登录与封禁的行锁、布隆过滤器重建 `WHERE id > ? ORDER BY id LIMIT 1000` | 重建扫描为覆盖索引范围扫描 |
+| `users.PRIMARY` | 资料回源、批量资料 `WHERE id IN (...)`、登录与封禁的行锁、布隆过滤器重建 `WHERE id > ? ORDER BY id LIMIT 1000`；管理员用户列表 `[WHERE id < ?] ORDER BY id DESC LIMIT n` | 重建扫描为覆盖索引范围扫描；用户列表倒序范围扫描，无排序 |
+| `users.idx_status_id (status, id)` | 管理员按状态列出用户 `WHERE status = ? [AND id < ?] ORDER BY id DESC LIMIT n` 与计数 | 倒序范围扫描，无排序；计数为覆盖索引。正常用户占多数时也走它，同样无排序 |
+| `users.uk_email`（前缀） | 管理员按邮箱前缀查找 `WHERE email LIKE '前缀%'` | 范围扫描，命中的行很少，排序代价可以忽略；`COUNT(*)` 为覆盖索引 |
+| 无 | 管理员按昵称包含或邮箱前缀查找 `WHERE (nickname LIKE '%词%' OR email LIKE '词%') ORDER BY id DESC LIMIT n` | 主键倒序扫描加过滤，凑够一页即停；计数要扫全表。只有管理员低频使用，是「每个查询都有对应索引」的例外，见 [account 设计第 9 节](../design/account-service.md#9-管理员用户列表) |
 | `sessions.uk_user_active_device (user_id, active_device)` | 同设备登录时吊销旧会话：`WHERE user_id = ? AND active_device = ? FOR UPDATE` | 已吊销会话这一列为 NULL，不占唯一约束，所以同一设备最多一个有效会话，历史全部保留。查不到行时这条查询加的是间隙锁，注册不执行它（新用户没有会话），否则并发注册会在索引末尾的间隙上死锁，见 [lessons](../lessons/innodb-gap-lock-register-deadlock.md) |
 | `sessions.idx_user_revoked (user_id, revoked_at)` | 设备列表、封禁时吊销全部会话：`WHERE user_id = ? AND revoked_at IS NULL` | 数据量很小时优化器可能改用 `uk_user_active_device` 的 `user_id` 前缀，两者都在候选索引中 |
 | `sessions.PRIMARY` | 刷新：按令牌里的会话 ID 查找；轮换 `UPDATE ... WHERE id = ? AND refresh_hash = ? AND revoked_at IS NULL` | 条件更新保证并发刷新只有一个成功 |

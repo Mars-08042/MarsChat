@@ -181,3 +181,20 @@ func (s *AccountService) UnbanUser(ctx context.Context, req *v1.UnbanUserRequest
 	}
 	return &v1.UnbanUserResponse{}, nil
 }
+
+func (s *AccountService) ListUsers(ctx context.Context, req *v1.ListUsersRequest) (*v1.ListUsersResponse, error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := s.admin.List(ctx, p, req.GetKeyword(), int32(req.GetStatus()), req.GetCursor(), req.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+	users := make([]*v1.User, len(page.Users))
+	for i, u := range page.Users {
+		users[i] = toUser(u)
+	}
+	// 用户数远小于 int32 上限
+	return &v1.ListUsersResponse{Users: users, NextCursor: page.NextCursor, Total: int32(page.Total)}, nil
+}

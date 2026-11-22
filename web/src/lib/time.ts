@@ -23,6 +23,12 @@ export function formatClock(ts: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
 }
 
+// 管理页等表格里的日期：2026-11-22
+export function formatDate(ts: number): string {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
 // 会话列表：今天显示时刻，昨天显示「昨天」，一周内显示星期，今年显示月/日，更早带年份
 export function formatListTime(ts: number, now: number): string {
   const diff = dayDiff(ts, now)

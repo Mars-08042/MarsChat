@@ -6,6 +6,44 @@ info:
     title: ""
     version: 0.0.1
 paths:
+    /v1/admin/users:
+        get:
+            tags:
+                - AccountService
+            description: |-
+                列出用户（管理员），按注册时间倒序游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+                 next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 50。直接读库，封禁、解封后立即可见。
+            operationId: AccountService_ListUsers
+            parameters:
+                - name: keyword
+                  in: query
+                  description: |-
+                    去掉首尾空白后为空表示不筛选。全是数字时按用户 ID 精确匹配，含 @ 时按邮箱前缀匹配，
+                     其他情况按昵称包含或邮箱前缀匹配。都不区分大小写。
+                  schema:
+                    type: string
+                - name: status
+                  in: query
+                  description: USER_STATUS_UNSPECIFIED 表示全部。
+                  schema:
+                    type: integer
+                    format: enum
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/account.v1.ListUsersResponse'
     /v1/admin/users/{userId}/ban:
         post:
             tags:
@@ -1059,6 +1097,19 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/account.v1.Session'
+        account.v1.ListUsersResponse:
+            type: object
+            properties:
+                users:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/account.v1.User'
+                nextCursor:
+                    type: string
+                total:
+                    type: integer
+                    description: 满足筛选条件的总数，与 cursor 无关。
+                    format: int32
         account.v1.LoginByEmailCodeRequest:
             type: object
             properties:
