@@ -59,7 +59,7 @@
   - 只有一对一，只能呼叫好友；一个用户的全部设备同一时间只能处于一通通话中，振铃中也算；
   - 服务端判定振铃超时（60 秒）；主叫所在实例崩溃时没有人发结束通知，被叫客户端最多响铃 65 秒后自行停止；
   - 信令连接断开就结束通话，不支持断线后恢复；
-  - STUN/TURN（coturn）与临时凭据下发推迟到前端阶段再定（后端计划步骤 7）。没有 TURN 时，双方不在同一网络可能无法直连。
+  - STUN/TURN（coturn）与临时凭据下发推迟到前端阶段再定（后端计划步骤 7），第 8 阶段开发者确认再推迟到第 9 阶段（[turn-relay.md](turn-relay.md)）。没有 TURN 时，双方不在同一网络可能无法直连。
 
 ### 2.3 非功能约束
 
@@ -585,13 +585,13 @@ HTTP 客户端（`api/http.ts`）：
 
 通话引擎在 `realtime/call/`，不依赖 React，状态写入 zustand store，界面只读状态、调用动作。
 
-- **状态机**：`idle` →（发出邀请并收到 `CallAck`）`outgoing` /（收到 `CallIncoming`）`incoming` →（`CallAccepted` 或本端接听的 `CallAck`）`connecting` →（`RTCPeerConnection.connectionState` 变为 `connected`）`active` → `ended` → `idle`。每个 `CallRequest` 都等带同一 `request_id` 的 `CallAck` 或 `Error`；`Error` 表示状态没有变化。
+- **状态机**：`idle` →（点击呼叫，申请设备并发出邀请）`dialing` →（收到 `CallAck`）`outgoing` /（收到 `CallIncoming`）`incoming` →（`CallAccepted` 或本端接听的 `CallAck`）`connecting` →（`RTCPeerConnection.connectionState` 变为 `connected`）`active` → `ended` → `idle`。每个 `CallRequest` 都等带同一 `request_id` 的 `CallAck` 或 `Error`；`Error` 表示状态没有变化。
 - **一人一通**：本端已有通话时，新的 `CallIncoming` 不会到达（服务端忙线判断），界面上的呼叫按钮也禁用。
 - **协商**：
-  - 主叫收到 `CallAccepted` 后创建 offer，用 `CallSignal` 发送；被叫回 answer。ICE 候选随时用 `CallSignal` 发送，空串表示收集结束。
+  - 主叫收到 `CallAccepted` 后创建 offer，用 `CallSignal` 发送；被叫回 answer。ICE 候选随时用 `CallSignal` 发送；收集结束的标记不发送（第 10 节第 73 条）。
   - 对端的 ICE 候选可能早于 SDP 到达（call-signaling 3.7），先缓存，设置远端描述后再加入。
-  - 通话中开关摄像头：已有视频轨道时用 `track.enabled` 切换，不重新协商；语音通话里打开摄像头需要加轨道并重新协商，按 WebRTC 的「perfect negotiation」写法处理双方同时协商的冲突（被叫为 polite 一方）。服务端不感知协商内容。
-- **ICE 服务器**：后端暂不下发 STUN/TURN 配置（coturn 推迟）。先用空的 `iceServers`，同一台机器或同一局域网内可以直连；`connectionState` 变为 `failed`，或 `connecting` 超过 15 秒仍未连通时，挂断并显示「网络无法直连」。部署 coturn 和临时凭据接口属于后端与部署的改动，到第 8 阶段再与开发者确认。
+  - 通话中开关摄像头：已有视频轨道时用 `track.enabled` 切换，不重新协商；语音通话里打开摄像头需要加轨道并重新协商，按 WebRTC 的「perfect negotiation」写法处理双方同时协商的冲突（被叫为 polite 一方）。服务端不感知协商内容。第 8 阶段语音通话没有摄像头按钮，实际不会重新协商（第 10 节第 71 条）。
+- **ICE 服务器**：后端暂不下发 STUN/TURN 配置（coturn 推迟）。先用空的 `iceServers`，同一台机器或同一局域网内可以直连；`connectionState` 变为 `failed`，或 `connecting` 超过 15 秒仍未连通时，挂断并显示「网络无法直连」。开发者确认（2026-11-22）部署 coturn 和临时凭据下发推迟到第 9 阶段，与部署方式一起实施，提议见 [turn-relay.md](turn-relay.md)。
 - **结束与清理**：任何结束路径（挂断、`CallEnded`、连接失败、信令连接关闭、页面卸载）都要关闭 `RTCPeerConnection`、停止全部本地轨道，释放摄像头和麦克风的占用指示。页面卸载前尽力发送 `CallHangup`。
 - **超时**：被叫本地最多响铃 65 秒；主叫的振铃超时以服务端的 `CallEnded{TIMEOUT}` 为准，本地不另计时。
 
@@ -727,7 +727,8 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
 | 刷新令牌放在 `localStorage`，存在 XSS 风险 | 见 3.8 的缓解措施和 5.8 |
 | 本机经网关的请求共用一个 IP，开发时容易触发认证接口的入口限流 | 开发时默认用宿主机模式；需要验证网关时再切到网关模式 |
 | 动效堆得太多，显得廉价，或干扰聊天 | 遵守 3.4.1 的原则；原型评审时逐项检查动效清单，高频区域只保留必要的动效 |
-| 没有 TURN 时，双方不在同一网络就无法建立通话 | 先保证局域网内可用，连接失败时明确提示（3.9.5）；部署 coturn 和凭据下发在第 8 阶段与开发者确认 |
+| 没有 TURN 时，双方不在同一网络就无法建立通话 | 先保证局域网内可用，连接失败时明确提示（3.9.5）；部署 coturn 和凭据下发推迟到第 9 阶段（开发者 2026-11-22 确认，提议见 [turn-relay.md](turn-relay.md)） |
+| 浏览器扩展或企业策略禁用 WebRTC，或限制它收集本机地址 | 检测不到 `RTCPeerConnection` 时提示「WebRTC 不可用，可能被浏览器扩展禁用」；只限制地址时收集不到候选，15 秒后按「网络无法直连」结束，这种情况只有 TURN 能解决（第 10 节第 76 条） |
 | 浏览器限制自动播放，来电铃声可能不响 | 铃声只是辅助，来电卡片、标签页标题闪烁和系统通知都不依赖声音 |
 | 原型阶段除表情面板外所有页面打成一个包，产物 JS 822 KB（gzip 271 KB） | 第 9 阶段按路由拆包，三个 WebGL 背景各自懒加载，只下载用户选中的那个（2.3）；删除原型代码和假数据 |
 | 系统 emoji 的样式随设备不同，旧系统缺少新表情 | frimousse 检测系统支持的 emoji 版本，隐藏画不出来的表情；需要统一样式时可改用开源图片集（Twemoji 为 CC BY 4.0，Fluent Emoji 为 MIT），涉及新的素材和许可证，另行确认 |
@@ -912,3 +913,17 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
 67. **用户与会话只保存头像文件 ID**：`ChatUser`、`Conversation` 的 `avatarUrl` 改为 `avatarId`，由 `UserAvatar` 换成地址后显示。头像统一用缩略图（最长边 320 像素），一屏的头像合并成一两次批量请求。
 68. **上传中的消息只在内存里**：`realtime/uploads.ts` 管理上传任务。消息先以 `uploading` 状态放进发件箱，上传完成后以同一个消息 ID 交给发送队列；刷新页面会丢掉上传中的消息，所以有文件在上传时 `beforeunload` 同样提示。客户端停止（退出、被踢）时中止全部上传，并释放本地预览地址；我方图片发出后继续用本地地址显示，也在这时释放。
 69. **主包增加约 15 KB**：从 1,263.54 KB 变为 1,278.30 KB（gzip 397.24 KB）。
+
+以下为第 8 阶段（通话，2026-11-22）中的调整：
+
+70. **引擎与界面的分工**：`realtime/call/engine.ts` 的 `createCallEngine` 不直接访问浏览器 API，`getUserMedia`、`RTCPeerConnection` 的构造、发帧、取用户资料都由 `realtime/client.ts` 注入，单元测试用假的设备和连接（模拟 JSEP 的信令状态）。状态在 `stores/call.ts`，只放界面要显示的内容（阶段、静音、本地和远端的 `MediaStream`、提示）；`RTCPeerConnection`、定时器、待发信令留在引擎内部。界面通过 `callActions` 调用，没有登录时这些动作什么也不做。原型的 `features/call/fake-call-store.ts` 已不再使用。
+71. **被叫收到 offer 后才加轨道**：perfect negotiation 允许双方同时发 offer，再由 polite 一方让步。实际做法更简单：主叫收到 `CallAccepted` 后加入本地轨道，由 `negotiationneeded` 发出 offer；被叫在设置远端 offer 之后才加入轨道，再用 `setLocalDescription()` 生成 answer，正常流程不会出现冲突。冲突处理的代码仍按 polite 写法保留（有单元测试）。语音通话没有摄像头按钮（3.6.10），所以第 8 阶段不会在通话中重新协商。
+72. **新增 `dialing` 阶段**：点击呼叫后立即进入全屏界面，显示「正在呼叫…」，同时申请设备、发邀请；收到 `CallAck` 后进入 `outgoing`，显示等待接听和计时。设备不可用、邀请被拒绝（3.6.10 的「呼叫被拒」）时收起界面，在顶部提示原因。这比「拿到权限之后才出现界面」反馈更及时，浏览器弹出权限框时用户也知道发生了什么。邀请和接听最多等 10 秒回复，超时按失败处理；用户在这期间取消、或者超时之后 `CallAck` 才到，说明服务端已经建立了通话，引擎补发挂断。
+73. **信令每秒最多 8 帧，不发收集结束标记**：access 按固定 1 秒窗口统计每个连接的上行帧，超过 30 帧以 4008 断开（`app/access/internal/biz/conn.go`）；发送队列每秒最多 20 帧（3.9.4）。没有 TURN 时本机每块网卡都会产生候选，一次可能有几十个，所以通话信令另外按 1 秒滑动窗口限到 8 帧，超出的排队稍后发送，与消息、心跳加在一起也不会超过 30 帧。联调时一秒内最多发出 3 帧。ICE 收集结束（`candidate` 为 null 或空串）不发送：现在的浏览器不需要这个标记也能完成连接，省下一帧；收到对端的空候选同样忽略。
+74. **来电在本端接听前结束时只提示**：主叫取消、无人接听、在其他设备接听时，来电卡片收起，顶部提示「对方已取消」「未接来电」「已在其他设备接听」，不再弹出全屏的结束界面；自己拒绝的不提示。顶部提示由原型的「呼叫被拒」提示扩展而来（`CallState.notice`），也用于设备不可用、WebRTC 不可用、接听失败。接听失败（服务暂时不可用等，`Error` 表示状态没变）时来电继续响铃，可以再点接听；收到 `CALL_ALREADY_ANSWERED` 按「已在其他设备接听」结束，收到 `CALL_NOT_FOUND` 按对方已取消结束。
+75. **远端声音走常驻的 `<audio>`**：通话层根部放一个 `<audio autoPlay>` 播放远端流，最小化、切换页面都不会卸载它；`<video>` 一律静音，只负责画面，避免全屏和悬浮窗切换时声音中断或重复。本地预览左右镜像，与照镜子的习惯一致，对方看到的不镜像。
+76. **WebRTC 不可用的处理**：联调时一个防 IP 泄露的浏览器扩展把页面里的 `RTCPeerConnection` 置为 `undefined`，判断它存不存在要用 `typeof window.RTCPeerConnection === "function"`，不能用 `"RTCPeerConnection" in window`。不可用时，呼叫和接听都只提示「当前浏览器无法通话：WebRTC 不可用，可能被浏览器扩展禁用」；来电继续响铃，不自动拒绝，用户的其他设备也许能接。另一种情况是扩展只限制候选收集（WebRTC IP 策略），连接能创建，但一个候选都收集不到，15 秒后按「网络无法直连」结束，这种情况只有 TURN 能解决。通话中途创建连接失败同样按「网络无法直连」结束。
+77. **连通超时与断线**：主叫收到 `CallAccepted`、被叫收到接听的 `CallAck` 后开始计时，15 秒内 `connectionState` 没有变成 `connected` 就挂断；变成 `failed` 立即挂断；变成 `disconnected` 先等 10 秒，网络抖动可能自己恢复，没恢复再挂断。三种情况都显示「网络无法直连，通话已结束」，对方收到「对方已挂断」。信令连接断开（等待重连、离线、被踢）时，服务端会按断线结束通话（call-signaling 3.5），本端同样立即结束，显示「连接已断开，通话结束」。
+78. **离开页面**：呼叫中和通话中（振铃的来电除外）`beforeunload` 弹出离开确认；页面真正卸载时（`pagehide`）尽力发送挂断，对方看到「对方已挂断」。客户端停止（退出、被踢）时先结束通话、释放设备，再关闭连接。
+79. **来电提醒**（`features/call/alerts.ts`）：铃声用 Web Audio 合成两个音（784 Hz、1047 Hz），每 2 秒响一次，不引入音频文件；`AudioContext` 处于 `suspended`（页面还没有用户交互）时静默跳过。标题闪烁只在标签页不可见时进行，切回来恢复原标题；闪烁期间未读数改了标题，就以新标题作为要恢复的原标题。系统通知只在已经授权、并且页面不可见时发送，点击后切回页面；第 8 阶段没有申请通知权限的入口，放到第 9 阶段打磨时决定入口位置。
+80. **主包增加约 11 KB**：从 1,278.30 KB 变为 1,289.57 KB（gzip 401.22 KB）。

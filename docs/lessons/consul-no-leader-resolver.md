@@ -27,6 +27,8 @@ send message failed ... reason = UPSTREAM_UNAVAILABLE ... cause = rpc error: cod
 
 `compose.yaml` 里 consul 的健康检查是 `consul members`，agent 启动就通过，不等 leader，所以 `depends_on: service_healthy` 也挡不住这个窗口；Docker 重启时更是不管 `depends_on`。
 
+2026-11-22 前端第 8 阶段联调时再次出现，这次 message 到 account、social，social 到 account 的调用也失效了，表现为会话列表和好友列表缺少昵称，日志为 `dependency unavailable`。哪些服务中招取决于各容器的启动时机，凡是通过服务发现调用其他服务的应用（access、delivery、message、social）都可能受影响。
+
 ## 排查要点
 
 - 先看 Jaeger：只有调用方的 span，说明请求没有发出去，问题在调用方的连接或服务发现，而不是被调方。
@@ -35,6 +37,6 @@ send message failed ... reason = UPSTREAM_UNAVAILABLE ... cause = rpc error: cod
 
 ## 解决
 
-临时：重启受影响的服务，`docker compose --profile apps restart access delivery`。
+临时：重启全部会调用其他服务的应用，`docker compose --profile apps restart access delivery message social`。
 
 根治（待做，见 TD-44）：`pkg/bootstrap.NewConsulRegistry` 返回前等 Consul 有 leader；consul 的健康检查改为确认已有 leader。

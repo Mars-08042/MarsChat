@@ -6,12 +6,12 @@ import { ConnectionPill } from "@/components/common/ConnectionPill"
 import { UserAvatar } from "@/components/common/UserAvatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useCallStore } from "@/features/call/fake-call-store"
 import { springs } from "@/lib/motion"
 import { formatTimeDivider } from "@/lib/time"
 import { useNow, useSecondsUntil } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
-import { chat } from "@/realtime/client"
+import { callActions, chat } from "@/realtime/client"
+import { useCall } from "@/stores/call"
 import { useChat, type Timeline as TimelineData } from "@/stores/chat"
 import { useSession } from "@/stores/session"
 import { useUi } from "@/stores/ui"
@@ -235,8 +235,7 @@ export function PillSlot({ className }: { className?: string }) {
 // 只有单聊能通话（后端只支持一对一）；自己已在通话或振铃中时禁用（一人一通）
 function CallButtons({ peerId, blocked }: { peerId: string; blocked: boolean }) {
   const peer = useChat((s) => s.users[peerId])
-  const inCall = useCallStore((s) => s.call !== null)
-  const startCall = useCallStore((s) => s.startCall)
+  const inCall = useCall((s) => s.call !== null)
   const disabledReason = inCall ? "你正在通话中" : blocked ? "当前会话不能发起通话" : undefined
   if (!peer) return null
 
@@ -251,7 +250,7 @@ function CallButtons({ peerId, blocked }: { peerId: string; blocked: boolean }) 
                 size="icon"
                 aria-label={media === "audio" ? "语音通话" : "视频通话"}
                 disabled={disabledReason !== undefined}
-                onClick={() => startCall(peer, media)}
+                onClick={() => callActions.start(peer, media)}
               />
             }
           >

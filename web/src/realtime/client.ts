@@ -21,13 +21,16 @@ import { RevokeReason } from "@/gen/account/v1/events_pb"
 import { ConversationType } from "@/gen/message/v1/message_pb"
 import { planChatUpload } from "@/features/chat/files"
 import { toLocalFile } from "@/features/chat/local-file"
+import type { CallMedia } from "@/features/call/call-text"
 import type { ChatMessage, ChatUser, Conversation, MessageContent } from "@/features/chat/types"
 import { groupBlock, type GroupInfo, type MemberItem } from "@/features/groups/model"
 import { groupQuery, membersQuery } from "@/features/groups/queries"
 import { queryClient, queryKeys } from "@/lib/query"
 import { formatMuteEnd } from "@/lib/time"
 import { chatStore, draftKey, initialChatState } from "@/stores/chat"
+import { callStore } from "@/stores/call"
 import { useUi } from "@/stores/ui"
+import { createCallEngine, type CallEngine } from "./call/engine"
 import { SUBPROTOCOL } from "./codec"
 import { createConnection, type Connection, type ConnectionState, type OpenSocket } from "./connection"
 import { GROUP_DISMISSED_TEXT, messageId, toChatUser } from "./convert"
@@ -89,6 +92,7 @@ interface Instance {
   engine: SyncEngine
   queue: SendQueue
   uploads: UploadManager
+  calls: CallEngine
   recheckGroup: (groupId: string) => Promise<void>
   forgetConversation: (conversationId: string) => void
 }
@@ -191,6 +195,25 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
     onUploaded: (message, outgoing) => queue.enqueue(message, outgoing),
   })
 
+  const calls = createCallEngine({
+    store: callStore,
+    send: (body) => conn.send(body),
+    // 非安全上下文（http 且不是本机地址）没有 mediaDevices，按设备不可用提示
+    getUserMedia: (constraints) =>
+      navigator.mediaDevices ? navigator.mediaDevices.getUserMedia(constraints) : Promise.reject(new DOMException("mediaDevices unavailable", "NotSupportedError")),
+    createPeerConnection: (config) => new RTCPeerConnection(config),
+    // 不能写成 "RTCPeerConnection" in window：扩展把它置为 undefined 时属性仍然存在
+    webrtcSupported: () => typeof window.RTCPeerConnection === "function",
+    // 后端暂不下发 STUN/TURN（coturn 推迟到第 9 阶段，设计 3.9.5）
+    iceServers: () => [],
+    user: (id) => chatStore.getState().users[id],
+    loadUser: async (id) => {
+      await loadUser(id)
+      return chatStore.getState().users[id]
+    },
+    log,
+  })
+
   const onState = (state: ConnectionState) => {
     switch (state.kind) {
       case "connecting":
@@ -227,16 +250,19 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
       case "waiting":
         syncing = false
         queue.disconnected()
+        calls.connectionLost()
         setConnection(state.maintenance ? { kind: "maintenance" } : { kind: "reconnecting", retryAt: state.retryAt })
         return
       case "offline":
         syncing = false
         queue.disconnected()
+        calls.connectionLost()
         setConnection({ kind: "offline" })
         return
       case "kicked":
         syncing = false
         queue.disconnected()
+        calls.connectionLost()
     }
   }
 
@@ -253,14 +279,19 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
         queue.handleAck(frame.requestId, body.value)
         return
       case "error":
-        if (frame.requestId === 0n || !queue.handleError(frame.requestId, body.value)) {
+        if (frame.requestId === 0n || !(queue.handleError(frame.requestId, body.value) || calls.handleError(frame.requestId, body.value))) {
           log.warn("server error frame", { requestId: frame.requestId.toString(), reason: body.value.reason })
         }
         return
       case "notification":
         onNotification(body.value)
         return
-      // 通话在第 8 阶段接入
+      case "callAck":
+        if (!calls.handleAck(frame.requestId, body.value)) log.warn("unexpected call ack", { requestId: frame.requestId.toString() })
+        return
+      case "callEvent":
+        calls.handleEvent(body.value)
+        return
       default:
         return
     }
@@ -290,13 +321,17 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
 
   const online = () => conn.setOnline(true)
   const offline = () => conn.setOnline(false)
-  // 还有没确认的消息或正在上传的文件时离开页面要确认：发送队列和上传都只在内存里（设计 3.9.4）
+  // 还有没确认的消息、正在上传的文件或进行中的通话时离开页面要确认：发送队列和上传都只在内存里（设计 3.9.4），
+  // 离开页面会断开通话
   const beforeUnload = (e: BeforeUnloadEvent) => {
-    if (queue.hasUnconfirmed() || uploads.hasActive()) e.preventDefault()
+    if (queue.hasUnconfirmed() || uploads.hasActive() || calls.inProgress()) e.preventDefault()
   }
+  // 页面卸载前尽力发出挂断，对方看到「对方已挂断」而不是「连接已断开」（设计 3.9.5）
+  const pageHide = () => calls.dispose()
   window.addEventListener("online", online)
   window.addEventListener("offline", offline)
   window.addEventListener("beforeunload", beforeUnload)
+  window.addEventListener("pagehide", pageHide)
 
   // 按群资料和自己的成员信息重新计算「不能发言」的原因：打开群聊、相关通知、重连后调用。
   // 单人禁言到期时自动再算一次，说明条随之消失
@@ -415,7 +450,7 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
     if (effects.celebrate) useUi.getState().celebrate()
   }
 
-  const instance: Instance = { conn, engine, queue, uploads, recheckGroup, forgetConversation }
+  const instance: Instance = { conn, engine, queue, uploads, calls, recheckGroup, forgetConversation }
   current = instance
   conn.start()
 
@@ -423,6 +458,9 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
     window.removeEventListener("online", online)
     window.removeEventListener("offline", offline)
     window.removeEventListener("beforeunload", beforeUnload)
+    window.removeEventListener("pagehide", pageHide)
+    // 先挂断再断开连接，挂断帧才发得出去
+    calls.dispose()
     conn.stop()
     engine.dispose()
     queue.clear()
@@ -543,6 +581,18 @@ export const chat = {
     }
     return rejected
   },
+}
+
+// 通话层调用的动作（设计 3.6.10）。实时客户端没有启动时什么也不做
+export const callActions = {
+  start: (peer: ChatUser, media: CallMedia) => current?.calls.start(peer, media),
+  accept: () => current?.calls.accept(),
+  reject: () => current?.calls.reject(),
+  hangup: () => current?.calls.hangup(),
+  toggleMute: () => current?.calls.toggleMute(),
+  toggleCamera: () => current?.calls.toggleCamera(),
+  setMinimized: (minimized: boolean) => current?.calls.setMinimized(minimized),
+  dismissNotice: () => current?.calls.dismissNotice(),
 }
 
 // 新发出的消息：生成 client_msg_id，按发送目标算出发件箱的键和 OutgoingMessage 的接收方

@@ -12,8 +12,8 @@
 
 - 发现：2026-11-21，前端第 4 阶段联调
 - 位置：`pkg/bootstrap/registry.go`（创建 Consul 注册中心）；`github.com/go-kratos/kratos/contrib/registry/consul/v3` 的 `Registry.Watch`；`compose.yaml` 中 consul 的健康检查
-- 现状：Docker 重启后所有容器同时启动，Consul 约 5.7 秒后才选出 leader。access 和 delivery 在这之前启动，Kratos 的 `NewClient` 创建后立即 `Connect()`，解析器第一次查询 `/v1/health/service/...` 因为没有 leader 失败。contrib 的 `Watch` 先把服务登记进内部的 `serviceSet`，再做第一次查询；查询失败时返回错误，但登记不撤销，也没有启动后台轮询。之后 gRPC 重建解析器时 `Watch` 拿到这个空的登记，watcher 永远等不到事件。结果是 access 到 message 的调用一直超时，客户端看到 `UPSTREAM_UNAVAILABLE`，直到重启进程；delivery 到 social 同样受影响。consul 的健康检查是 `consul members`，agent 起来就通过，不等 leader，所以新环境 `docker compose up` 也可能遇到。
-- 临时处理：重启受影响的服务（`docker compose --profile apps restart access delivery`）。
+- 现状：Docker 重启后所有容器同时启动，Consul 约 5.7 秒后才选出 leader。access 和 delivery 在这之前启动，Kratos 的 `NewClient` 创建后立即 `Connect()`，解析器第一次查询 `/v1/health/service/...` 因为没有 leader 失败。contrib 的 `Watch` 先把服务登记进内部的 `serviceSet`，再做第一次查询；查询失败时返回错误，但登记不撤销，也没有启动后台轮询。之后 gRPC 重建解析器时 `Watch` 拿到这个空的登记，watcher 永远等不到事件。结果是 access 到 message 的调用一直超时，客户端看到 `UPSTREAM_UNAVAILABLE`，直到重启进程；delivery 到 social 同样受影响。consul 的健康检查是 `consul members`，agent 起来就通过，不等 leader，所以新环境 `docker compose up` 也可能遇到。2026-11-22 前端第 8 阶段联调时再次出现，这次 message 到 account、social，social 到 account 的调用也失效了：会话列表和好友列表缺少昵称，日志为 `dependency unavailable`。凡是通过服务发现调用其他服务的应用（access、delivery、message、social）都可能受影响，哪些中招取决于启动时机。
+- 临时处理：重启全部会调用其他服务的应用（`docker compose --profile apps restart access delivery message social`）。
 - 处理：`NewConsulRegistry` 返回前轮询 `/v1/status/leader`，有 leader 再继续，超时则启动失败，由重启策略拉起；consul 的健康检查改为确认已有 leader。上游的 `Watch` 在第一次查询失败时应撤销登记，可以提 issue。详见 [经验文档](../lessons/consul-no-leader-resolver.md)。
 
 ## 中

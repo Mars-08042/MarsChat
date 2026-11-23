@@ -1,12 +1,13 @@
 # 音视频通话
 
-服务端只做信令，媒体仍是浏览器之间的 WebRTC 点对点连接，前端尚未接入。设计见 [call-signaling.md](../../design/call-signaling.md)，帧与流程见 [data-flow.md](../../architecture/data-flow.md#9-通话信令)，Redis 键见 [data-model.md](../../architecture/data-model.md#3-redis-键)，功能状态见 [features.md](../features.md)。
+服务端只做信令，媒体是浏览器之间的 WebRTC 点对点连接。前端已接入（2026-11-22），客户端的状态机与协商见[前端设计](../../design/frontend.md) 3.9.5。设计见 [call-signaling.md](../../design/call-signaling.md)，帧与流程见 [data-flow.md](../../architecture/data-flow.md#9-通话信令)，Redis 键见 [data-model.md](../../architecture/data-model.md#3-redis-键)，功能状态见 [features.md](../features.md)。
 
 | 层 | 位置 |
 |---|---|
 | 接口 | `api/access/v1/call.proto`（`CallRequest`、`CallAck`、`CallEvent`）；`frame.proto` 的 `ClientFrame.call`、`ServerFrame.call_ack`、`ServerFrame.call_event`；`error_reason.proto` |
 | access | `app/access/internal/biz/call.go`（状态机、通知、振铃定时器）、`conn.go`（分发通话帧、心跳续期、断线结束）；`internal/data/call.go`（Redis 状态与 Lua 脚本）、`data.go`（social 权限客户端、转发器） |
 | 公共 | `pkg/accessclient`（按地址直连 access，delivery 与 access 共用）、`pkg/route` |
+| 前端 | `web/src/realtime/call/engine.ts`（状态机、WebRTC 协商、资源释放）、`web/src/stores/call.ts`；`web/src/features/call/`（通话层、来电提醒、文案） |
 
 要点：
 
@@ -26,4 +27,4 @@
 
 错误原因：`CALL_NOT_FOUND`、`CALL_PEER_OFFLINE`、`CALL_BUSY`、`ALREADY_IN_CALL`、`CALL_ALREADY_ANSWERED`、`INVALID_FRAME`、`UPSTREAM_UNAVAILABLE`；呼叫的权限错误沿用 social 的 `NOT_FRIENDS`、`BLOCKED`、`USER_NOT_FOUND`。
 
-尚未实现：群通话；STUN/TURN 服务器与临时凭据下发（随前端重构部署 coturn；在此之前没有配置任何 ICE 服务器，只有能直接互通的两端，例如同一局域网，才能建立媒体连接）；通话记录；断线重连后恢复通话。
+尚未实现：群通话；STUN/TURN 服务器与临时凭据下发（coturn 推迟到前端第 9 阶段，提议见 [turn-relay.md](../../design/turn-relay.md)；在此之前没有配置任何 ICE 服务器，只有能直接互通的两端，例如同一局域网，才能建立媒体连接）；通话记录；断线重连后恢复通话。

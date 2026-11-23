@@ -320,16 +320,19 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 - **续期**：通话中状态的 TTL 为心跳超时（90 秒），主叫连接与接听连接每次心跳续期；振铃中的 TTL 为振铃超时加 15 秒。
 - **access 崩溃**：没有机会清理，状态按 TTL 过期。主叫所在实例崩溃时没有人发出 `CallEnded`；接听方所在实例崩溃时，主叫下一次发信令失败，通话按断线结束（集群故障实验见[重构计划](../plans/completed/backend-refactor.md#故障实验结果)）。
 
-客户端约定：
+客户端约定（前端实现在 `web/src/realtime/call/engine.ts`，见[前端设计](../design/frontend.md) 3.9.5）：
 
 - 被叫收到来电后最多响铃 `ring_timeout` + 5 秒（65 秒），之后自行停止；
-- ICE 候选可能早于 SDP 到达，暂存到设置远端描述之后再添加；
-- WebRTC 连接失败（`iceconnectionstatechange` 为 `failed`）时发送挂断；
+- 主叫收到 `accepted` 后加入本地轨道并发出 offer；被叫设置远端 offer 之后才加入轨道、回复 answer，正常流程不会双方同时发 offer；
+- ICE 候选可能早于 SDP 到达，暂存到设置远端描述之后再添加；收集结束的标记（空候选）不发送，收到也忽略；
+- 通话信令每秒最多发 8 帧，超出的排队稍后发送：access 每个连接每秒最多收 30 个上行帧（3.3），发送队列占 20 帧；
+- WebRTC 连接失败时发送挂断：`connectionState` 变为 `failed`，`disconnected` 10 秒没有恢复，或者接听后 15 秒仍未连通；
+- 信令连接断开时本端立即结束通话（服务端同样按断线结束）；页面卸载时尽力发送挂断；
 - 不认识的 `call_id` 的事件直接忽略。
 
 ### 9.5 尚未实现
 
-群通话；STUN/TURN 服务器与临时凭据下发（ICE 服务器为空时只能在可以直接互通的网络中建立连接，随前端重构部署 coturn）；通话记录写入聊天记录；断线重连后恢复通话。
+群通话；STUN/TURN 服务器与临时凭据下发（ICE 服务器为空时只能在可以直接互通的网络中建立连接；coturn 推迟到前端第 9 阶段，提议见 [turn-relay.md](../design/turn-relay.md)）；通话记录写入聊天记录；断线重连后恢复通话。
 
 ## 10. 链路追踪
 
