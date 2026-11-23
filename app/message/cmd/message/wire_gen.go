@@ -22,7 +22,7 @@ import (
 
 // *conf.Bootstrap 只用于 social、account 两个客户端：它们的配置是同一类型（Upstream），wire 无法按类型区分。
 func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, auth *conf.Auth, kafka *conf.Kafka, outbox *conf.Outbox, confBootstrap *conf2.Bootstrap, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
-	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
+	consulRegistry, err := bootstrap.NewConsulRegistry(registry, logger)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -2,7 +2,7 @@
 
 - 涉及：[pkg/bootstrap/registry.go](../../pkg/bootstrap/registry.go)、[app/access/internal/data/data.go](../../app/access/internal/data/data.go)、`github.com/go-kratos/kratos/contrib/registry/consul/v3`（`registry.go` 的 `Watch` 与 `resolve`）、`github.com/go-kratos/kratos/v3@v3.0.0/transport/grpc/client.go`
 - 发现时间：2026-11-21，前端第 4 阶段联调
-- 技术债：TD-44
+- 技术债：TD-44（已修复）、TD-45（运行期间的同类问题，未处理）
 
 ## 现象
 
@@ -39,4 +39,11 @@ send message failed ... reason = UPSTREAM_UNAVAILABLE ... cause = rpc error: cod
 
 临时：重启全部会调用其他服务的应用，`docker compose --profile apps restart access delivery message social`。
 
-根治（待做，见 TD-44）：`pkg/bootstrap.NewConsulRegistry` 返回前等 Consul 有 leader；consul 的健康检查改为确认已有 leader。
+已修复（2026-11-22，TD-44）：
+
+- `pkg/bootstrap.NewConsulRegistry` 返回前轮询 `/v1/status/leader`，有 leader 再继续，最多等 1 分钟，等不到就启动失败、由重启策略拉起。注册中心在所有 gRPC 客户端之前创建，客户端第一次查询时已有 leader。等待时日志有一条 `waiting for consul leader`，等到后一条 `consul leader elected`。
+- consul 的健康检查改为 `curl -sf http://127.0.0.1:8500/v1/status/leader | grep -q ':'`：没有 leader 时接口返回空串 `""`，有 leader 时返回 `"IP:端口"`。
+
+复现与验证方法：`docker restart` 同时重启 consul 和一个会调用其他服务的应用（例如 social），应用会在 Consul 选出 leader 之前启动。修复前，这个应用的日志里一直没有下游的 `[resolver] update instances`；修复后先打出 `waiting for consul leader`，选出 leader 后立即拿到下游实例。
+
+没有覆盖的情况（TD-45）：grpc-go 的通道空闲 30 分钟后关闭解析器，下一次调用时重建。如果重建时 Consul 恰好没有 leader（例如 consul 正在重启），contrib 的缺陷照样会触发。根治要在 `Watch` 外面包一层，第一次查询失败时不交给 contrib，或者等上游修复。

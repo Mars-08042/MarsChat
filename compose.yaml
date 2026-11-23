@@ -137,8 +137,10 @@ services:
     command: ["agent", "-server", "-bootstrap-expect=1", "-ui", "-client=0.0.0.0", "-data-dir=/consul/data"]
     volumes:
       - consul-data:/consul/data
+    # 选出 leader 才算健康：没有 leader 时健康查询失败，服务发现会受影响（TD-44）。
+    # 没有 leader 时接口返回空串 ""，有 leader 时返回 "IP:端口"
     healthcheck:
-      test: ["CMD", "consul", "members"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8500/v1/status/leader | grep -q ':'"]
       interval: 5s
       timeout: 3s
       retries: 20

@@ -269,6 +269,6 @@
 - 2026-11-22：第 7 阶段对改动的文件运行了 prettier。项目没有 prettier 配置，默认风格给每行加上分号，还重排了已有代码。已撤销这些改动，恢复成项目的风格（不加分号）。`web/` 只用 ESLint，不要运行 prettier。
 - 2026-11-21：浏览器扩展的 `type` 操作在登录页的受控输入框里把内容输入了两遍（邮箱变成两个邮箱连在一起）。页面本身没有问题，改用 `form_input` 直接设置值。
 - 2026-11-22：第 8 阶段联调时，测试脚本包装 `RTCPeerConnection` 时报 `not a constructor`，查下来是开发者 Chrome 里的一个防 IP 泄露扩展把页面的 `RTCPeerConnection` 置为 `undefined`（属性还在，值是 `undefined`）。引擎原来没有检测，创建连接会直接抛错，于是补上了检测与提示，创建失败也会结束通话（设计第 10 节第 76 条）。经开发者同意，测试页借用 iframe 里的构造函数，能创建连接，但受浏览器 WebRTC IP 策略限制，连只带数据通道的连接也收集不到任何候选，15 秒后两端都按「网络无法直连」结束。开发者关闭这个扩展后，正常收集到 host 候选并连通。
-- 2026-11-22：Docker 重启后所有容器同时启动，除了 TD-44 记录的 access，message 调用 account、social，social 调用 account 的服务发现也失效了（会话列表、好友列表缺少昵称，日志为 `dependency unavailable`）。依次重启两个 message、两个 access 和 social 后恢复，已补充到 TD-44。
+- 2026-11-22：Docker 重启后所有容器同时启动，除了 TD-44 记录的 access，message 调用 account、social，social 调用 account 的服务发现也失效了（会话列表、好友列表缺少昵称，日志为 `dependency unavailable`）。依次重启两个 message、两个 access 和 social 后恢复。随后修复了 TD-44（启动时先等 Consul 选出 leader），运行期间的同类问题记为 TD-45。
 - 2026-11-22：写 TURN 提议时 Context7 连接失败（`ECONNRESET`），coturn 的选项和 TURN REST API 约定改为直接读 coturn 仓库的 `examples/etc/turnserver.conf`。
 - 2026-11-21：第一次测多标签页刷新时，用 `setTimeout` 约定同一时刻触发，但两个后台标签页的定时器被 Chrome 节流，晚了约 100 毫秒，这时前台标签页已经刷新完，没有形成锁竞争。改用 BroadcastChannel 唤醒（后台标签页的消息事件不受定时器节流影响），并把刷新请求延迟 300 毫秒，三次刷新才真正重叠。

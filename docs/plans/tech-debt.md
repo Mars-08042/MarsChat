@@ -8,15 +8,17 @@
 
 ## 高
 
-### TD-44 服务在 Consul 选出 leader 之前启动时，服务发现永久失效
-
-- 发现：2026-11-21，前端第 4 阶段联调
-- 位置：`pkg/bootstrap/registry.go`（创建 Consul 注册中心）；`github.com/go-kratos/kratos/contrib/registry/consul/v3` 的 `Registry.Watch`；`compose.yaml` 中 consul 的健康检查
-- 现状：Docker 重启后所有容器同时启动，Consul 约 5.7 秒后才选出 leader。access 和 delivery 在这之前启动，Kratos 的 `NewClient` 创建后立即 `Connect()`，解析器第一次查询 `/v1/health/service/...` 因为没有 leader 失败。contrib 的 `Watch` 先把服务登记进内部的 `serviceSet`，再做第一次查询；查询失败时返回错误，但登记不撤销，也没有启动后台轮询。之后 gRPC 重建解析器时 `Watch` 拿到这个空的登记，watcher 永远等不到事件。结果是 access 到 message 的调用一直超时，客户端看到 `UPSTREAM_UNAVAILABLE`，直到重启进程；delivery 到 social 同样受影响。consul 的健康检查是 `consul members`，agent 起来就通过，不等 leader，所以新环境 `docker compose up` 也可能遇到。2026-11-22 前端第 8 阶段联调时再次出现，这次 message 到 account、social，social 到 account 的调用也失效了：会话列表和好友列表缺少昵称，日志为 `dependency unavailable`。凡是通过服务发现调用其他服务的应用（access、delivery、message、social）都可能受影响，哪些中招取决于启动时机。
-- 临时处理：重启全部会调用其他服务的应用（`docker compose --profile apps restart access delivery message social`）。
-- 处理：`NewConsulRegistry` 返回前轮询 `/v1/status/leader`，有 leader 再继续，超时则启动失败，由重启策略拉起；consul 的健康检查改为确认已有 leader。上游的 `Watch` 在第一次查询失败时应撤销登记，可以提 issue。详见 [经验文档](../lessons/consul-no-leader-resolver.md)。
+（暂无）
 
 ## 中
+
+### TD-45 运行期间 Consul 没有 leader 时重建的 gRPC 解析器，服务发现永久失效
+
+- 发现：2026-11-22，修复 TD-44 时核对 grpc-go 的空闲机制
+- 位置：`github.com/go-kratos/kratos/contrib/registry/consul/v3` 的 `Registry.Watch`；各服务通过 Consul 发现的 gRPC 客户端（access、delivery、message、social）
+- 现状：TD-44 的修复保证启动时第一次查询之前 Consul 已有 leader，但 contrib 的缺陷还在：`Watch` 第一次查询失败时不撤销登记（还多计了一次引用，登记永远不会被清理），之后这个服务名在进程内再也发现不了。grpc-go 的通道空闲 30 分钟（默认值）后关闭解析器，下一次调用时重建、重新 `Watch`。如果重建时 Consul 恰好没有 leader 或连不上（例如 consul 容器重启的约 10 秒内），就会再次触发，直到进程重启。影响与 TD-44 相同，但需要两件事同时发生，概率低。
+- 临时处理：重启受影响的服务。
+- 处理：在 `pkg/bootstrap` 包一层 `registry.Discovery`，`Watch` 立即返回自己的 watcher，在后台重试，直到第一次查询成功后再交给 contrib（或者自己实现轮询），这样第一次查询失败不会留下坏登记；同时给上游提 issue，请 `Watch` 在第一次查询失败时撤销登记。
 
 ### TD-42 delivery 全部停止后没有告警
 
@@ -85,6 +87,13 @@
 - 处理：读取 EXIF 方向（需要新的依赖或自己解析 APP1 段），解码后按方向旋转，再记录宽高。
 
 ## 已解决
+
+### TD-44 服务在 Consul 选出 leader 之前启动时，服务发现永久失效
+
+- 发现：2026-11-21，前端第 4 阶段联调；2026-11-22 前端第 8 阶段联调再次出现
+- 解决：2026-11-22，前端第 8 阶段之后
+- 原因：Docker 重启后所有容器同时启动，单节点 Consul 要 5.7～9.2 秒才选出 leader。在这之前启动的服务，Kratos 的 `NewClient` 立即 `Connect()`，解析器第一次查询 `/v1/health/service/...` 因为没有 leader 失败。contrib 的 `Watch` 先登记服务、再做第一次查询，查询失败时登记不撤销、也不启动后台轮询，之后 gRPC 重建解析器拿到的是一个永远等不到事件的 watcher。第一次只有 access 到 message、delivery 到 social 受影响；第二次 message 到 account 和 social、social 到 account 也失效了，会话列表和好友列表缺少昵称。consul 的健康检查是 `consul members`，agent 起来就通过，不等 leader，所以新环境 `docker compose up` 同样可能遇到。
+- 处理：`NewConsulRegistry` 返回前轮询 `/v1/status/leader`，有 leader 再继续，最多等 1 分钟，等不到就启动失败、由重启策略拉起（`pkg/bootstrap/registry.go`，有单元测试）。注册中心在所有 gRPC 客户端之前创建，客户端第一次查询时已有 leader。consul 的健康检查改为 `/v1/status/leader` 返回了地址才算健康（`compose.yaml`）。验证：同时重启 consul 与 social 复现，修复前 social 一直拿不到 account 的实例；换成修复后的镜像再做一次，social 打出 `waiting for consul leader`，等了 9.5 秒，leader 选出后 0.3 秒继续启动并拿到实例；重建 consul 容器后，选出 leader 之前的健康检查失败、之后通过。运行期间重建解析器时遇到同样问题的情况没有覆盖，见 TD-45。详见[经验文档](../lessons/consul-no-leader-resolver.md)。
 
 ### TD-41 各服务连接池上限之和超过 MySQL 最大连接数
 

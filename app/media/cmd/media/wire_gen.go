@@ -21,7 +21,7 @@ import (
 // Injectors from wire.go:
 
 func wireApp(confServer *conf.Server, registry *conf.Registry, mySQL *conf.MySQL, redis *conf.Redis, auth *conf.Auth, storage *conf2.Storage, cache *conf2.Cache, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
-	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
+	consulRegistry, err := bootstrap.NewConsulRegistry(registry, logger)
 	if err != nil {
 		return nil, nil, err
 	}

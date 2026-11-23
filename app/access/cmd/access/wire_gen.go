@@ -22,7 +22,7 @@ import (
 
 // *conf.Bootstrap 用于 message、social 客户端和 advertise_addr 这类只有 access 才有的字段。
 func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis, auth *conf.Auth, webSocket *conf2.WebSocket, call *conf2.Call, confBootstrap *conf2.Bootstrap, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
-	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
+	consulRegistry, err := bootstrap.NewConsulRegistry(registry, logger)
 	if err != nil {
 		return nil, nil, err
 	}

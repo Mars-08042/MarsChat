@@ -79,7 +79,7 @@ tmp/                     临时文件与只读参考源码（被 Git 忽略，�
 1. 读取 `-conf` 指定的配置目录（默认 `app/account/configs`），解析到 `conf.Bootstrap` 并按 protovalidate 规则校验，不合法时启动失败。配置对象保持打开，用于热更新。
 2. 按 `log` 配置创建 `slog` 日志器，设为 Kratos 默认日志器；再按 `telemetry` 段初始化 OpenTelemetry（见 5.11），停机时最后关闭，导出剩余的 Span。
 3. 用 `policy` 段创建 `biz.PolicyHolder`，并监听配置文件的 `policy` 段（见 5.1）。
-4. `wireApp` 创建：Consul 注册中心、Redis 客户端（ping 一次）、MySQL 连接池（`gorm.Open` 立即 ping）、snowflake 生成器（抢占节点号租约）、各 repo 与用例、gRPC 与 HTTP 服务器。令牌密钥不合法、公钥与私钥不匹配、`revocation_ttl` 小于访问令牌有效期、固定验证码配在非 `log` 发送方上时都会启动失败。任一依赖不可用时退出，退出码为 1。布隆过滤器（account 的用户 ID、social 的群 ID）未就绪时在后台重建，不阻塞启动。social 的 account 客户端是惰性连接，account 不可用不影响 social 启动。
+4. `wireApp` 创建：Consul 注册中心（先等 Consul 选出 leader，最多 1 分钟：没有 leader 时第一次服务发现查询失败，会让这个下游在进程内永久发现不了，见 TD-44）、Redis 客户端（ping 一次）、MySQL 连接池（`gorm.Open` 立即 ping）、snowflake 生成器（抢占节点号租约）、各 repo 与用例、gRPC 与 HTTP 服务器。令牌密钥不合法、公钥与私钥不匹配、`revocation_ttl` 小于访问令牌有效期、固定验证码配在非 `log` 发送方上时都会启动失败。任一依赖不可用时退出，退出码为 1。布隆过滤器（account 的用户 ID、social 的群 ID）未就绪时在后台重建，不阻塞启动。social 的 account 客户端是惰性连接，account 不可用不影响 social 启动。
 5. `app.Run()` 启动服务器并注册到 Consul；收到 SIGINT/SIGTERM 后先从 Consul 注销，再停止服务器，最后按创建的逆序释放节点号租约、关闭 MySQL、Redis。
 
 其他服务的差异：

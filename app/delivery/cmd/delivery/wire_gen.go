@@ -21,7 +21,7 @@ import (
 
 // *conf.Bootstrap 只用于 social 客户端。
 func wireApp(confServer *conf.Server, registry *conf.Registry, redis *conf.Redis, kafka *conf.Kafka, push *conf2.Push, confBootstrap *conf2.Bootstrap, policyHolder *biz.PolicyHolder, logger *slog.Logger) (*kratos.App, func(), error) {
-	consulRegistry, err := bootstrap.NewConsulRegistry(registry)
+	consulRegistry, err := bootstrap.NewConsulRegistry(registry, logger)
 	if err != nil {
 		return nil, nil, err
 	}

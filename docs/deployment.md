@@ -94,7 +94,7 @@ make run-delivery   # gRPC 127.0.0.1:19040（只用于注册和健康检查）
 make run-media      # HTTP 127.0.0.1:18050，gRPC 127.0.0.1:19050；文件默认存放在仓库下的 data/media/
 ```
 
-`make run-<服务>` 会加载 `.env`，再执行 `go run ./app/<服务>/cmd/<服务> -conf app/<服务>/configs`。服务启动时连接本服务的 MySQL（access、delivery 没有）、Redis 并注册到 Consul，任一依赖不可用会直接退出。首次启动前要先执行对应的 `make migrate-<服务>`。
+`make run-<服务>` 会加载 `.env`，再执行 `go run ./app/<服务>/cmd/<服务> -conf app/<服务>/configs`。服务启动时连接本服务的 MySQL（access、delivery 没有）、Redis 并注册到 Consul，任一依赖不可用会直接退出。Consul 连不上或还没有选出 leader 时先等待，最多 1 分钟（日志 `waiting for consul leader`），等不到再退出，见 TD-44。首次启动前要先执行对应的 `make migrate-<服务>`。
 
 服务之间经 Consul 发现，启动顺序不限。被调用的服务或 Kafka 不可用时，调用方照常启动并降级运行：
 
