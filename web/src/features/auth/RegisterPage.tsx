@@ -1,23 +1,39 @@
 import { useState, type FormEvent } from "react"
 import { motion } from "motion/react"
-import { Link, useNavigate } from "react-router"
+import { Link, useLocation } from "react-router"
 import { Circle, CircleCheck, CircleX } from "lucide-react"
+import { api, currentDevice } from "@/api/client"
+import { register } from "@/api/endpoints"
+import { errorText } from "@/api/errors"
+import { CodePurpose } from "@/gen/account/v1/account_pb"
 import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
+import { useSession } from "@/stores/session"
 import { looksLikeEmail } from "./email"
-import { EmailCodeField, Field, PasswordInput, SubmitButton, TextInput } from "./fields"
+import { EmailCodeField, Field, FormError, PasswordInput, SubmitButton, TextInput } from "./fields"
 import { isValidPassword, PASSWORD_RULES, type PasswordRule } from "./password"
 
 // 与 RegisterRequest.nickname 的 max_len 一致（按码点计数）
 const NICKNAME_MAX = 16
 
 export function RegisterPage() {
-  const navigate = useNavigate()
+  // 切换到登录页时保留 redirect 参数
+  const { search } = useLocation()
+  const signIn = useSession((s) => s.signIn)
   const [email, setEmail] = useState("")
   const [code, setCode] = useState("")
   const [nickname, setNickname] = useState("")
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // 修改任一输入时清掉上次的错误提示
+  const edit =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      set(value)
+      setError(null)
+    }
 
   const nicknameLength = [...nickname.trim()].length
   const ready =
@@ -27,12 +43,19 @@ export function RegisterPage() {
     nicknameLength <= NICKNAME_MAX &&
     isValidPassword(password)
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!ready) return
+    if (!ready || submitting) return
     setSubmitting(true)
-    // 原型阶段直接进入聊天页；第 3 阶段接入 Register
-    setTimeout(() => navigate("/chat"), 700)
+    setError(null)
+    try {
+      const res = await api.send(register, { email, code, password, nickname: nickname.trim(), device: currentDevice() })
+      // 注册即登录，成功后由路由守卫跳转
+      signIn(res)
+    } catch (err) {
+      setError(errorText(err))
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -50,11 +73,11 @@ export function RegisterPage() {
             autoComplete="email"
             placeholder="you@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value.trim())}
+            onChange={(e) => edit(setEmail)(e.target.value.trim())}
           />
         </Field>
 
-        <EmailCodeField email={email} value={code} onChange={setCode} />
+        <EmailCodeField email={email} purpose={CodePurpose.REGISTER} value={code} onChange={edit(setCode)} />
 
         <Field
           label="昵称"
@@ -70,7 +93,7 @@ export function RegisterPage() {
             autoComplete="nickname"
             placeholder="大家怎么称呼你"
             value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
+            onChange={(e) => edit(setNickname)(e.target.value)}
             aria-invalid={nicknameLength > NICKNAME_MAX || undefined}
           />
         </Field>
@@ -81,7 +104,7 @@ export function RegisterPage() {
             autoComplete="new-password"
             placeholder="设置登录密码"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => edit(setPassword)(e.target.value)}
             aria-describedby="password-rules"
           />
           <ul id="password-rules" className="grid grid-cols-2 gap-x-3 gap-y-1.5 pt-1 text-xs">
@@ -91,6 +114,7 @@ export function RegisterPage() {
           </ul>
         </Field>
 
+        <FormError message={error} />
         <SubmitButton loading={submitting} disabled={!ready}>
           注册并登录
         </SubmitButton>
@@ -98,7 +122,7 @@ export function RegisterPage() {
 
       <p className="text-center text-sm text-muted-foreground">
         已有账号？
-        <Link to="/login" className="font-medium text-brand-text underline-offset-4 hover:underline">
+        <Link to={{ pathname: "/login", search }} className="font-medium text-brand-text underline-offset-4 hover:underline">
           登录
         </Link>
       </p>

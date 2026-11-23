@@ -1,16 +1,18 @@
 import { useMemo, useState } from "react"
 import { motion } from "motion/react"
 import { Link } from "react-router"
-import { CircleExclamationPoint, Clock3, Search, SquarePen } from "lucide-react"
+import { CircleExclamationPoint, Search, SquarePen } from "lucide-react"
 import { UserAvatar } from "@/components/common/UserAvatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { CreateGroupDialog } from "@/features/groups/CreateGroupDialog"
 import { springs } from "@/lib/motion"
 import { formatListTime } from "@/lib/time"
 import { useNow } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
+import { useChat } from "@/stores/chat"
 import { EmojiText } from "./EmojiText"
-import { useChatStore } from "./fake-store"
+import { NewConversationDialog } from "./NewConversationDialog"
 import { contentPreview, type ChatMessage, type Conversation } from "./types"
 
 interface Row {
@@ -19,27 +21,36 @@ interface Row {
 }
 
 export function ConversationList({ activeId, className }: { activeId?: string; className?: string }) {
-  const conversations = useChatStore((s) => s.conversations)
-  const messages = useChatStore((s) => s.messages)
+  const conversations = useChat((s) => s.conversations)
+  const outbox = useChat((s) => s.outbox)
+  const listLoaded = useChat((s) => s.listLoaded)
   const [query, setQuery] = useState("")
+  const [creating, setCreating] = useState(false)
+  const [creatingGroup, setCreatingGroup] = useState(false)
   const now = useNow()
 
-  // 按最后一条消息的时间倒序；搜索只过滤已加载的会话名称（后端没有搜索接口）
+  // 按最后一条消息的时间倒序，发送中和失败的消息也算；搜索只过滤已加载的会话名称（后端没有搜索接口）
   const rows = useMemo<Row[]>(() => {
     const keyword = query.trim().toLowerCase()
     return Object.values(conversations)
       .filter((c) => keyword === "" || c.title.toLowerCase().includes(keyword))
-      .map((c) => ({ conversation: c, last: messages[c.id]?.at(-1) }))
+      .map((c) => {
+        const pending = outbox[c.id]?.at(-1)
+        const last = pending && pending.sentAt > (c.last?.sentAt ?? 0) ? pending : c.last
+        return { conversation: c, last }
+      })
       .sort((a, b) => (b.last?.sentAt ?? 0) - (a.last?.sentAt ?? 0))
-  }, [conversations, messages, query])
+  }, [conversations, outbox, query])
 
   return (
     <aside className={cn("flex w-full shrink-0 flex-col border-r bg-card md:w-80 xl:w-[22rem]", className)}>
       <div className="flex h-16 shrink-0 items-center justify-between px-5">
         <h1 className="font-display text-xl font-semibold tracking-tight">消息</h1>
-        <Button variant="ghost" size="icon" aria-label="新建会话">
+        <Button variant="ghost" size="icon" aria-label="新建会话" onClick={() => setCreating(true)}>
           <SquarePen />
         </Button>
+        <NewConversationDialog open={creating} onOpenChange={setCreating} onCreateGroup={() => setCreatingGroup(true)} />
+        <CreateGroupDialog open={creatingGroup} onOpenChange={setCreatingGroup} />
       </div>
       <div className="px-3 pb-2">
         <div className="relative">
@@ -59,7 +70,9 @@ export function ConversationList({ activeId, className }: { activeId?: string; c
           <ConversationItem key={row.conversation.id} row={row} active={row.conversation.id === activeId} now={now} />
         ))}
         {rows.length === 0 && (
-          <li className="px-3 py-10 text-center text-sm text-muted-foreground">{query.trim() ? "没有找到相关会话" : "还没有会话"}</li>
+          <li className="px-3 py-10 text-center text-sm text-muted-foreground">
+            {query.trim() ? "没有找到相关会话" : listLoaded ? "还没有会话" : "正在加载会话…"}
+          </li>
         )}
       </motion.ul>
     </aside>
@@ -68,8 +81,8 @@ export function ConversationList({ activeId, className }: { activeId?: string; c
 
 function ConversationItem({ row, active, now }: { row: Row; active: boolean; now: number }) {
   const { conversation: c, last } = row
-  const me = useChatStore((s) => s.me)
-  const users = useChatStore((s) => s.users)
+  const meId = useChat((s) => s.meId)
+  const senderName = useChat((s) => (last ? s.users[last.senderId]?.nickname : undefined))
 
   return (
     // 收到新消息时会话平滑移到顶部（设计 3.6.2）
@@ -89,7 +102,7 @@ function ConversationItem({ row, active, now }: { row: Row; active: boolean; now
             className="absolute top-3 bottom-3 left-0 w-1 rounded-r-full bg-brand"
           />
         )}
-        <UserAvatar seed={c.peerId ?? c.id} name={c.title} shape={c.kind === "group" ? "square" : "circle"} />
+        <UserAvatar seed={c.peerId ?? c.id} name={c.title} avatarId={c.avatarId} shape={c.kind === "group" ? "square" : "circle"} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate font-medium">{c.title}</span>
@@ -98,7 +111,7 @@ function ConversationItem({ row, active, now }: { row: Row; active: boolean; now
             )}
           </div>
           <div className="mt-0.5 flex items-center justify-between gap-2">
-            <Preview conversation={c} last={last} meId={me.id} senderName={last ? users[last.senderId]?.nickname : undefined} />
+            <Preview conversation={c} last={last} meId={meId} senderName={senderName} />
             {c.unread > 0 && <UnreadBadge count={c.unread} />}
           </div>
         </div>
@@ -124,8 +137,8 @@ function Preview({
 
   return (
     <span className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+      {/* 与时间线一致，只标失败；发送中和成功都不加标记 */}
       {mine && last.status === "failed" && <CircleExclamationPoint className="size-3.5 shrink-0 text-destructive" aria-label="发送失败" />}
-      {mine && (last.status === "pending" || last.status === "uploading") && <Clock3 className="size-3.5 shrink-0" aria-label="发送中" />}
       <span className="truncate">
         {prefix}
         <EmojiText text={contentPreview(last.content)} />

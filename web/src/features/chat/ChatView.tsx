@@ -1,30 +1,40 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Link } from "react-router"
-import { ArrowDown, Ban, ChevronLeft, CircleExclamationPoint, CloudUpload, PanelRight, Phone, Video, X } from "lucide-react"
+import { ArrowDown, Ban, ChevronLeft, CircleExclamationPoint, CloudUpload, Hourglass, PanelRight, Phone, Video, X } from "lucide-react"
 import { ConnectionPill } from "@/components/common/ConnectionPill"
 import { UserAvatar } from "@/components/common/UserAvatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useCallStore } from "@/features/call/fake-call-store"
 import { springs } from "@/lib/motion"
-import { formatDateDivider } from "@/lib/time"
-import { useNow } from "@/lib/use-countdown"
+import { formatTimeDivider } from "@/lib/time"
+import { useNow, useSecondsUntil } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
+import { callActions, chat } from "@/realtime/client"
+import { useCall } from "@/stores/call"
+import { useChat, type Timeline as TimelineData } from "@/stores/chat"
+import { useSession } from "@/stores/session"
+import { useUi } from "@/stores/ui"
 import { Composer } from "./Composer"
-import { useChatStore } from "./fake-store"
-import { formatBytes, MAX_CHAT_FILE_BYTES, MAX_THUMBNAIL_SOURCE_BYTES } from "./files"
-import { toLocalFile } from "./local-file"
+import { ConversationPanel } from "./ConversationPanel"
+import { MAX_CHAT_FILE_BYTES, MAX_THUMBNAIL_SOURCE_BYTES } from "./files"
+import { formatBytes } from "@/lib/utils"
 import { MessageRow } from "./MessageRow"
 import { buildTimeline } from "./timeline"
-import type { ChatMessage, Conversation } from "./types"
+import { readMarkId, type ChatMessage, type ChatUser, type Conversation } from "./types"
 
 const EMPTY: ChatMessage[] = []
 // 距离底部小于这个值视为「在底部」，新消息到达时自动跟随
 const BOTTOM_THRESHOLD_PX = 80
+// 距离顶部小于这个值时加载更早的一页
+const LOAD_OLDER_PX = 400
 
 function scrollToBottom(el: HTMLElement | null, behavior: ScrollBehavior) {
   el?.scrollTo({ top: el.scrollHeight, behavior })
+}
+
+function isAtBottom(el: HTMLElement) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD_PX
 }
 
 interface Notice {
@@ -33,43 +43,38 @@ interface Notice {
   at: number
 }
 
-// 调用方用会话 ID 作为 key，切换会话时整体重新挂载：滚动位置、未读计数、草稿都重新开始
-export function ChatView({ conversation }: { conversation: Conversation }) {
-  const send = useChatStore((s) => s.send)
-  const upload = useChatStore((s) => s.upload)
+// 调用方用会话 ID 作为 key，切换会话时整体重新挂载：滚动位置、未读计数、草稿都重新开始。
+// draftPeerId 有值时是和这位好友的草稿单聊，第一条消息确认后由 ChatPage 跳到真正的会话
+export function ChatView({ conversation, draftPeerId }: { conversation: Conversation; draftPeerId?: string }) {
   const [notice, setNotice] = useState<Notice | null>(null)
   const dismissNotice = useCallback(() => setNotice(null), [])
   const blocked = conversation.blockedReason !== undefined
 
-  // 选择、粘贴、拖放的文件都走这里：每个文件一条消息，超限的在发送前就提示（设计 3.6.9）
+  // 选择、粘贴、拖放都走这里（设计 3.6.9）。不能上传的文件在输入框上方提示：只列第一个，说明另有几个
   const sendFiles = async (files: File[]) => {
-    if (blocked) return
-    const rejected: string[] = []
-    for (const file of files) {
-      const local = await toLocalFile(file)
-      const plan = upload(conversation.id, local)
-      if (!plan.ok) rejected.push(`「${file.name}」${plan.reason}`)
-      // 只有按图片发送时才用本地地址显示，其余情况立即释放
-      if ((!plan.ok || plan.as !== "image") && local.url) URL.revokeObjectURL(local.url)
-    }
-    if (rejected.length > 0) {
-      const text = rejected.length === 1 ? rejected[0] : `${rejected[0]}，另有 ${rejected.length - 1} 个文件也无法发送`
-      setNotice({ text, at: Date.now() })
-    }
+    if (blocked || files.length === 0) return
+    const rejected = await chat.sendFiles(draftPeerId ? { draftPeerId } : conversation, files)
+    if (rejected.length === 0) return
+    const more = rejected.length > 1 ? `，另有 ${rejected.length - 1} 个文件也没有发送` : ""
+    setNotice({ text: `${rejected[0]}${more}`, at: Date.now() })
   }
   const drop = useFileDrop((files) => void sendFiles(files), blocked)
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
-      <ChatHeader conversation={conversation} />
-      <Timeline conversation={conversation} />
-      <UploadNotice notice={notice} onDismiss={dismissNotice} />
-      <Composer
-        blockedReason={conversation.blockedReason}
-        onSend={(text) => send(conversation.id, text)}
-        onFiles={(files) => void sendFiles(files)}
-      />
-      <FileDropOverlay active={drop.active} title={conversation.title} blockedReason={conversation.blockedReason} />
+    <div className="relative flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...drop.handlers}>
+        <ChatHeader conversation={conversation} />
+        <Timeline conversation={conversation} draft={draftPeerId !== undefined} />
+        <RateLimitNotice />
+        <UploadNotice notice={notice} onDismiss={dismissNotice} />
+        <Composer
+          blockedReason={conversation.blockedReason}
+          onSend={(text) => chat.sendText(draftPeerId ? { draftPeerId } : conversation, text)}
+          onFiles={(files) => void sendFiles(files)}
+        />
+        <FileDropOverlay active={drop.active} title={conversation.title} blockedReason={conversation.blockedReason} />
+      </div>
+      <ConversationPanel conversation={conversation} />
     </div>
   )
 }
@@ -152,7 +157,25 @@ function FileDropOverlay({ active, title, blockedReason }: { active: boolean; ti
   )
 }
 
-// 发送前就被拦下的文件（超过上限、空文件），在输入框上方提示，5 秒后自动消失
+function NoticeBar({ tone, children }: { tone: "error" | "info"; children: ReactNode }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={springs.smooth}
+      role={tone === "error" ? "alert" : "status"}
+      className={cn(
+        "mx-4 mb-2 flex items-center gap-2 rounded-xl border px-3 py-2 text-sm md:mx-6",
+        tone === "error" ? "border-destructive/25 bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground",
+      )}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+// 发送前就被拦下的文件，在输入框上方提示，5 秒后自动消失
 function UploadNotice({ notice, onDismiss }: { notice: Notice | null; onDismiss: () => void }) {
   useEffect(() => {
     if (!notice) return
@@ -163,15 +186,7 @@ function UploadNotice({ notice, onDismiss }: { notice: Notice | null; onDismiss:
   return (
     <AnimatePresence>
       {notice && (
-        <motion.div
-          key={notice.at}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
-          transition={springs.smooth}
-          role="alert"
-          className="mx-4 flex items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive md:mx-6"
-        >
+        <NoticeBar key={notice.at} tone="error">
           <CircleExclamationPoint className="size-4 shrink-0" />
           <span className="min-w-0 flex-1">{notice.text}</span>
           <button
@@ -182,20 +197,36 @@ function UploadNotice({ notice, onDismiss }: { notice: Notice | null; onDismiss:
           >
             <X className="size-3.5" />
           </button>
-        </motion.div>
+        </NoticeBar>
       )}
     </AnimatePresence>
   )
 }
 
+// 发消息被限流时，发送队列等服务端给出的时间后自动重发，这里显示倒计时
+function RateLimitNotice() {
+  const until = useChat((s) => s.rateLimitedUntil)
+  return <AnimatePresence>{until !== undefined && <RateLimitCountdown key={until} until={until} />}</AnimatePresence>
+}
+
+function RateLimitCountdown({ until }: { until: number }) {
+  const seconds = useSecondsUntil(until)
+  if (seconds <= 0) return null
+  return (
+    <NoticeBar tone="info">
+      <Hourglass className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1">发送太频繁，{seconds} 秒后自动重发</span>
+    </NoticeBar>
+  )
+}
+
 // 连接状态胶囊悬浮在时间线顶部正中（顶栏高 4rem 之下）；由 ChatPage 渲染，不随会话切换重新挂载
 export function PillSlot({ className }: { className?: string }) {
-  const connection = useChatStore((s) => s.connection)
-  const setConnection = useChatStore((s) => s.setConnection)
+  const connection = useChat((s) => s.connection)
   return (
     <div className={cn("pointer-events-none absolute inset-x-0 top-[4.75rem] z-20 flex justify-center", className)}>
       <div className="pointer-events-auto">
-        <ConnectionPill status={connection} onRetryNow={() => setConnection({ kind: "connecting" })} />
+        <ConnectionPill status={connection} onRetryNow={chat.retryNow} />
       </div>
     </div>
   )
@@ -203,9 +234,8 @@ export function PillSlot({ className }: { className?: string }) {
 
 // 只有单聊能通话（后端只支持一对一）；自己已在通话或振铃中时禁用（一人一通）
 function CallButtons({ peerId, blocked }: { peerId: string; blocked: boolean }) {
-  const peer = useChatStore((s) => s.users[peerId])
-  const inCall = useCallStore((s) => s.call !== null)
-  const startCall = useCallStore((s) => s.startCall)
+  const peer = useChat((s) => s.users[peerId])
+  const inCall = useCall((s) => s.call !== null)
   const disabledReason = inCall ? "你正在通话中" : blocked ? "当前会话不能发起通话" : undefined
   if (!peer) return null
 
@@ -220,7 +250,7 @@ function CallButtons({ peerId, blocked }: { peerId: string; blocked: boolean }) 
                 size="icon"
                 aria-label={media === "audio" ? "语音通话" : "视频通话"}
                 disabled={disabledReason !== undefined}
-                onClick={() => startCall(peer, media)}
+                onClick={() => callActions.start(peer, media)}
               />
             }
           >
@@ -240,59 +270,195 @@ function ChatHeader({ conversation: c }: { conversation: Conversation }) {
       <Link to="/chat" aria-label="返回会话列表" className={cn(iconButton, "-ml-1 md:hidden")}>
         <ChevronLeft className="size-5" />
       </Link>
-      <UserAvatar seed={c.peerId ?? c.id} name={c.title} shape={c.kind === "group" ? "square" : "circle"} />
+      <UserAvatar seed={c.peerId ?? c.id} name={c.title} avatarId={c.avatarId} shape={c.kind === "group" ? "square" : "circle"} />
       <div className="min-w-0">
         <h2 className="truncate leading-tight font-semibold">{c.title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {c.kind === "group" ? `${c.memberCount ?? 0} 位成员` : <span className="font-mono">ID {c.peerId}</span>}
+          {c.kind === "group" ? (c.dismissed ? "已解散" : `${c.memberCount ?? 0} 位成员`) : <span className="font-mono">ID {c.peerId}</span>}
         </p>
       </div>
       <div className="ml-auto flex items-center gap-0.5">
         {c.kind === "single" && c.peerId && <CallButtons peerId={c.peerId} blocked={c.blockedReason !== undefined} />}
-        <Button variant="ghost" size="icon" aria-label="会话资料">
-          <PanelRight />
-        </Button>
+        <PanelToggle conversationId={c.id} />
       </div>
     </header>
   )
 }
 
-function Timeline({ conversation }: { conversation: Conversation }) {
-  const messages = useChatStore((s) => s.messages[conversation.id]) ?? EMPTY
-  const marker = useChatStore((s) => s.unreadMarker[conversation.id])
-  const me = useChatStore((s) => s.me)
-  const users = useChatStore((s) => s.users)
-  const retry = useChatStore((s) => s.retry)
-  const cancelUpload = useChatStore((s) => s.cancelUpload)
+function PanelToggle({ conversationId }: { conversationId: string }) {
+  const open = useUi((s) => s.panel?.conversationId === conversationId)
+  const openPanel = useUi((s) => s.openPanel)
+  const closePanel = useUi((s) => s.closePanel)
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={open ? "关闭会话资料" : "会话资料"}
+      aria-pressed={open}
+      onClick={() => (open ? closePanel() : openPanel(conversationId))}
+      className={cn(open && "bg-muted text-foreground")}
+    >
+      <PanelRight />
+    </Button>
+  )
+}
+
+// 时间线要等最新一页和未读分隔线都准备好再挂载，挂载时一次定位到分隔线或底部。草稿单聊只有发送中的消息
+function Timeline({ conversation, draft }: { conversation: Conversation; draft: boolean }) {
+  const id = conversation.id
+  const timeline = useChat((s) => s.timelines[id])
+  const ready = useChat((s) => draft || (s.timelines[id] !== undefined && id in s.unreadMarker))
+  if (ready) return <MessageList conversation={conversation} timeline={timeline} />
+  return <TimelineLoading conversationId={id} />
+}
+
+// 最新一页加载失败时同步引擎不会自动重试；超过几秒还没加载出来就给出重新加载的按钮
+function TimelineLoading({ conversationId }: { conversationId: string }) {
+  const [slow, setSlow] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 5000)
+    return () => clearTimeout(timer)
+  }, [])
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+      <span>正在加载消息…</span>
+      {slow && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={retrying}
+          onClick={() => {
+            setRetrying(true)
+            void chat.open(conversationId, true).finally(() => setRetrying(false))
+          }}
+        >
+          重新加载
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function MessageList({ conversation, timeline }: { conversation: Conversation; timeline?: TimelineData }) {
+  const id = conversation.id
+  const outbox = useChat((s) => s.outbox[id])
+  const marker = useChat((s) => s.unreadMarker[id])
+  const meId = useChat((s) => s.meId)
+  const users = useChat((s) => s.users)
+  const me = useMeAsUser(meId)
   const now = useNow()
 
+  const confirmed = timeline?.messages ?? EMPTY
+  // 已确认的消息在前，发送中和失败的在后。推送可能比 SendAck 先到，这时同一条消息两边都有，以已确认的为准
+  const messages = useMemo(() => {
+    if (!outbox || outbox.length === 0) return confirmed
+    const ids = new Set(confirmed.map((m) => m.id))
+    return [...confirmed, ...outbox.filter((m) => !ids.has(m.id))]
+  }, [confirmed, outbox])
   const items = useMemo(() => buildTimeline(messages, marker), [messages, marker])
+  const readId = readMarkId(messages, conversation, meId)
+  // 消息行是 memo 的，只给它会话里不常变的两个字段（types.ts 的 ConversationRef）
+  const { kind, peerId } = conversation
+  const rowConversation = useMemo(() => ({ kind, peerId }), [kind, peerId])
+
+  const hasOlder = timeline?.hasOlder ?? false
+  const loadingOlder = timeline?.loadingOlder ?? false
+  const lastSeq = confirmed.at(-1)?.seq ?? 0
+  const firstId = messages[0]?.id
+  const lastId = messages.at(-1)?.id
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLDivElement>(null)
   // 滚动事件里更新；消息变化后的 layout effect 读取的是新消息插入之前是否在底部
   const atBottomRef = useRef(true)
   const [atBottom, setAtBottom] = useState(true)
-  // 最后一次在底部时看到的消息条数，之后到达的对方消息计入「回到底部」按钮
-  const [seenCount, setSeenCount] = useState(messages.length)
-  const prevCountRef = useRef(messages.length)
+  // 最后一次在底部时看到的最大 seq，之后到达的对方消息计入「回到底部」按钮
+  const [seenSeq, setSeenSeq] = useState(lastSeq)
+  const prevFirstIdRef = useRef(firstId)
+  const prevLastIdRef = useRef(lastId)
+  // 上一次提交后的内容高度；在顶部插入更早的消息后，按高度差恢复滚动位置
+  const heightRef = useRef(0)
+
+  const reportRead = useCallback(() => {
+    if (atBottomRef.current && document.visibilityState === "visible" && document.hasFocus()) chat.reportRead(id)
+  }, [id])
+
+  const syncBottom = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const bottom = isAtBottom(el)
+    atBottomRef.current = bottom
+    setAtBottom(bottom)
+    if (bottom) {
+      setSeenSeq(lastSeq)
+      if (conversation.unread > 0) reportRead()
+    }
+  }
 
   // 打开会话：有未读时定位到「以下为新消息」，否则到底部
   useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
     if (markerRef.current) markerRef.current.scrollIntoView({ block: "center" })
-    else scrollToBottom(scrollRef.current, "instant")
+    else scrollToBottom(el, "instant")
+    atBottomRef.current = isAtBottom(el)
+    // 定位不一定触发 scroll 事件，下一帧按实际位置更新按钮
+    const frame = requestAnimationFrame(syncBottom)
+    return () => cancelAnimationFrame(frame)
+    // 只在挂载时定位一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 顶部插入了更早的消息：保持当前看到的内容不动（容器关闭了浏览器自带的滚动锚定）
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const prev = prevFirstIdRef.current
+    prevFirstIdRef.current = firstId
+    if (el && prev && prev !== firstId && messages.some((m) => m.id === prev)) {
+      el.scrollTop += el.scrollHeight - heightRef.current
+    }
+  }, [firstId, messages])
 
   // 新消息：自己发的总是滚到底部；对方发的只在原本就在底部时跟随
   useLayoutEffect(() => {
-    if (messages.length <= prevCountRef.current) {
-      prevCountRef.current = messages.length
-      return
-    }
-    prevCountRef.current = messages.length
+    const prev = prevLastIdRef.current
+    prevLastIdRef.current = lastId
+    if (!lastId || prev === lastId) return
     const last = messages[messages.length - 1]
-    if (last.senderId === me.id || atBottomRef.current) scrollToBottom(scrollRef.current, "smooth")
-  }, [messages, me.id])
+    if (last.senderId === meId || atBottomRef.current) scrollToBottom(scrollRef.current, "smooth")
+  }, [lastId, messages, meId])
+
+  // 「已读」出现或移动会让内容变高；原本在底部就继续贴底，不让它被输入框挡住一半
+  useLayoutEffect(() => {
+    if (readId && atBottomRef.current) scrollToBottom(scrollRef.current, "smooth")
+  }, [readId])
+
+  // 每次提交后记录内容高度，供下一次插入更早的消息时计算差值
+  useLayoutEffect(() => {
+    if (scrollRef.current) heightRef.current = scrollRef.current.scrollHeight
+  })
+
+  // 内容不足一屏或插入后仍靠近顶部时继续加载更早的消息
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el && hasOlder && !loadingOlder && el.scrollTop < LOAD_OLDER_PX) void chat.loadOlder(id)
+  }, [hasOlder, loadingOlder, id, messages])
+
+  // 新消息到达、窗口重新获得焦点或切回标签页时，如果停在底部就上报已读
+  useEffect(() => {
+    if (conversation.unread > 0) reportRead()
+  }, [conversation.unread, lastSeq, reportRead])
+  useEffect(() => {
+    window.addEventListener("focus", reportRead)
+    document.addEventListener("visibilitychange", reportRead)
+    return () => {
+      window.removeEventListener("focus", reportRead)
+      document.removeEventListener("visibilitychange", reportRead)
+    }
+  }, [reportRead])
 
   // 输入框变高、手机端表情面板展开时可视区域变矮；原本在底部就继续贴底，最后几条消息不会被挡住
   useEffect(() => {
@@ -308,28 +474,42 @@ function Timeline({ conversation }: { conversation: Conversation }) {
   }, [])
 
   const onScroll = () => {
+    syncBottom()
     const el = scrollRef.current
-    if (!el) return
-    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD_PX
-    atBottomRef.current = bottom
-    setAtBottom(bottom)
-    if (bottom) setSeenCount(messages.length)
+    if (el && el.scrollTop < LOAD_OLDER_PX && hasOlder) void chat.loadOlder(id)
   }
 
-  const newCount = atBottom ? 0 : messages.slice(seenCount).filter((m) => m.senderId !== me.id).length
+  const newCount = atBottom ? 0 : confirmed.filter((m) => m.senderId !== meId && (m.seq ?? 0) > seenSeq).length
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto pt-6 pb-4 [scrollbar-width:thin]">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="h-full overflow-y-auto pt-6 pb-4 [overflow-anchor:none] [scrollbar-width:thin]"
+      >
+        {/* 固定高度的占位，加载提示出现、消失时不会让内容跳动 */}
+        {hasOlder && (
+          <div className="flex h-10 items-center justify-center px-6 text-center text-xs text-muted-foreground">
+            {loadingOlder
+              ? "正在加载更早的消息…"
+              : timeline?.jumped
+                ? "离线期间消息较多，已直接显示最新消息，向上滚动查看更早的消息"
+                : null}
+          </div>
+        )}
+        {messages.length === 0 && !hasOlder && (
+          <p className="px-6 py-16 text-center text-sm text-muted-foreground">
+            {conversation.blockedReason ? "还没有消息" : "还没有消息，打个招呼吧"}
+          </p>
+        )}
         {/* 已在页面上的消息不播放入场动画，只有之后新增的才播放 */}
         <AnimatePresence initial={false}>
           {items.map((item) => {
-            if (item.kind === "date") {
+            if (item.kind === "time") {
               return (
-                <div key={item.key} className="my-5 flex justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                    {formatDateDivider(item.at, now)}
-                  </span>
+                <div key={item.key} className="mt-5 mb-1 px-6 text-center text-xs text-muted-foreground">
+                  {formatTimeDivider(item.at, now)}
                 </div>
               )
             }
@@ -347,13 +527,15 @@ function Timeline({ conversation }: { conversation: Conversation }) {
               <MessageRow
                 key={item.key}
                 message={m}
-                conversation={conversation}
-                sender={users[m.senderId]}
-                mine={m.senderId === me.id}
+                conversation={rowConversation}
+                sender={m.senderId === meId ? me : users[m.senderId]}
+                mine={m.senderId === meId}
                 firstInGroup={item.firstInGroup}
                 lastInGroup={item.lastInGroup}
-                onRetry={(id) => retry(conversation.id, id)}
-                onCancelUpload={(id) => cancelUpload(conversation.id, id)}
+                readMark={m.id === readId}
+                onRetry={chat.retry}
+                // 文件上传在第 7 阶段接入，目前没有上传中的消息
+                onCancelUpload={chat.cancelUpload}
               />
             )
           })}
@@ -389,4 +571,10 @@ function Timeline({ conversation }: { conversation: Conversation }) {
       </AnimatePresence>
     </div>
   )
+}
+
+// 自己的资料来自登录状态（GetMe），不在聊天 store 的 users 里；还没加载时显示「用户 <ID>」
+function useMeAsUser(meId: string): ChatUser | undefined {
+  const nickname = useSession((s) => (s.userId === meId ? s.user?.nickname : undefined))
+  return useMemo(() => (nickname ? { id: meId, nickname } : undefined), [meId, nickname])
 }

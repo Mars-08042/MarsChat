@@ -6,6 +6,8 @@
 
 - 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)；access 同时处理一对一通话信令（状态在 Redis，access 之间直连转发），设计见 [call-signaling.md](../design/call-signaling.md)；media 提供文件上传、下载地址和给 message 用的内部文件查询，文件存储可切换（默认仓库下的本地目录 `data/media/`，可选阿里云 OSS，[ADR-0007](adr/0007-object-storage.md)），设计见 [media-service.md](../design/media-service.md)。
 - 服务有两种运行方式：日常开发运行在宿主机，监听 `127.0.0.1`；容器模式（compose profile `apps`）中 access、message、delivery 各两个实例（media 一个，本地存储挂载仓库的 `data/media`），客户端经 APISIX 网关（Standalone 模式，上游经 Consul 发现）访问。MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。设计见 [gateway-multi-instance.md](../design/gateway-multi-instance.md)。
+- 前端的构建产物由 nginx 容器（`web`，profile `apps`）提供，网关的 `/` 路由兜底转发，与接口同源；网关默认只绑定 `127.0.0.1`，可以改为局域网地址，局域网和公网访问用 HTTPS。设计见 [web-deployment.md](../design/web-deployment.md)。
+- 通话的 TURN 中继 coturn 在 compose profile `call` 中，可选部署；access 签发临时凭据（TURN REST API），设计见 [turn-relay.md](../design/turn-relay.md)。
 - 可观测组件在 compose profile `monitoring` 中：Prometheus（经 Consul 发现抓取各实例）、Alertmanager、Grafana、Jaeger，只配合容器模式使用；压测工具 k6 在 profile `loadtest` 中按需运行。设计见 [observability.md](../design/observability.md)。
 - 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
@@ -44,7 +46,7 @@ pkg/telemetry/           OpenTelemetry 初始化（Prometheus 指标导出、OTL
                          telemetrytest 供单元测试读取指标
 tools/jwtkey/            生成开发用 JWT 密钥与 media 下载地址签名密钥（make keys）
 scripts/                 运维与开发脚本（make grant-admin、make web-emoji、宿主机运行全部服务的 host_services.sh）
-deploy/                  依赖组件的初始化脚本与配置：MySQL 初始化、APISIX、Prometheus 与告警规则、Alertmanager、Grafana、Jaeger
+deploy/                  镜像与组件配置：服务镜像、前端镜像与 nginx（web/）、MySQL 初始化、APISIX、coturn、Prometheus 与告警规则、Alertmanager、Grafana、Jaeger
 test/e2e/                依赖 compose 环境的端到端测试（构建标签 e2e）
 test/cluster/            容器模式的集群测试与故障实验（构建标签 cluster）
 test/testkit/            e2e 与集群测试共用的调用、注册、WebSocket 与 Redis 读取函数
@@ -79,7 +81,7 @@ tmp/                     临时文件与只读参考源码（被 Git 忽略，�
 1. 读取 `-conf` 指定的配置目录（默认 `app/account/configs`），解析到 `conf.Bootstrap` 并按 protovalidate 规则校验，不合法时启动失败。配置对象保持打开，用于热更新。
 2. 按 `log` 配置创建 `slog` 日志器，设为 Kratos 默认日志器；再按 `telemetry` 段初始化 OpenTelemetry（见 5.11），停机时最后关闭，导出剩余的 Span。
 3. 用 `policy` 段创建 `biz.PolicyHolder`，并监听配置文件的 `policy` 段（见 5.1）。
-4. `wireApp` 创建：Consul 注册中心、Redis 客户端（ping 一次）、MySQL 连接池（`gorm.Open` 立即 ping）、snowflake 生成器（抢占节点号租约）、各 repo 与用例、gRPC 与 HTTP 服务器。令牌密钥不合法、公钥与私钥不匹配、`revocation_ttl` 小于访问令牌有效期、固定验证码配在非 `log` 发送方上时都会启动失败。任一依赖不可用时退出，退出码为 1。布隆过滤器（account 的用户 ID、social 的群 ID）未就绪时在后台重建，不阻塞启动。social 的 account 客户端是惰性连接，account 不可用不影响 social 启动。
+4. `wireApp` 创建：Consul 注册中心（先等 Consul 选出 leader，最多 1 分钟：没有 leader 时第一次服务发现查询失败，会让这个下游在进程内永久发现不了，见 TD-44）、Redis 客户端（ping 一次）、MySQL 连接池（`gorm.Open` 立即 ping）、snowflake 生成器（抢占节点号租约）、各 repo 与用例、gRPC 与 HTTP 服务器。令牌密钥不合法、公钥与私钥不匹配、`revocation_ttl` 小于访问令牌有效期、固定验证码配在非 `log` 发送方上时都会启动失败。任一依赖不可用时退出，退出码为 1。布隆过滤器（account 的用户 ID、social 的群 ID）未就绪时在后台重建，不阻塞启动。social 的 account 客户端是惰性连接，account 不可用不影响 social 启动。
 5. `app.Run()` 启动服务器并注册到 Consul；收到 SIGINT/SIGTERM 后先从 Consul 注销，再停止服务器，最后按创建的逆序释放节点号租约、关闭 MySQL、Redis。
 
 其他服务的差异：

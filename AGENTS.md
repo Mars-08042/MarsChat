@@ -4,7 +4,7 @@
 
 ## 项目速览
 
-- MarsChat：Web 即时通讯系统，代码在 `dev` 分支。后端是 Kratos v3 微服务（access、account、social、message、delivery、media），接口用 protobuf 定义，2026-11-21 按后端重构计划完成；前端在 `web/` 用 React + pnpm 重写，处于视觉原型阶段，尚未接入后端。
+- MarsChat：Web 即时通讯系统，代码在 `dev` 分支。后端是 Kratos v3 微服务（access、account、social、message、delivery、media），接口用 protobuf 定义，2026-11-21 按后端重构计划完成；前端在 `web/` 用 React + pnpm 重写，已接入认证（登录、注册、令牌刷新、退出）、实时消息（文字消息、已读、多端同步、断线补拉）、联系人与群组（好友、申请、黑名单、建群、成员管理、实时通知）、设置与管理（资料、登录设备、外观、封禁）、文件（图片与文件消息、上传进度、头像）和一对一音视频通话（TURN 中继 coturn 可选部署）。容器模式下前端由 nginx 容器经网关同源提供，可以开放给局域网访问（[web-deployment.md](docs/design/web-deployment.md)）。
 - 架构总览见 [ARCHITECTURE.md](ARCHITECTURE.md)，选型见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)、[ADR-0006](docs/architecture/adr/0006-message-sync-model.md) 和 [架构图](docs/images/proposed-distributed-architecture.svg)；后端重构的过程、实测数据与遗留项见 [docs/plans/completed/backend-refactor.md](docs/plans/completed/backend-refactor.md)。
 - Go module 为 `github.com/Mars-08042/MarsChat`。依赖组件由 Compose 提供：MySQL、Redis、Kafka、Consul、APISIX；监控组件（Prometheus、Alertmanager、Grafana、Jaeger）和压测工具 k6 在单独的 profile 中，见 [deployment.md](docs/deployment.md)。文件存储默认用仓库下的本地目录，可切换为阿里云 OSS（[ADR-0007](docs/architecture/adr/0007-object-storage.md)）。
 - 文档只描述当前代码。旧版本（Gin 单体 + Vue 前端）的描述已删除，需要时查看提交 `6624cea`；设计文档与 ADR 中提到的旧基线只是决策背景。
@@ -36,7 +36,7 @@
 - 新代码遵循 ADR-0005 的约定：接口契约写在 `api/<服务>/v1/*.proto`，服务代码按 Kratos v3 分层放在 `app/<服务>/`，跨服务公共代码放 `pkg/`；业务错误用 Kratos errors；日志用 `slog`。细则以 `system.md` 为准。
 - 数据库与缓存遵循重构计划中的“数据库与缓存设计原则”。表结构变更写 SQL 迁移，不用 AutoMigrate。
 - 代码注释用中文。
-- 容器宿主机端口为默认端口 + 10000，只绑定 `127.0.0.1`；应用服务 HTTP 用 `18xx0`、gRPC 用 `19xx0`。完整端口表见重构计划。
+- 容器宿主机端口为默认端口 + 10000，默认只绑定 `127.0.0.1`；应用服务 HTTP 用 `18xx0`、gRPC 用 `19xx0`。完整端口表见重构计划。例外：网关和 coturn 的绑定地址可以在 `.env` 中改成局域网地址（[deployment.md](docs/deployment.md) 的“局域网访问与 HTTPS”），仓库里的默认值保持 `127.0.0.1`。
 - 只操作 MarsChat 自己的容器、卷和镜像。本机还有其他项目的容器，例如 `pestle-redis` 使用 `redis:7` 镜像。
 - 不要把本机路径、IP、密钥提交进仓库；真实配置放在被忽略的本地文件中。
 - `tmp/` 只放临时文件和只读参考源码，可以随时清空；需要保留的本地数据放在 `data/` 的子目录（都被 Git 忽略）：`data/media` 文件存储、`data/load` 压测数据、`data/emoji-sources` 表情来源仓库。

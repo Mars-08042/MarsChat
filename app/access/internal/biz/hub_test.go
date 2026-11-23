@@ -180,6 +180,11 @@ func testConf() *conf.WebSocket {
 
 func newEnv(t *testing.T, mutate func(*conf.WebSocket)) *env {
 	t.Helper()
+	return newEnvWithCall(t, mutate, &conf.Call{RingTimeout: durationpb.New(time.Minute)})
+}
+
+func newEnvWithCall(t *testing.T, mutate func(*conf.WebSocket), callConf *conf.Call) *env {
+	t.Helper()
 	c := testConf()
 	if mutate != nil {
 		mutate(c)
@@ -196,7 +201,7 @@ func newEnv(t *testing.T, mutate func(*conf.WebSocket)) *env {
 		fwd:    &fakeForwarder{},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	calls := NewCalls(&conf.Call{RingTimeout: durationpb.New(time.Minute)}, c, e.calls, e.perm, e.routes, e.fwd, logger)
+	calls := NewCalls(callConf, c, e.calls, e.perm, e.routes, e.fwd, logger)
 	e.hub = NewHub(c, e.policy, e.auth, e.routes, e.sender, calls, logger)
 	upgrader := websocket.Upgrader{Subprotocols: Subprotocols}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

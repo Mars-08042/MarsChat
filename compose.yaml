@@ -1,4 +1,5 @@
-# MarsChat 本地依赖组件与容器模式的应用服务。宿主机端口 = 容器默认端口 + 10000，只绑定 127.0.0.1。
+# MarsChat 本地依赖组件与容器模式的应用服务。宿主机端口 = 容器默认端口 + 10000，只绑定 127.0.0.1；
+# 例外是网关和 coturn，绑定地址可以在 .env 中改成局域网地址，供其他设备访问（docs/deployment.md）。
 # 密码从 .env 读取（模板见 .env.example）。
 # 日常开发时应用服务运行在宿主机（make run-<服务>）；容器模式（profile apps，make cluster-up）用于多实例与故障实验。
 # 两种模式共用同一个 Consul 且服务名相同，不能同时运行。
@@ -137,8 +138,10 @@ services:
     command: ["agent", "-server", "-bootstrap-expect=1", "-ui", "-client=0.0.0.0", "-data-dir=/consul/data"]
     volumes:
       - consul-data:/consul/data
+    # 选出 leader 才算健康：没有 leader 时健康查询失败，服务发现会受影响（TD-44）。
+    # 没有 leader 时接口返回空串 ""，有 leader 时返回 "IP:端口"
     healthcheck:
-      test: ["CMD", "consul", "members"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8500/v1/status/leader | grep -q ':'"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -291,6 +294,9 @@ services:
       <<: *app-env
       MARSCHAT_ACCESS_HTTP_ADDR: 0.0.0.0:18000
       MARSCHAT_ACCESS_GRPC_ADDR: 0.0.0.0:19100
+      # 通话的 TURN 中继（coturn，profile call）。TURN_URLS 为空时不下发，只有能直接互通的两端才能接通
+      MARSCHAT_TURN_URLS: ${MARSCHAT_TURN_URLS:-}
+      MARSCHAT_TURN_SECRET: ${MARSCHAT_TURN_SECRET:-}
 
   # 本地存储时文件写在挂载的仓库目录 data/media，与宿主机模式共用（两种模式不能同时运行）；
   # 多实例必须共享同一目录，这里只起 1 个。下载地址经网关访问。
@@ -309,7 +315,9 @@ services:
       MARSCHAT_MEDIA_GRPC_ADDR: 0.0.0.0:19050
       MARSCHAT_MEDIA_DB_PASSWORD: ${MARSCHAT_MEDIA_DB_PASSWORD:?请在 .env 中设置 MARSCHAT_MEDIA_DB_PASSWORD}
       MARSCHAT_MEDIA_LOCAL_DIR: /data/media
-      MARSCHAT_MEDIA_PUBLIC_BASE_URL: https://127.0.0.1:19443
+      # 本地存储下载地址的前缀。浏览器页面会把它改成相对路径（与页面同源），只影响直接调用接口的客户端；
+      # 用域名或局域网地址部署时改成对应的 https 地址
+      MARSCHAT_MEDIA_PUBLIC_BASE_URL: ${MARSCHAT_MEDIA_PUBLIC_BASE_URL:-https://127.0.0.1:19443}
       # 本地存储必填（make keys 生成），缺失时 media 启动失败并提示；OSS 不需要
       MARSCHAT_MEDIA_URL_SECRET: ${MARSCHAT_MEDIA_URL_SECRET:-}
       MARSCHAT_STORAGE_PROVIDER: ${MARSCHAT_STORAGE_PROVIDER:-local}
@@ -331,9 +339,11 @@ services:
     depends_on:
       consul:
         condition: service_healthy
+    # 默认只在本机访问。局域网内其他设备访问时在 .env 中改成「局域网地址:端口」，公网部署时 HTTPS 可以绑定 443；
+    # 局域网和公网访问都要走 HTTPS（浏览器只在 HTTPS 或 localhost 下提供麦克风、摄像头和系统通知）
     ports:
-      - "127.0.0.1:19080:9080"
-      - "127.0.0.1:19443:9443"
+      - "${MARSCHAT_GATEWAY_HTTP_BIND:-127.0.0.1:19080}:9080"
+      - "${MARSCHAT_GATEWAY_HTTPS_BIND:-127.0.0.1:19443}:9443"
     networks:
       default:
         ipv4_address: 172.30.0.10
@@ -347,6 +357,55 @@ services:
       - ./deploy/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./deploy/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
       - ./deploy/apisix/certs:/certs:ro
+
+  # 前端静态文件（profile apps），镜像由 make web-image 构建，配置见 deploy/web/。
+  # 只由网关访问，不映射宿主机端口。固定 IP 172.30.0.11：nginx 不注册到 Consul，网关直接写节点地址；
+  # 不用服务名是因为 APISIX 会缓存 DNS 结果，容器重建换了 IP 后可能还连旧地址
+  web:
+    image: marschat/web:dev
+    profiles: ["apps"]
+    restart: unless-stopped
+    mem_limit: 64m
+    read_only: true
+    # nginx-unprivileged 的 pid 与临时文件在 /tmp
+    tmpfs:
+      - /tmp
+    networks:
+      default:
+        ipv4_address: 172.30.0.11
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # 通话的 TURN 中继（profile call，make call-up），见 docs/design/turn-relay.md 与 deploy/coturn/。
+  # 客户端用「对外地址:13478」连接，中继端口按相同端口号映射（coturn 告诉客户端的中继地址是对外地址加容器内端口）。
+  # 对外地址默认 127.0.0.1，只有本机的浏览器能用；局域网内其他设备通话时，绑定地址与对外地址都改成本机的局域网地址。
+  # 固定 IP 172.30.0.12 用于 external-ip 的地址映射
+  coturn:
+    image: coturn/coturn:4.19.2-alpine3.24@sha256:974824bdefa8759b7aa4508daf5066fdd9f5411e925055b6132fb2904aecca01
+    profiles: ["call"]
+    restart: unless-stopped
+    mem_limit: 128m
+    networks:
+      default:
+        ipv4_address: 172.30.0.12
+    ports:
+      - "${MARSCHAT_TURN_BIND_IP:-127.0.0.1}:13478:3478/udp"
+      - "${MARSCHAT_TURN_BIND_IP:-127.0.0.1}:13478:3478/tcp"
+      - "${MARSCHAT_TURN_BIND_IP:-127.0.0.1}:49160-49200:49160-49200/udp"
+    volumes:
+      - ./deploy/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    # 镜像的入口脚本会对每个参数做一次 shell 展开；密钥是 base64url，不含需要转义的字符。
+    # 密钥不能写成 :? 必填：Compose 不分 profile 插值整个文件，没配置 TURN 的人 make up 也会失败；由 make call-up 检查
+    command:
+      - -c
+      - /etc/coturn/turnserver.conf
+      - --static-auth-secret=${MARSCHAT_TURN_SECRET:-}
+      - --external-ip=${MARSCHAT_TURN_EXTERNAL_IP:-127.0.0.1}/172.30.0.12
+      - --allowed-peer-ip=${MARSCHAT_TURN_EXTERNAL_IP:-127.0.0.1}
 
   # 以下为监控组件（profile monitoring，make monitoring-up），只在容器模式下工作：宿主机运行的服务监听
   # 127.0.0.1，容器里的 Prometheus 访问不到。配置见 deploy/prometheus、alertmanager、grafana、jaeger。

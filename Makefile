@@ -82,7 +82,7 @@ build: ## 构建全部服务到 bin/
 # 目标架构默认 amd64，与 Docker Desktop 虚拟机一致；ARM 机器上用 make images IMAGE_ARCH=arm64。
 IMAGE_TAG ?= dev
 IMAGE_ARCH ?= amd64
-APP_SERVICES := $(SERVICES) apisix
+APP_SERVICES := $(SERVICES) apisix web
 
 .PHONY: images
 images: ## 交叉编译全部服务并构建镜像 marschat/<service>:dev
@@ -90,13 +90,20 @@ images: ## 交叉编译全部服务并构建镜像 marschat/<service>:dev
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags "-s -w -X main.Version=$(VERSION)" -o build/linux/ $(foreach s,$(SERVICES),./app/$(s)/cmd/$(s))
 	for s in $(SERVICES); do docker build -q -f deploy/docker/Dockerfile --build-arg SERVICE=$$s -t marschat/$$s:$(IMAGE_TAG) build/linux || exit 1; done
 
+# 前端镜像单独构建：make images 只需要 Go，不要求先装好前端依赖。构建上下文是 web/dist，nginx 配置从命名上下文取
+.PHONY: web-image
+web-image: ## 构建前端并打包成镜像 marschat/web:dev（需要先 make web-install），容器模式经网关提供页面
+	cd web && pnpm build
+	docker build -q -f deploy/web/Dockerfile --build-context conf=deploy/web -t marschat/web:$(IMAGE_TAG) web/dist
+
 .PHONY: certs
-certs: ## 生成网关的自签证书到 deploy/apisix/certs（已有时不覆盖）
-	go run ./tools/devcert -out deploy/apisix/certs
+certs: ## 生成网关的自签证书到 deploy/apisix/certs（已有时不覆盖），.env 的 MARSCHAT_CERT_HOSTS 可加局域网地址或域名
+	@if [ -f .env ]; then set -a && . ./.env && set +a; fi; go run ./tools/devcert -out deploy/apisix/certs -hosts "$$MARSCHAT_CERT_HOSTS"
 
 .PHONY: cluster-up
-cluster-up: certs ## 容器模式启动全部服务与网关（先 make up、迁移、make images；不要同时在宿主机运行服务）
+cluster-up: certs ## 容器模式启动全部服务、网关与前端（先 make up、迁移、make images、make web-image；不要同时在宿主机运行服务）
 	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
+	@docker image inspect marschat/web:$(IMAGE_TAG) >/dev/null 2>&1 || { echo "missing image marschat/web:$(IMAGE_TAG): run make web-install and make web-image first"; exit 1; }
 	docker compose --profile apps up -d --wait
 
 .PHONY: cluster-test
@@ -105,8 +112,20 @@ cluster-test: ## 集群测试与故障实验，需要先 make cluster-up；只�
 	set -a && . ./.env && set +a && go test -tags cluster -count=1 -v -timeout 20m ./test/cluster/...
 
 .PHONY: cluster-down
-cluster-down: ## 停止并删除容器模式的服务与网关容器，依赖组件保持运行
+cluster-down: ## 停止并删除容器模式的服务、网关与前端容器，依赖组件保持运行
 	docker compose --profile apps rm -sf $(APP_SERVICES)
+
+# 通话的 TURN 中继（profile call），见 docs/design/turn-relay.md。access 下发的地址是 .env 的 MARSCHAT_TURN_URLS，
+# 改了以后要重建 access 容器才生效
+.PHONY: call-up
+call-up: ## 启动 coturn（TURN 中继，端口 13478 与 49160-49200/udp），需要 .env 中的 MARSCHAT_TURN_SECRET（make keys 生成）
+	@test -f .env || { echo "missing .env: copy .env.example to .env and set the passwords"; exit 1; }
+	@grep -q '^MARSCHAT_TURN_SECRET=.' .env || { echo "missing MARSCHAT_TURN_SECRET in .env: run make keys"; exit 1; }
+	docker compose --profile call up -d coturn
+
+.PHONY: call-down
+call-down: ## 停止并删除 coturn 容器
+	docker compose --profile call rm -sf coturn
 
 # 监控组件（profile monitoring）只能抓取容器模式的服务；Grafana 管理员密码由 make keys 写入 .env
 MONITORING_SERVICES := prometheus alertmanager jaeger grafana

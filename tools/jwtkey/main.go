@@ -4,6 +4,7 @@
 //	MARSCHAT_JWT_PUBLIC_KEY   公钥的 base64，所有服务用来校验访问令牌
 //	MARSCHAT_MEDIA_URL_SECRET 32 字节随机数的 base64，media 本地存储用来签名下载地址
 //	MARSCHAT_GRAFANA_ADMIN_PASSWORD 24 字节随机数的 base64url，Grafana 管理员密码（make monitoring-up 使用）
+//	MARSCHAT_TURN_SECRET      32 字节随机数的 base64url，access 签发 TURN 临时凭据、coturn 校验（make call-up 使用）
 //
 // 每组密钥单独判断：.env 中已有的不做任何修改，避免覆盖后已签发的令牌或下载地址全部失效。
 // 不打印密钥内容。
@@ -24,6 +25,7 @@ var (
 	existingJWT       = regexp.MustCompile(`(?m)^MARSCHAT_JWT_(PRIVATE|PUBLIC)_KEY=`)
 	existingURLSecret = regexp.MustCompile(`(?m)^MARSCHAT_MEDIA_URL_SECRET=.+`)
 	existingGrafana   = regexp.MustCompile(`(?m)^MARSCHAT_GRAFANA_ADMIN_PASSWORD=.+`)
+	existingTurn      = regexp.MustCompile(`(?m)^MARSCHAT_TURN_SECRET=.+`)
 )
 
 func main() {
@@ -70,6 +72,15 @@ func run(path string) error {
 		// base64url 不含 + / =，写进 .env 和 Compose 插值都不需要转义
 		fmt.Fprintf(&buf, "MARSCHAT_GRAFANA_ADMIN_PASSWORD=%s\n", base64.RawURLEncoding.EncodeToString(pw))
 		added = append(added, "Grafana admin password")
+	}
+	if existingTurn.Match(content) {
+		fmt.Printf("%s already contains MARSCHAT_TURN_SECRET, kept\n", path)
+	} else {
+		secret := make([]byte, 32)
+		_, _ = rand.Read(secret)
+		// 作为 coturn 的启动参数传入，用 base64url 避免 + / = 在命令行和 Compose 插值中出问题
+		fmt.Fprintf(&buf, "MARSCHAT_TURN_SECRET=%s\n", base64.RawURLEncoding.EncodeToString(secret))
+		added = append(added, "TURN secret")
 	}
 	if buf.Len() == 0 {
 		return nil

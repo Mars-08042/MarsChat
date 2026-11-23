@@ -8,9 +8,17 @@
 
 ## 高
 
-暂无。
+（暂无）
 
 ## 中
+
+### TD-45 运行期间 Consul 没有 leader 时重建的 gRPC 解析器，服务发现永久失效
+
+- 发现：2026-11-22，修复 TD-44 时核对 grpc-go 的空闲机制
+- 位置：`github.com/go-kratos/kratos/contrib/registry/consul/v3` 的 `Registry.Watch`；各服务通过 Consul 发现的 gRPC 客户端（access、delivery、message、social）
+- 现状：TD-44 的修复保证启动时第一次查询之前 Consul 已有 leader，但 contrib 的缺陷还在：`Watch` 第一次查询失败时不撤销登记（还多计了一次引用，登记永远不会被清理），之后这个服务名在进程内再也发现不了。grpc-go 的通道空闲 30 分钟（默认值）后关闭解析器，下一次调用时重建、重新 `Watch`。如果重建时 Consul 恰好没有 leader 或连不上（例如 consul 容器重启的约 10 秒内），就会再次触发，直到进程重启。影响与 TD-44 相同，但需要两件事同时发生，概率低。
+- 临时处理：重启受影响的服务。
+- 处理：在 `pkg/bootstrap` 包一层 `registry.Discovery`，`Watch` 立即返回自己的 watcher，在后台重试，直到第一次查询成功后再交给 contrib（或者自己实现轮询），这样第一次查询失败不会留下坏登记；同时给上游提 issue，请 `Watch` 在第一次查询失败时撤销登记。
 
 ### TD-42 delivery 全部停止后没有告警
 
@@ -27,6 +35,13 @@
 - 处理：步骤 5 起评估 mTLS 或服务令牌。
 
 ## 低
+
+### TD-46 TURN 没有 TLS，凭据过期后的中继断开没有验证
+
+- 发现：2026-11-22，前端第 9 阶段部署 coturn
+- 位置：`deploy/coturn/turnserver.conf`（`no-tls`）；access 的 `call.turn.ttl`（`app/access/internal/biz/turn.go`）
+- 现状：coturn 只提供 UDP 和 TCP 的 3478（宿主机 13478），没有 `turns:`。只放行 443 端口或屏蔽 UDP 的网络（部分企业网、公共 Wi-Fi）连不上 TURN，这时通话仍会按「网络无法直连」结束。凭据有效期 12 小时，超过 12 小时的通话在浏览器续期中继分配时会认证失败、中继断开；这个行为和「过期凭据被 coturn 拒绝」都只按 TURN REST API 的约定推断，没有实测。
+- 处理：公网部署时给 coturn 配证书，开 5349 或复用 443 提供 `turns:`，access 的 `MARSCHAT_TURN_URLS` 加上对应地址；把有效期临时调到 1 分钟，验证过期凭据被拒绝、通话中续期失败的表现，再决定是否需要在通话中下发新凭据。
 
 ### TD-25 account 的资料缓存删除失败时最长有 30 分钟旧数据
 
@@ -79,6 +94,13 @@
 - 处理：读取 EXIF 方向（需要新的依赖或自己解析 APP1 段），解码后按方向旋转，再记录宽高。
 
 ## 已解决
+
+### TD-44 服务在 Consul 选出 leader 之前启动时，服务发现永久失效
+
+- 发现：2026-11-21，前端第 4 阶段联调；2026-11-22 前端第 8 阶段联调再次出现
+- 解决：2026-11-22，前端第 8 阶段之后
+- 原因：Docker 重启后所有容器同时启动，单节点 Consul 要 5.7～9.2 秒才选出 leader。在这之前启动的服务，Kratos 的 `NewClient` 立即 `Connect()`，解析器第一次查询 `/v1/health/service/...` 因为没有 leader 失败。contrib 的 `Watch` 先登记服务、再做第一次查询，查询失败时登记不撤销、也不启动后台轮询，之后 gRPC 重建解析器拿到的是一个永远等不到事件的 watcher。第一次只有 access 到 message、delivery 到 social 受影响；第二次 message 到 account 和 social、social 到 account 也失效了，会话列表和好友列表缺少昵称。consul 的健康检查是 `consul members`，agent 起来就通过，不等 leader，所以新环境 `docker compose up` 同样可能遇到。
+- 处理：`NewConsulRegistry` 返回前轮询 `/v1/status/leader`，有 leader 再继续，最多等 1 分钟，等不到就启动失败、由重启策略拉起（`pkg/bootstrap/registry.go`，有单元测试）。注册中心在所有 gRPC 客户端之前创建，客户端第一次查询时已有 leader。consul 的健康检查改为 `/v1/status/leader` 返回了地址才算健康（`compose.yaml`）。验证：同时重启 consul 与 social 复现，修复前 social 一直拿不到 account 的实例；换成修复后的镜像再做一次，social 打出 `waiting for consul leader`，等了 9.5 秒，leader 选出后 0.3 秒继续启动并拿到实例；重建 consul 容器后，选出 leader 之前的健康检查失败、之后通过。运行期间重建解析器时遇到同样问题的情况没有覆盖，见 TD-45。详见[经验文档](../lessons/consul-no-leader-resolver.md)。
 
 ### TD-41 各服务连接池上限之和超过 MySQL 最大连接数
 

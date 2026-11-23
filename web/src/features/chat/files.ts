@@ -1,6 +1,8 @@
 // 文件与图片消息的前端规则（设计 3.6.9）。上限与 media 服务的 policy 配置一致（media-service.md 3.3），
 // 前端检查只是为了更早提示，最终以服务端校验为准。
 
+import { formatBytes } from "@/lib/utils"
+
 const MiB = 1024 * 1024
 
 export const MAX_CHAT_FILE_BYTES = 100 * MiB
@@ -12,19 +14,6 @@ export const MAX_AVATAR_BYTES = 5 * MiB
 
 // 服务端按文件内容识别为图片候选的类型；扩展名和浏览器给出的类型只用于前端预判
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ["KB", "MB", "GB"]
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit++
-  }
-  // 小于 10 保留一位小数，否则取整，避免「100.0 MB」
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
-}
 
 export type UploadPlan = { ok: true; as: "image" | "file" } | { ok: false; reason: string }
 

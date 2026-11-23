@@ -3,7 +3,6 @@ import {
   checkAvatar,
   fileCategory,
   fitImage,
-  formatBytes,
   MAX_AVATAR_BYTES,
   MAX_CHAT_FILE_BYTES,
   MAX_THUMBNAIL_SOURCE_BYTES,
@@ -13,21 +12,6 @@ import {
 } from "./files"
 
 const MiB = 1024 * 1024
-
-describe("formatBytes", () => {
-  it.each([
-    [0, "0 B"],
-    [1023, "1023 B"],
-    [1024, "1.0 KB"],
-    [1536, "1.5 KB"],
-    [20 * 1024, "20 KB"],
-    [3.4 * MiB, "3.4 MB"],
-    [100 * MiB, "100 MB"],
-    [1024 * MiB, "1.0 GB"],
-  ])("%d → %s", (bytes, want) => {
-    expect(formatBytes(bytes)).toBe(want)
-  })
-})
 
 describe("planChatUpload", () => {
   it("可生成缩略图的图片按图片发送", () => {

@@ -58,9 +58,20 @@ export function inviteErrorText(reason: string): string {
   return INVITE_ERRORS[reason] ?? "呼叫失败，请稍后重试"
 }
 
+// 实时连接还没建立（断线重连中）时发起呼叫
+export const NOT_CONNECTED_TEXT = "正在连接服务器，请稍后再拨"
+// 浏览器没有可用的 RTCPeerConnection：太旧，或被防 IP 泄露的扩展禁用
+export const WEBRTC_UNSUPPORTED_TEXT = "当前浏览器无法通话：WebRTC 不可用，可能被浏览器扩展禁用"
+// 接听请求被拒绝但来电还在（例如服务暂时不可用），可以再点一次接听
+export const ACCEPT_FAILED_TEXT = "接听失败，请再试一次"
+
+// 页面不是安全上下文时 realtime/client.ts 产生的异常名称：浏览器只在 HTTPS 或 localhost 下提供 getUserMedia
+export const INSECURE_CONTEXT_ERROR = "InsecureContextError"
+
 // 媒体设备不可用时的提示，name 来自 getUserMedia 抛出的 DOMException
 export function deviceErrorText(name: string, media: CallMedia): string {
   const device = media === "video" ? "摄像头或麦克风" : "麦克风"
+  if (name === INSECURE_CONTEXT_ERROR) return `当前页面不是 HTTPS 连接，浏览器不允许使用${device}，请改用 HTTPS 地址访问`
   if (name === "NotAllowedError") return `没有${device}权限，请在浏览器地址栏的权限设置中允许`
   if (name === "NotFoundError") return `没有找到可用的${device}`
   if (name === "NotReadableError") return `${device}正被其他程序占用`

@@ -271,10 +271,10 @@ social 发布器 ─→ marschat.social.events ─→ delivery
    - 调 social `CheckSendPermission`（单聊规则：好友且双方都没有拉黑）；
    - 查 B 的在线路由，没有路由时返回 `404 CALL_PEER_OFFLINE`；
    - 在 Redis 中用 Lua 创建通话（状态 `ringing`），同时占用 A、B 的忙线标记，任一方已在通话中时分别返回 `409 ALREADY_IN_CALL`、`409 CALL_BUSY`；
-   - 先回复 `a`：`CallAck{call_id}`，再把 `CallEvent{incoming}` 推给 `b1`、`b2`，并启动振铃定时器（`call.ring_timeout`，60 秒）。
+   - 先回复 `a`：`CallAck{call_id, ice_servers}`，再把 `CallEvent{incoming}` 推给 `b1`、`b2`，并启动振铃定时器（`call.ring_timeout`，60 秒）。`ice_servers` 见 9.5。
 2. `b1` 发 `CallRequest{accept}`。`b1` 所在的 access：
    - 在 Redis 中把状态改为 `active`，记下接听连接 `b1`；
-   - 先回复 `b1`：`CallAck`，再向 `b2` 推送 `CallEvent{ended: ANSWERED_ELSEWHERE}`，最后向 `a` 推送 `CallEvent{accepted}`。
+   - 先回复 `b1`：`CallAck{call_id, ice_servers}`，再向 `b2` 推送 `CallEvent{ended: ANSWERED_ELSEWHERE}`，最后向 `a` 推送 `CallEvent{accepted}`。
 3. `a` 收到 `accepted` 后创建 offer，用 `CallRequest{signal}` 发送；access 从 Redis 中找到接听连接，把同一个 `CallSignal` 作为 `CallEvent{signal}` 推给 `b1`。answer 和双方的 ICE 候选按同样的方式转发。SDP 与 ICE 只在 `a`、`b1` 之间转发，不回显给发送方，接听前发送返回 `404 CALL_NOT_FOUND`。
 4. 任何一方发 `CallRequest{hangup}`：删除通话与双方的忙线标记，对方收到 `CallEvent{ended: HANGUP}`。
 
@@ -320,16 +320,27 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 - **续期**：通话中状态的 TTL 为心跳超时（90 秒），主叫连接与接听连接每次心跳续期；振铃中的 TTL 为振铃超时加 15 秒。
 - **access 崩溃**：没有机会清理，状态按 TTL 过期。主叫所在实例崩溃时没有人发出 `CallEnded`；接听方所在实例崩溃时，主叫下一次发信令失败，通话按断线结束（集群故障实验见[重构计划](../plans/completed/backend-refactor.md#故障实验结果)）。
 
-客户端约定：
+客户端约定（前端实现在 `web/src/realtime/call/engine.ts`，见[前端设计](../design/frontend.md) 3.9.5）：
 
 - 被叫收到来电后最多响铃 `ring_timeout` + 5 秒（65 秒），之后自行停止；
-- ICE 候选可能早于 SDP 到达，暂存到设置远端描述之后再添加；
-- WebRTC 连接失败（`iceconnectionstatechange` 为 `failed`）时发送挂断；
+- 主叫收到 `accepted` 后加入本地轨道并发出 offer；被叫设置远端 offer 之后才加入轨道、回复 answer，正常流程不会双方同时发 offer；
+- ICE 候选可能早于 SDP 到达，暂存到设置远端描述之后再添加；收集结束的标记（空候选）不发送，收到也忽略；
+- 通话信令每秒最多发 8 帧，超出的排队稍后发送：access 每个连接每秒最多收 30 个上行帧（3.3），发送队列占 20 帧；
+- WebRTC 连接失败时发送挂断：`connectionState` 变为 `failed`，`disconnected` 10 秒没有恢复，或者接听后 15 秒仍未连通；
+- 信令连接断开时本端立即结束通话（服务端同样按断线结束）；页面卸载时尽力发送挂断；
 - 不认识的 `call_id` 的事件直接忽略。
 
-### 9.5 尚未实现
+### 9.5 ICE 服务器与 TURN 临时凭据
 
-群通话；STUN/TURN 服务器与临时凭据下发（ICE 服务器为空时只能在可以直接互通的网络中建立连接，随前端重构部署 coturn）；通话记录写入聊天记录；断线重连后恢复通话。
+设计见 [turn-relay.md](../design/turn-relay.md)。邀请和接听的 `CallAck` 带 `ice_servers`（对应 `RTCIceServer`），挂断、拒绝、信令的 `CallAck` 不带：
+
+- access 配置了 `call.turn.urls`（`MARSCHAT_TURN_URLS`）时，返回一项：`urls` 为配置的全部地址，`username` 为 `<过期时刻 Unix 秒>:<用户 ID>`，`credential` 为 `base64(HMAC-SHA1(MARSCHAT_TURN_SECRET, username))`，有效期 `call.turn.ttl`（12 小时）。coturn 用同一个密钥校验（TURN REST API），两边不同步状态；
+- 没有配置时为空，客户端只用本机地址，只能在可以直接互通的网络中建立连接；
+- 客户端为每通通话保存这份列表，主叫收到 `accepted`、被叫收到接听的 `CallAck` 后创建 `RTCPeerConnection` 时使用。
+
+### 9.6 尚未实现
+
+群通话；通话记录写入聊天记录；断线重连后恢复通话。
 
 ## 10. 链路追踪
 

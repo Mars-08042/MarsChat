@@ -58,6 +58,13 @@ upstreams:
     scheme: http
     retries: 1
     timeout: {connect: 2, send: 60, read: 120}
+  # 前端静态文件（compose 的 web 服务）。nginx 不注册到 Consul，直接写固定 IP，见 compose.yaml
+  - id: web
+    nodes:
+      "172.30.0.11:8080": 1
+    type: roundrobin
+    scheme: http
+    timeout: {connect: 2, send: 10, read: 10}
 
 plugin_configs:
   # 全部 HTTP 接口：每个 IP 每秒 50 次，突发 100；超出的请求直接拒绝，不排队
@@ -149,12 +156,32 @@ routes:
         key: remote_addr
         rejected_code: 429
         rejected_msg: too many requests
+  # 前端页面：上面的接口和 WebSocket 路由路径更具体，优先匹配，剩下的路径都交给前端，
+  # 不存在的 /v1/... 由 nginx 返回 404。静态文件不用 http-default 的每秒 50 次：
+  # 打开表情面板时一次会请求上百张表情图片
+  - id: web
+    uris:
+      - /
+      - /*
+    methods: [GET, HEAD]
+    upstream_id: web
+    plugins:
+      limit-req:
+        rate: 200
+        burst: 400
+        nodelay: true
+        key_type: var
+        key: remote_addr
+        rejected_code: 429
+        rejected_msg: too many requests
 
-# 自签证书由 make certs 生成（不进仓库），compose 的启动命令把它读入环境变量
+# 证书默认是 make certs 生成的自签证书（不进仓库），compose 的启动命令把它读入环境变量。
+# sni 为 *：网关只有这一张证书，不管客户端用什么域名访问都用它，换成自己域名的正式证书时只替换
+# deploy/apisix/certs 下的两个文件，不用改这里（docs/deployment.md 的 HTTPS 与域名）。
+# 用 IP 访问时浏览器不发 SNI，按 config.yaml 的 fallback_sni 匹配，同样落到这张证书
 ssls:
-  - id: localhost
-    snis:
-      - localhost
+  - id: default
+    sni: "*"
     cert: $env://MARSCHAT_TLS_CERT
     key: $env://MARSCHAT_TLS_KEY
 #END

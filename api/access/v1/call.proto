@@ -111,6 +111,20 @@ message IceCandidate {
 // CallAck 表示请求已被接受。
 message CallAck {
   int64 call_id = 1;
+  // STUN/TURN 服务器，只在邀请和接听的 CallAck 中返回，客户端创建 RTCPeerConnection 时使用。
+  // 服务端没有配置 TURN 时为空，客户端只用本机地址（同一台机器、同一局域网内可以直连）。
+  // TURN 凭据是临时的，有效期由服务端配置（默认 12 小时），只用于这通通话
+  repeated IceServer ice_servers = 2;
+}
+
+// IceServer 对应 RTCIceServer。
+message IceServer {
+  // 例如 turn:turn.example.com:3478?transport=udp
+  repeated string urls = 1;
+  // TURN REST API 约定的临时用户名：<过期时刻 Unix 秒>:<用户 ID>；STUN 为空
+  string username = 2;
+  // base64(HMAC-SHA1(共享密钥, username))；STUN 为空
+  string credential = 3;
 }
 
 // CallEvent 是服务端主动推送的通话事件（request_id 为 0）。

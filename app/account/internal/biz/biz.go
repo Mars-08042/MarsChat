@@ -70,6 +70,16 @@ type ProfileUpdate struct {
 	Birthday    *time.Time
 }
 
+// UserFilter 是管理员列出用户的筛选条件，零值字段不参与筛选。
+type UserFilter struct {
+	ID int64
+	// EmailPrefix 只按邮箱前缀匹配，可以走 uk_email
+	EmailPrefix string
+	// Text 按昵称包含或邮箱前缀匹配，只能扫表
+	Text   string
+	Status int32
+}
+
 // Device 是发起登录的设备。
 type Device struct {
 	ID       string
@@ -111,6 +121,9 @@ type UserRepo interface {
 	SetStatus(ctx context.Context, id int64, status int32, now time.Time) (bool, error)
 	// LockStatus 在事务中对用户行加排他锁（SELECT ... FOR UPDATE）并返回状态，用户不存在时返回 ErrNotFound
 	LockStatus(ctx context.Context, id int64) (int32, error)
+	// List 按 ID 倒序列出满足条件的用户，不含密码哈希；before 大于 0 时只返回 ID 小于它的用户
+	List(ctx context.Context, f UserFilter, before int64, limit int) ([]*User, error)
+	Count(ctx context.Context, f UserFilter) (int64, error)
 
 	GetCached(ctx context.Context, id int64) (*User, error)
 	BatchGetCached(ctx context.Context, ids []int64) ([]*User, error)

@@ -54,6 +54,14 @@ call:
   forward_timeout: 2s
   # 对端 access 实例不可达后跳过它的时长，冷却结束后重新拨号
   forward_cooldown: 5s
+  # TURN 中继（docs/design/turn-relay.md）。urls 为空时不下发 ICE 服务器，只有能直接互通的两端才能接通。
+  # urls 多个用逗号分隔，secret 与 coturn 的 static-auth-secret 相同（make keys 生成）
+  turn:
+    urls: ${TURN_URLS:}
+    secret: ${TURN_SECRET:}
+    # 凭据有效期（12 小时；protojson 的时长只能写成秒），要覆盖最长的通话：
+    # 浏览器续期中继分配时会重新认证，凭据过期后续期失败、中继断开
+    ttl: 43200s
 
 websocket:
   auth_timeout: 10s

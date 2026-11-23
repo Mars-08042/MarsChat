@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -297,6 +300,71 @@ func TestBanAndUnban(t *testing.T) {
 	time.Sleep(time.Second)
 	again := loginByPassword(t, email, "e2e-target-device")
 	mustCall(t, http.MethodGet, "/v1/users/me", again.token.GetAccessToken(), nil, nil)
+}
+
+func TestAdminListUsers(t *testing.T) {
+	resetRateLimits(t)
+	admin := grantAdmin(t, register(t, randomEmail(t), "e2e-admin-list"))
+	// 三个用户共用一个随机的邮箱前缀，用它把结果限定在本用例注册的用户
+	prefix := strings.TrimSuffix(randomEmail(t), "@example.test")
+	var users []session
+	for _, s := range []string{"a", "b", "c"} {
+		users = append(users, register(t, prefix+s+"@example.test", localPart(prefix)+"-list-"+s))
+	}
+	list := func(q url.Values) *v1.ListUsersResponse {
+		t.Helper()
+		var resp v1.ListUsersResponse
+		mustCall(t, http.MethodGet, "/v1/admin/users?"+q.Encode(), admin.token.GetAccessToken(), nil, &resp)
+		return &resp
+	}
+	ids := func(r *v1.ListUsersResponse) []int64 {
+		out := make([]int64, len(r.GetUsers()))
+		for i, u := range r.GetUsers() {
+			out[i] = u.GetId()
+		}
+		return out
+	}
+	idOf := func(i int) int64 { return users[i].user.GetId() }
+
+	status, e := call(t, http.MethodGet, "/v1/admin/users", users[0].token.GetAccessToken(), nil, nil)
+	wantError(t, status, e, 403, "PERMISSION_DENIED")
+
+	// 按注册时间倒序翻页，总数与游标无关
+	p1 := list(url.Values{"keyword": {prefix}, "limit": {"2"}})
+	if got := ids(p1); !slices.Equal(got, []int64{idOf(2), idOf(1)}) || p1.GetTotal() != 3 || p1.GetNextCursor() != idOf(1) {
+		t.Fatalf("page 1 = %v total %d next %d", got, p1.GetTotal(), p1.GetNextCursor())
+	}
+	if p1.GetUsers()[0].GetEmail() != prefix+"c@example.test" {
+		t.Fatalf("email = %q", p1.GetUsers()[0].GetEmail())
+	}
+	p2 := list(url.Values{"keyword": {prefix}, "limit": {"2"}, "cursor": {strconv.FormatInt(p1.GetNextCursor(), 10)}})
+	if got := ids(p2); !slices.Equal(got, []int64{idOf(0)}) || p2.GetTotal() != 3 || p2.GetNextCursor() != 0 {
+		t.Fatalf("page 2 = %v total %d next %d", got, p2.GetTotal(), p2.GetNextCursor())
+	}
+
+	// 纯数字按 ID；含 @ 只按邮箱前缀；LIKE 通配符被转义（_ 不能匹配邮箱里的 -）
+	if got := ids(list(url.Values{"keyword": {strconv.FormatInt(idOf(1), 10)}})); !slices.Equal(got, []int64{idOf(1)}) {
+		t.Fatalf("by id = %v", got)
+	}
+	if got := ids(list(url.Values{"keyword": {strings.ToUpper(prefix) + "B@"}})); !slices.Equal(got, []int64{idOf(1)}) {
+		t.Fatalf("by email = %v", got)
+	}
+	if r := list(url.Values{"keyword": {strings.Replace(prefix, "-", "_", 1)}}); r.GetTotal() != 0 {
+		t.Fatalf("wildcard not escaped: %v", ids(r))
+	}
+
+	// 列表直接读库，封禁后立即能按状态筛出来
+	mustCall(t, http.MethodPost, "/v1/admin/users/"+strconv.FormatInt(idOf(0), 10)+"/ban", admin.token.GetAccessToken(), &v1.BanUserRequest{}, nil)
+	banned := list(url.Values{"keyword": {prefix}, "status": {"USER_STATUS_BANNED"}})
+	if got := ids(banned); !slices.Equal(got, []int64{idOf(0)}) || banned.GetUsers()[0].GetStatus() != v1.UserStatus_USER_STATUS_BANNED {
+		t.Fatalf("banned = %v", got)
+	}
+	if got := ids(list(url.Values{"keyword": {prefix}, "status": {"USER_STATUS_NORMAL"}})); !slices.Equal(got, []int64{idOf(2), idOf(1)}) {
+		t.Fatalf("normal = %v", got)
+	}
+
+	status, e = call(t, http.MethodGet, "/v1/admin/users?limit=51", admin.token.GetAccessToken(), nil, nil)
+	wantError(t, status, e, 400, "VALIDATOR")
 }
 
 func TestPublicProfileAndInternalBatchGet(t *testing.T) {

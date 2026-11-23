@@ -121,7 +121,9 @@ type Calls struct {
 	perm      CallPermission
 	routes    RouteRepo
 	fwd       Forwarder
-	logger    *slog.Logger
+	// 邀请和接听的 CallAck 带上的 ICE 服务器，没有配置 TURN 时为 nil
+	turn   *turnServers
+	logger *slog.Logger
 	// 由 NewHub 设置。Calls 与 Hub 互相引用，wire 不允许构造时成环
 	hub *Hub
 
@@ -141,6 +143,7 @@ func NewCalls(c *conf.Call, ws *conf.WebSocket, repo CallRepo, perm CallPermissi
 		perm:        perm,
 		routes:      routes,
 		fwd:         fwd,
+		turn:        newTurnServers(c.GetTurn()),
 		logger:      logger,
 		timers:      make(map[int64]*time.Timer),
 	}
@@ -210,7 +213,7 @@ func (k *Calls) invite(ctx context.Context, c *Conn, rid uint64, in *v1.CallInvi
 	}
 	c.call = callRef{key: call.CallKey, caller: true}
 	// 先回复再推来电：被叫接听得再快，主叫也是先拿到 call_id，再收到 CallAccepted
-	c.push(callAckFrame(rid, call.ID))
+	c.push(callAckWithIce(rid, call.ID, k.turn.issue(caller)))
 	k.startRingTimer(call)
 	countCallEvent("invited", v1.CallEndReason_CALL_END_REASON_UNSPECIFIED)
 	k.logger.InfoContext(ctx, "call invited", slog.Int64("call_id", call.ID), slog.Int64("caller_id", caller),
@@ -259,7 +262,7 @@ func (k *Calls) accept(ctx context.Context, c *Conn, rid uint64, id int64) {
 	call.State, call.CalleeConn, call.CalleeAddr, call.AnsweredAt = CallActive, c.id.Load(), k.routes.Addr(), now
 	c.call = callRef{key: call.CallKey}
 	// 先回复再通知主叫：主叫收到 CallAccepted 后才会发 offer，接听连接因此先拿到 CallAck
-	c.push(callAckFrame(rid, id))
+	c.push(callAckWithIce(rid, id, k.turn.issue(c.principal.UserID)))
 	k.stopRingTimer(id)
 	countCallEvent("accepted", v1.CallEndReason_CALL_END_REASON_UNSPECIFIED)
 	k.logger.InfoContext(ctx, "call accepted", slog.Int64("call_id", id), slog.Duration("ringing", now.Sub(call.CreatedAt)))
@@ -560,7 +563,12 @@ func (k *Calls) stop() {
 }
 
 func callAckFrame(rid uint64, id int64) *v1.ServerFrame {
-	return &v1.ServerFrame{RequestId: rid, Body: &v1.ServerFrame_CallAck{CallAck: &v1.CallAck{CallId: id}}}
+	return callAckWithIce(rid, id, nil)
+}
+
+// callAckWithIce 用于邀请和接听：双方都在收到这个回复之后才创建 RTCPeerConnection（主叫要等 CallAccepted）
+func callAckWithIce(rid uint64, id int64, ice []*v1.IceServer) *v1.ServerFrame {
+	return &v1.ServerFrame{RequestId: rid, Body: &v1.ServerFrame_CallAck{CallAck: &v1.CallAck{CallId: id, IceServers: ice}}}
 }
 
 func callEventFrame(e *v1.CallEvent) *v1.ServerFrame {

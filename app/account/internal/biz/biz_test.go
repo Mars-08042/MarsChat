@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -447,6 +449,101 @@ func TestBanAndUnban(t *testing.T) {
 	e.guard.failures = map[string]int{}
 	if _, _, err := e.auth.LoginByPassword(ctx, testEmail, testPass, testDevice, ""); err != nil {
 		t.Fatalf("login after unban: %v", err)
+	}
+}
+
+func TestListUsers(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	add := func(id int64, email, nickname string, status int32) {
+		e.users.byID[id] = &User{ID: id, Email: email, PasswordHash: "hash", Nickname: nickname, Role: RoleUser, Status: status}
+	}
+	add(101, "linwan@example.com", "林晚", StatusNormal)
+	add(102, "lin.yu@example.com", "雨林", StatusBanned)
+	add(103, "chen@example.com", "100%_真", StatusNormal)
+	add(104, "song@example.com", "宋词", StatusBanned)
+	add(105, "bai@example.com", "Bailu", StatusNormal)
+	admin := auth.Principal{UserID: 105, Role: RoleAdmin}
+
+	_, err := e.admin.List(ctx, auth.Principal{UserID: 101, Role: RoleUser}, "", 0, 0, 0)
+	wantReason(t, err, v1.ErrorReason_PERMISSION_DENIED)
+
+	ids := func(p *UserPage) []int64 {
+		out := make([]int64, len(p.Users))
+		for i, u := range p.Users {
+			out[i] = u.ID
+		}
+		return out
+	}
+	list := func(keyword string, status int32, cursor int64, limit int32) *UserPage {
+		t.Helper()
+		p, err := e.admin.List(ctx, admin, keyword, status, cursor, limit)
+		if err != nil {
+			t.Fatalf("list %q: %v", keyword, err)
+		}
+		return p
+	}
+
+	// 按 ID 倒序翻页，总数与游标无关，最后一页的 next_cursor 为 0
+	p1 := list("", 0, 0, 2)
+	if got := ids(p1); !slices.Equal(got, []int64{105, 104}) || p1.NextCursor != 104 || p1.Total != 5 {
+		t.Fatalf("page 1 = %v next %d total %d", got, p1.NextCursor, p1.Total)
+	}
+	if p1.Users[0].PasswordHash != "" {
+		t.Fatal("password hash leaked")
+	}
+	p2 := list("", 0, p1.NextCursor, 2)
+	if got := ids(p2); !slices.Equal(got, []int64{103, 102}) || p2.NextCursor != 102 || p2.Total != 5 {
+		t.Fatalf("page 2 = %v next %d total %d", got, p2.NextCursor, p2.Total)
+	}
+	p3 := list("", 0, p2.NextCursor, 2)
+	if got := ids(p3); !slices.Equal(got, []int64{101}) || p3.NextCursor != 0 {
+		t.Fatalf("page 3 = %v next %d", got, p3.NextCursor)
+	}
+
+	cases := []struct {
+		keyword string
+		status  int32
+		want    []int64
+	}{
+		{"  ", 0, []int64{105, 104, 103, 102, 101}},
+		{" 103 ", 0, []int64{103}},
+		{"0", 0, nil},
+		{"99999999999999999999", 0, nil},
+		// 不含 @：昵称包含或邮箱前缀
+		{"LIN", 0, []int64{102, 101}},
+		{"lin.", 0, []int64{102}},
+		{"bai", 0, []int64{105}},
+		{"example", 0, nil},
+		{"%_", 0, []int64{103}},
+		// 含 @：只按邮箱前缀
+		{"LINWAN@", 0, []int64{101}},
+		{"lin@", 0, nil},
+		{"", StatusBanned, []int64{104, 102}},
+		{"林", StatusBanned, []int64{102}},
+	}
+	for _, c := range cases {
+		p := list(c.keyword, c.status, 0, 0)
+		if got := ids(p); !slices.Equal(got, c.want) || p.Total != int64(len(c.want)) {
+			t.Errorf("keyword %q status %d = %v total %d, want %v", c.keyword, c.status, got, p.Total, c.want)
+		}
+	}
+}
+
+func TestListUsersLimit(t *testing.T) {
+	e := newEnv(t)
+	for id := int64(1); id <= 60; id++ {
+		e.users.byID[id] = &User{ID: id, Email: fmt.Sprintf("u%d@example.com", id), Status: StatusNormal}
+	}
+	admin := auth.Principal{UserID: 1, Role: RoleAdmin}
+	for _, c := range []struct{ limit, want int32 }{{0, 20}, {7, 7}, {100, 50}} {
+		p, err := e.admin.List(context.Background(), admin, "", 0, 0, c.limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(p.Users) != int(c.want) || p.Total != 60 {
+			t.Errorf("limit %d: got %d users total %d, want %d", c.limit, len(p.Users), p.Total, c.want)
+		}
 	}
 }
 

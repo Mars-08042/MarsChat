@@ -79,8 +79,27 @@ export default defineConfig({
     strictPort: true,
     proxy: apiProxy(),
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // 第三方库按用途分组（设计 2.3）：库的版本不变时文件名不变，发布新版本后浏览器继续用缓存；
+        // 每组都小于 Vite 500 KB 的提示线，也避免自动拆包切出几十个零碎小文件。
+        // 只在懒加载页面里用到的库（表情面板的 frimousse、登录注册的 input-otp）不分组，跟着页面下载。
+        codeSplitting: {
+          groups: [
+            { name: "react", test: /node_modules[\\/](react|react-dom|scheduler|react-router|zustand|use-sync-external-store|@tanstack[\\/][^\\/]+)[\\/]/ },
+            { name: "motion", test: /node_modules[\\/](motion|motion-dom|motion-utils|framer-motion)[\\/]/ },
+            { name: "ui", test: /node_modules[\\/](@base-ui[\\/][^\\/]+|@floating-ui[\\/][^\\/]+|tabbable|reselect|sonner|lucide-react|cn|class-variance-authority)[\\/]/ },
+            // protobuf 运行时和生成的接口代码：登录页（account）和登录后的各页面都要用
+            { name: "proto", test: /node_modules[\\/]@bufbuild[\\/]|[\\/]src[\\/]gen[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   test: {
-    include: ["src/**/*.test.ts"],
+    // 组件测试是 .test.tsx，文件开头用 // @vitest-environment jsdom 切换环境
+    include: ["src/**/*.test.{ts,tsx}"],
     // Vitest 默认把 CSS 替换为空字符串；tokens.test.ts 要读取 tokens.css 原文核对对比度
     css: { include: [/styles\/tokens\.css/] },
   },

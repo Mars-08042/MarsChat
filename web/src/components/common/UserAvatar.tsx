@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useAvatarUrl } from "@/lib/use-download-url"
 import { cn } from "@/lib/utils"
 
 // 没有头像时用首字加渐变底色。渐变都取暖色，且足够深，保证白字可读（设计 3.4.1：火星红之外只用暖色）
@@ -38,6 +39,9 @@ interface UserAvatarProps {
   // 用户 ID 或群 ID，决定渐变颜色，改名后颜色不变
   seed: string
   name: string
+  // media 的头像文件 ID（用户或群资料里的 avatar），组件内换取下载地址
+  avatarId?: string
+  // 直接给出的地址，优先于 avatarId（例如上传前的本地预览）
   src?: string
   // 群用圆角方形，和个人头像区分
   shape?: "circle" | "square"
@@ -45,14 +49,24 @@ interface UserAvatarProps {
   className?: string
 }
 
-export function UserAvatar({ seed, name, src, shape = "circle", size = "md", className }: UserAvatarProps) {
+export function UserAvatar({ seed, name, avatarId, src, shape = "circle", size = "md", className }: UserAvatarProps) {
+  const avatar = useAvatarUrl(src ? undefined : avatarId)
+  const url = src ?? avatar.url
   const [from, to] = pickGradient(seed)
   const [box, text] = SIZES[size]
   const radius = shape === "square" ? "rounded-[30%] after:rounded-[30%]" : "rounded-full"
 
   return (
     <Avatar className={cn(box, radius, className)}>
-      {src && <AvatarImage src={src} alt={name} className={radius} />}
+      {url && (
+        <AvatarImage
+          src={url}
+          alt={name}
+          className={radius}
+          // 加载失败时先换一次地址（可能已过期），仍失败就一直显示首字
+          onLoadingStatusChange={(status) => status === "error" && !src && avatar.onError()}
+        />
+      )}
       <AvatarFallback
         className={cn("font-medium text-white", text, radius)}
         style={{ backgroundImage: `linear-gradient(135deg, ${from}, ${to})` }}

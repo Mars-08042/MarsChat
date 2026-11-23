@@ -726,8 +726,12 @@ func (x *IceCandidate) GetUsernameFragment() string {
 
 // CallAck 表示请求已被接受。
 type CallAck struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CallId        int64                  `protobuf:"varint,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	CallId int64                  `protobuf:"varint,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	// STUN/TURN 服务器，只在邀请和接听的 CallAck 中返回，客户端创建 RTCPeerConnection 时使用。
+	// 服务端没有配置 TURN 时为空，客户端只用本机地址（同一台机器、同一局域网内可以直连）。
+	// TURN 凭据是临时的，有效期由服务端配置（默认 12 小时），只用于这通通话
+	IceServers    []*IceServer `protobuf:"bytes,2,rep,name=ice_servers,json=iceServers,proto3" json:"ice_servers,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -769,6 +773,77 @@ func (x *CallAck) GetCallId() int64 {
 	return 0
 }
 
+func (x *CallAck) GetIceServers() []*IceServer {
+	if x != nil {
+		return x.IceServers
+	}
+	return nil
+}
+
+// IceServer 对应 RTCIceServer。
+type IceServer struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 例如 turn:turn.example.com:3478?transport=udp
+	Urls []string `protobuf:"bytes,1,rep,name=urls,proto3" json:"urls,omitempty"`
+	// TURN REST API 约定的临时用户名：<过期时刻 Unix 秒>:<用户 ID>；STUN 为空
+	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	// base64(HMAC-SHA1(共享密钥, username))；STUN 为空
+	Credential    string `protobuf:"bytes,3,opt,name=credential,proto3" json:"credential,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IceServer) Reset() {
+	*x = IceServer{}
+	mi := &file_access_v1_call_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IceServer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IceServer) ProtoMessage() {}
+
+func (x *IceServer) ProtoReflect() protoreflect.Message {
+	mi := &file_access_v1_call_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IceServer.ProtoReflect.Descriptor instead.
+func (*IceServer) Descriptor() ([]byte, []int) {
+	return file_access_v1_call_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *IceServer) GetUrls() []string {
+	if x != nil {
+		return x.Urls
+	}
+	return nil
+}
+
+func (x *IceServer) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *IceServer) GetCredential() string {
+	if x != nil {
+		return x.Credential
+	}
+	return ""
+}
+
 // CallEvent 是服务端主动推送的通话事件（request_id 为 0）。
 type CallEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -785,7 +860,7 @@ type CallEvent struct {
 
 func (x *CallEvent) Reset() {
 	*x = CallEvent{}
-	mi := &file_access_v1_call_proto_msgTypes[9]
+	mi := &file_access_v1_call_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -797,7 +872,7 @@ func (x *CallEvent) String() string {
 func (*CallEvent) ProtoMessage() {}
 
 func (x *CallEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_access_v1_call_proto_msgTypes[9]
+	mi := &file_access_v1_call_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -810,7 +885,7 @@ func (x *CallEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallEvent.ProtoReflect.Descriptor instead.
 func (*CallEvent) Descriptor() ([]byte, []int) {
-	return file_access_v1_call_proto_rawDescGZIP(), []int{9}
+	return file_access_v1_call_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CallEvent) GetEvent() isCallEvent_Event {
@@ -899,7 +974,7 @@ type CallIncoming struct {
 
 func (x *CallIncoming) Reset() {
 	*x = CallIncoming{}
-	mi := &file_access_v1_call_proto_msgTypes[10]
+	mi := &file_access_v1_call_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -911,7 +986,7 @@ func (x *CallIncoming) String() string {
 func (*CallIncoming) ProtoMessage() {}
 
 func (x *CallIncoming) ProtoReflect() protoreflect.Message {
-	mi := &file_access_v1_call_proto_msgTypes[10]
+	mi := &file_access_v1_call_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -924,7 +999,7 @@ func (x *CallIncoming) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallIncoming.ProtoReflect.Descriptor instead.
 func (*CallIncoming) Descriptor() ([]byte, []int) {
-	return file_access_v1_call_proto_rawDescGZIP(), []int{10}
+	return file_access_v1_call_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CallIncoming) GetCallId() int64 {
@@ -957,7 +1032,7 @@ type CallAccepted struct {
 
 func (x *CallAccepted) Reset() {
 	*x = CallAccepted{}
-	mi := &file_access_v1_call_proto_msgTypes[11]
+	mi := &file_access_v1_call_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -969,7 +1044,7 @@ func (x *CallAccepted) String() string {
 func (*CallAccepted) ProtoMessage() {}
 
 func (x *CallAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_access_v1_call_proto_msgTypes[11]
+	mi := &file_access_v1_call_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -982,7 +1057,7 @@ func (x *CallAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallAccepted.ProtoReflect.Descriptor instead.
 func (*CallAccepted) Descriptor() ([]byte, []int) {
-	return file_access_v1_call_proto_rawDescGZIP(), []int{11}
+	return file_access_v1_call_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CallAccepted) GetCallId() int64 {
@@ -1002,7 +1077,7 @@ type CallEnded struct {
 
 func (x *CallEnded) Reset() {
 	*x = CallEnded{}
-	mi := &file_access_v1_call_proto_msgTypes[12]
+	mi := &file_access_v1_call_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1089,7 @@ func (x *CallEnded) String() string {
 func (*CallEnded) ProtoMessage() {}
 
 func (x *CallEnded) ProtoReflect() protoreflect.Message {
-	mi := &file_access_v1_call_proto_msgTypes[12]
+	mi := &file_access_v1_call_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1027,7 +1102,7 @@ func (x *CallEnded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallEnded.ProtoReflect.Descriptor instead.
 func (*CallEnded) Descriptor() ([]byte, []int) {
-	return file_access_v1_call_proto_rawDescGZIP(), []int{12}
+	return file_access_v1_call_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CallEnded) GetCallId() int64 {
@@ -1085,9 +1160,17 @@ const file_access_v1_call_proto_rawDesc = "" +
 	"\asdp_mid\x18\x02 \x01(\tB\a\xbaH\x04r\x02(@R\x06sdpMid\x12+\n" +
 	"\x0fsdp_mline_index\x18\x03 \x01(\rH\x00R\rsdpMlineIndex\x88\x01\x01\x125\n" +
 	"\x11username_fragment\x18\x04 \x01(\tB\b\xbaH\x05r\x03(\x80\x02R\x10usernameFragmentB\x12\n" +
-	"\x10_sdp_mline_index\"\"\n" +
+	"\x10_sdp_mline_index\"Y\n" +
 	"\aCallAck\x12\x17\n" +
-	"\acall_id\x18\x01 \x01(\x03R\x06callId\"\xe1\x01\n" +
+	"\acall_id\x18\x01 \x01(\x03R\x06callId\x125\n" +
+	"\vice_servers\x18\x02 \x03(\v2\x14.access.v1.IceServerR\n" +
+	"iceServers\"[\n" +
+	"\tIceServer\x12\x12\n" +
+	"\x04urls\x18\x01 \x03(\tR\x04urls\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x1e\n" +
+	"\n" +
+	"credential\x18\x03 \x01(\tR\n" +
+	"credential\"\xe1\x01\n" +
 	"\tCallEvent\x125\n" +
 	"\bincoming\x18\x01 \x01(\v2\x17.access.v1.CallIncomingH\x00R\bincoming\x125\n" +
 	"\baccepted\x18\x02 \x01(\v2\x17.access.v1.CallAcceptedH\x00R\baccepted\x12,\n" +
@@ -1133,7 +1216,7 @@ func file_access_v1_call_proto_rawDescGZIP() []byte {
 }
 
 var file_access_v1_call_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_access_v1_call_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_access_v1_call_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_access_v1_call_proto_goTypes = []any{
 	(CallMedia)(0),             // 0: access.v1.CallMedia
 	(SdpType)(0),               // 1: access.v1.SdpType
@@ -1147,10 +1230,11 @@ var file_access_v1_call_proto_goTypes = []any{
 	(*SessionDescription)(nil), // 9: access.v1.SessionDescription
 	(*IceCandidate)(nil),       // 10: access.v1.IceCandidate
 	(*CallAck)(nil),            // 11: access.v1.CallAck
-	(*CallEvent)(nil),          // 12: access.v1.CallEvent
-	(*CallIncoming)(nil),       // 13: access.v1.CallIncoming
-	(*CallAccepted)(nil),       // 14: access.v1.CallAccepted
-	(*CallEnded)(nil),          // 15: access.v1.CallEnded
+	(*IceServer)(nil),          // 12: access.v1.IceServer
+	(*CallEvent)(nil),          // 13: access.v1.CallEvent
+	(*CallIncoming)(nil),       // 14: access.v1.CallIncoming
+	(*CallAccepted)(nil),       // 15: access.v1.CallAccepted
+	(*CallEnded)(nil),          // 16: access.v1.CallEnded
 }
 var file_access_v1_call_proto_depIdxs = []int32{
 	4,  // 0: access.v1.CallRequest.invite:type_name -> access.v1.CallInvite
@@ -1162,17 +1246,18 @@ var file_access_v1_call_proto_depIdxs = []int32{
 	9,  // 6: access.v1.CallSignal.sdp:type_name -> access.v1.SessionDescription
 	10, // 7: access.v1.CallSignal.ice_candidate:type_name -> access.v1.IceCandidate
 	1,  // 8: access.v1.SessionDescription.type:type_name -> access.v1.SdpType
-	13, // 9: access.v1.CallEvent.incoming:type_name -> access.v1.CallIncoming
-	14, // 10: access.v1.CallEvent.accepted:type_name -> access.v1.CallAccepted
-	15, // 11: access.v1.CallEvent.ended:type_name -> access.v1.CallEnded
-	8,  // 12: access.v1.CallEvent.signal:type_name -> access.v1.CallSignal
-	0,  // 13: access.v1.CallIncoming.media:type_name -> access.v1.CallMedia
-	2,  // 14: access.v1.CallEnded.reason:type_name -> access.v1.CallEndReason
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	12, // 9: access.v1.CallAck.ice_servers:type_name -> access.v1.IceServer
+	14, // 10: access.v1.CallEvent.incoming:type_name -> access.v1.CallIncoming
+	15, // 11: access.v1.CallEvent.accepted:type_name -> access.v1.CallAccepted
+	16, // 12: access.v1.CallEvent.ended:type_name -> access.v1.CallEnded
+	8,  // 13: access.v1.CallEvent.signal:type_name -> access.v1.CallSignal
+	0,  // 14: access.v1.CallIncoming.media:type_name -> access.v1.CallMedia
+	2,  // 15: access.v1.CallEnded.reason:type_name -> access.v1.CallEndReason
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_access_v1_call_proto_init() }
@@ -1192,7 +1277,7 @@ func file_access_v1_call_proto_init() {
 		(*CallSignal_IceCandidate)(nil),
 	}
 	file_access_v1_call_proto_msgTypes[7].OneofWrappers = []any{}
-	file_access_v1_call_proto_msgTypes[9].OneofWrappers = []any{
+	file_access_v1_call_proto_msgTypes[10].OneofWrappers = []any{
 		(*CallEvent_Incoming)(nil),
 		(*CallEvent_Accepted)(nil),
 		(*CallEvent_Ended)(nil),
@@ -1204,7 +1289,7 @@ func file_access_v1_call_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_access_v1_call_proto_rawDesc), len(file_access_v1_call_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

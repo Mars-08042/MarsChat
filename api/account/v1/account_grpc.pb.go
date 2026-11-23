@@ -32,6 +32,7 @@ const (
 	AccountService_RevokeSession_FullMethodName    = "/account.v1.AccountService/RevokeSession"
 	AccountService_BanUser_FullMethodName          = "/account.v1.AccountService/BanUser"
 	AccountService_UnbanUser_FullMethodName        = "/account.v1.AccountService/UnbanUser"
+	AccountService_ListUsers_FullMethodName        = "/account.v1.AccountService/ListUsers"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -68,6 +69,9 @@ type AccountServiceClient interface {
 	BanUser(ctx context.Context, in *BanUserRequest, opts ...grpc.CallOption) (*BanUserResponse, error)
 	// 解封用户（管理员）。
 	UnbanUser(ctx context.Context, in *UnbanUserRequest, opts ...grpc.CallOption) (*UnbanUserResponse, error)
+	// 列出用户（管理员），按注册时间倒序游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+	// next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 50。直接读库，封禁、解封后立即可见。
+	ListUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (*ListUsersResponse, error)
 }
 
 type accountServiceClient struct {
@@ -208,6 +212,16 @@ func (c *accountServiceClient) UnbanUser(ctx context.Context, in *UnbanUserReque
 	return out, nil
 }
 
+func (c *accountServiceClient) ListUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (*ListUsersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListUsersResponse)
+	err := c.cc.Invoke(ctx, AccountService_ListUsers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
@@ -242,6 +256,9 @@ type AccountServiceServer interface {
 	BanUser(context.Context, *BanUserRequest) (*BanUserResponse, error)
 	// 解封用户（管理员）。
 	UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error)
+	// 列出用户（管理员），按注册时间倒序游标分页：第一页 cursor 传 0，之后传上一页的 next_cursor，
+	// next_cursor 为 0 表示没有更多。limit 为 0 时取 20，最大 50。直接读库，封禁、解封后立即可见。
+	ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -290,6 +307,9 @@ func (UnimplementedAccountServiceServer) BanUser(context.Context, *BanUserReques
 }
 func (UnimplementedAccountServiceServer) UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UnbanUser not implemented")
+}
+func (UnimplementedAccountServiceServer) ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListUsers not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -546,6 +566,24 @@ func _AccountService_UnbanUser_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_ListUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUsersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).ListUsers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_ListUsers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).ListUsers(ctx, req.(*ListUsersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -604,6 +642,10 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnbanUser",
 			Handler:    _AccountService_UnbanUser_Handler,
+		},
+		{
+			MethodName: "ListUsers",
+			Handler:    _AccountService_ListUsers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

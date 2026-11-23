@@ -6,17 +6,23 @@ import { springs } from "@/lib/motion"
 import { formatDuration } from "@/lib/time"
 import { useNow } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
+import type { Call } from "@/realtime/call/engine"
+import { callActions } from "@/realtime/client"
+import { useCall } from "@/stores/call"
+import { useIncomingCallAlerts } from "./alerts"
 import { endReasonText } from "./call-text"
-import { useCallStore, type Call } from "./fake-call-store"
 
 // 通话层挂在登录后的主框架上，切换页面时不中断（设计 3.6.10）。
 // 全屏界面与右下角悬浮窗共用一个 layoutId，最小化和展开时整块变形过渡。
 export function CallLayer() {
-  const call = useCallStore((s) => s.call)
+  const call = useCall((s) => s.call)
   const constraintsRef = useRef<HTMLDivElement>(null)
+  useIncomingCallAlerts(call)
 
   return (
     <>
+      {/* 对方的声音由这里播放，不随全屏界面和悬浮窗切换而中断；视频元素一律静音 */}
+      {call?.remoteStream && <StreamMedia kind="audio" stream={call.remoteStream} />}
       {/* 悬浮窗的拖动范围 */}
       <div ref={constraintsRef} className="pointer-events-none fixed inset-4 z-40" />
       <AnimatePresence>
@@ -28,14 +34,34 @@ export function CallLayer() {
       <AnimatePresence>
         {call && call.minimized && <MiniCall key={`${call.id}-mini`} call={call} constraintsRef={constraintsRef} />}
       </AnimatePresence>
-      <InviteErrorToast />
+      <NoticeToast />
     </>
+  )
+}
+
+// 把 MediaStream 接到 <audio> / <video> 上。srcObject 只能在 DOM 上设置
+function StreamMedia({ kind, stream, mirrored, className }: { kind: "audio" | "video"; stream: MediaStream; mirrored?: boolean; className?: string }) {
+  const ref = useRef<HTMLMediaElement | null>(null)
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream
+  }, [stream])
+  if (kind === "audio") return <audio ref={(el) => void (ref.current = el)} autoPlay />
+  return (
+    <video
+      ref={(el) => void (ref.current = el)}
+      autoPlay
+      playsInline
+      muted
+      className={cn("size-full object-cover", mirrored && "-scale-x-100", className)}
+    />
   )
 }
 
 function statusText(call: Call, now: number): ReactNode {
   const { phase } = call
   switch (phase.kind) {
+    case "dialing":
+      return "正在呼叫…"
     case "outgoing":
       return (
         <>
@@ -78,10 +104,11 @@ function Ripple({ active, className }: { active: boolean; className?: string }) 
 
 function CallScreen({ call }: { call: Call }) {
   const now = useNow(1000)
-  const { hangup, toggleMute, toggleCamera, setMinimized } = useCallStore()
+  const { hangup, toggleMute, toggleCamera, setMinimized } = callActions
   const ended = call.phase.kind === "ended"
-  const ringing = call.phase.kind === "outgoing"
-  const showVideo = call.media === "video" && call.phase.kind === "active"
+  const ringing = call.phase.kind === "outgoing" || call.phase.kind === "dialing"
+  const remote = call.media === "video" && call.phase.kind === "active" ? call.remoteStream : undefined
+  const showVideo = remote !== undefined
 
   return (
     <motion.div
@@ -96,7 +123,7 @@ function CallScreen({ call }: { call: Call }) {
       className="dark fixed inset-0 z-50 flex flex-col overflow-hidden bg-[#0F0B0A] text-[#F5EFE9]"
     >
       {/* 背景：视频通话接通后是对方画面，其余时候是火星红光晕。cameraOff 是本端摄像头，不影响对方画面 */}
-      {showVideo ? <RemoteVideoPlaceholder /> : <CallBackdrop />}
+      {remote ? <RemoteVideo stream={remote} /> : <CallBackdrop />}
 
       <div className="relative flex items-center justify-between px-6 pt-5">
         <span className="font-mono text-xs tracking-[0.2em] text-white/50 uppercase">
@@ -124,7 +151,7 @@ function CallScreen({ call }: { call: Call }) {
         {!showVideo && (
           <div className="relative size-32">
             <Ripple active={ringing} />
-            <UserAvatar seed={call.peer.id} name={call.peer.nickname} src={call.peer.avatarUrl} size="hero" className="ring-4 ring-white/10" />
+            <UserAvatar seed={call.peer.id} name={call.peer.nickname} avatarId={call.peer.avatarId} size="hero" className="ring-4 ring-white/10" />
           </div>
         )}
         <div className="space-y-2" aria-live="polite">
@@ -133,7 +160,7 @@ function CallScreen({ call }: { call: Call }) {
         </div>
       </div>
 
-      {showVideo && <LocalPreview cameraOff={call.cameraOff} />}
+      {showVideo && <LocalPreview stream={call.localStream} cameraOff={call.cameraOff} />}
 
       <div className="relative flex items-center justify-center gap-5 pb-10">
         <ControlButton
@@ -183,32 +210,21 @@ function CallBackdrop() {
   )
 }
 
-// 原型阶段没有真实视频：用缓慢流动的暖色渐变代表对方画面。第 8 阶段换成 <video autoPlay playsInline>
-function RemoteVideoPlaceholder() {
+// 对方画面铺满全屏；顶部加一层渐暗，名字和时长才看得清
+function RemoteVideo({ stream }: { stream: MediaStream }) {
   return (
-    <div aria-hidden="true" className="absolute inset-0 overflow-hidden">
-      <motion.div
-        className="absolute -inset-1/4"
-        animate={{ rotate: 360 }}
-        transition={{ duration: 40, ease: "linear", repeat: Infinity }}
-        style={{ background: "conic-gradient(from 0deg, #3A120A, #9A2A16, #F0A23B, #7A1E10, #3A120A)", filter: "blur(80px)" }}
-      />
-      <div className="absolute inset-0 bg-black/30" />
-      <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 font-mono text-xs tracking-widest text-white/40 uppercase">
-        remote video
-      </span>
+    <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-black">
+      <StreamMedia kind="video" stream={stream} />
+      <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/50 to-transparent" />
     </div>
   )
 }
 
-function LocalPreview({ cameraOff }: { cameraOff: boolean }) {
+// 自己的画面镜像显示，和照镜子一致；关闭摄像头时显示图标
+function LocalPreview({ stream, cameraOff }: { stream?: MediaStream; cameraOff: boolean }) {
   return (
     <div className="absolute right-6 bottom-32 flex h-44 w-32 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-[#1A1412] shadow-float">
-      {cameraOff ? (
-        <VideoOff className="size-6 text-white/50" />
-      ) : (
-        <span className="font-mono text-[10px] tracking-widest text-white/40 uppercase">you</span>
-      )}
+      {cameraOff || !stream ? <VideoOff className="size-6 text-white/50" /> : <StreamMedia kind="video" stream={stream} mirrored />}
     </div>
   )
 }
@@ -247,7 +263,7 @@ function ControlButton({
 
 // 来电卡片：右上角滑入，接听或拒绝；多端同时响铃，其他设备接听后这里收到「已在其他设备接听」
 function IncomingCallCard({ call }: { call: Call }) {
-  const { accept, reject } = useCallStore()
+  const { accept, reject } = callActions
   const now = useNow(1000)
 
   return (
@@ -268,7 +284,7 @@ function IncomingCallCard({ call }: { call: Call }) {
       <div className="relative flex items-center gap-4">
         <div className="relative size-14 shrink-0">
           <Ripple active />
-          <UserAvatar seed={call.peer.id} name={call.peer.nickname} src={call.peer.avatarUrl} size="xl" />
+          <UserAvatar seed={call.peer.id} name={call.peer.nickname} avatarId={call.peer.avatarId} size="xl" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate font-display text-lg font-semibold">{call.peer.nickname}</p>
@@ -300,7 +316,7 @@ function IncomingCallCard({ call }: { call: Call }) {
 // 最小化后的悬浮窗：可以拖动，显示时长、静音、挂断，点击展开
 function MiniCall({ call, constraintsRef }: { call: Call; constraintsRef: React.RefObject<HTMLDivElement | null> }) {
   const now = useNow(1000)
-  const { hangup, toggleMute, setMinimized } = useCallStore()
+  const { hangup, toggleMute, setMinimized } = callActions
 
   return (
     <motion.div
@@ -315,7 +331,7 @@ function MiniCall({ call, constraintsRef }: { call: Call; constraintsRef: React.
       style={{ borderRadius: 20 }}
       className="dark fixed right-6 bottom-6 z-50 flex w-72 cursor-grab items-center gap-3 border border-white/10 bg-[#1A1412] p-3 text-[#F5EFE9] shadow-float active:cursor-grabbing"
     >
-      <UserAvatar seed={call.peer.id} name={call.peer.nickname} src={call.peer.avatarUrl} />
+      <UserAvatar seed={call.peer.id} name={call.peer.nickname} avatarId={call.peer.avatarId} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{call.peer.nickname}</p>
         <p className="text-xs text-[#3FBF86]">{statusText(call, now)}</p>
@@ -349,16 +365,15 @@ function MiniCall({ call, constraintsRef }: { call: Call; constraintsRef: React.
   )
 }
 
-// 呼叫请求被拒绝（忙线、对方不在线、不是好友）时，在页面顶部提示，4 秒后消失
-function InviteErrorToast() {
-  const error = useCallStore((s) => s.inviteError)
-  const clear = useCallStore((s) => s.clearInviteError)
+// 没有进入通话界面的结果（呼叫被拒绝、设备不可用、来电在本端接听前结束）在页面顶部提示，4 秒后消失
+function NoticeToast() {
+  const error = useCall((s) => s.notice)
 
   useEffect(() => {
     if (!error) return
-    const timer = setTimeout(clear, 4000)
+    const timer = setTimeout(callActions.dismissNotice, 4000)
     return () => clearTimeout(timer)
-  }, [error, clear])
+  }, [error])
 
   return (
     <AnimatePresence>

@@ -1,6 +1,6 @@
 # 部署与运行
 
-> 本文描述后端与前端开发环境的运行方式，最近一次更新于 2026-11-21（后端重构完成，合并前端分支）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例实验，经网关访问）；前端开发方式见“前端开发”。
+> 本文描述后端与前端的运行和部署方式，最近一次更新于 2026-11-22（前端容器、局域网访问与 HTTPS、TURN 中继）。服务有两种运行方式：宿主机运行（日常开发）和容器模式（多实例，经网关访问，包括前端页面）；前端开发方式见“前端开发”。
 
 ## 运行依赖
 
@@ -15,7 +15,7 @@
 
 ## 依赖组件
 
-[compose.yaml](../compose.yaml) 定义依赖组件和容器模式的应用服务（profile `apps`，见“容器模式”），项目名 `marschat`，数据保存在命名卷中。宿主机端口为容器默认端口 + 10000，只绑定 `127.0.0.1`。
+[compose.yaml](../compose.yaml) 定义依赖组件和容器模式的应用服务（profile `apps`，见“容器模式”），项目名 `marschat`，数据保存在命名卷中。宿主机端口为容器默认端口 + 10000，默认只绑定 `127.0.0.1`；网关和 coturn 的绑定地址可以改成局域网地址，见“局域网访问与 HTTPS”。
 
 网络使用固定子网 `172.30.0.0/24`：前半段留给固定地址（步骤 5 的网关），容器的动态地址只从 `172.30.0.128/25` 分配。本机其他项目的网络占用 172.17～172.26 网段。修改网络配置后要先 `make down` 再 `make up` 重建容器，数据卷不受影响。
 
@@ -36,7 +36,7 @@
 
 ```bash
 cp .env.example .env
-make keys    # 生成 JWT 密钥对和 media 下载地址签名密钥并追加到 .env，已有时不覆盖，不打印密钥
+make keys    # 生成 JWT 密钥对、media 下载地址签名密钥、Grafana 密码和 TURN 密钥并追加到 .env，已有时不覆盖，不打印密钥
 ```
 
 把 `.env` 中的 `change-me` 换成随机密码，只用字母和数字，避免在 SQL 和 DSN 中转义。`.env` 被 Git 忽略，同时供 Compose 和本机运行的服务使用。
@@ -50,6 +50,9 @@ make keys    # 生成 JWT 密钥对和 media 下载地址签名密钥并追加�
 | `MARSCHAT_JWT_PUBLIC_KEY` | 对应的公钥 base64，所有服务用来校验访问令牌；account 启动时检查它与私钥匹配 |
 | `MARSCHAT_MEDIA_URL_SECRET` | media 本地存储下载地址的 HMAC 签名密钥（32 字节随机数的 base64），由 `make keys` 生成。使用 OSS 时不需要，见“文件存储” |
 | `MARSCHAT_GRAFANA_ADMIN_PASSWORD` | Grafana 管理员 `admin` 的密码（24 字节随机数的 base64url），由 `make keys` 生成，只用于修改面板；查看面板不需要登录，见“监控” |
+| `MARSCHAT_TURN_SECRET` | access 签发 TURN 临时凭据、coturn 校验用的共享密钥（32 字节随机数的 base64url），由 `make keys` 生成，见“通话中继（TURN）” |
+
+可选的部署变量（局域网访问、HTTPS、TURN 地址）见“局域网访问与 HTTPS”和“通话中继（TURN）”，模板在 `.env.example` 中。
 
 MySQL 的建库脚本和 root 密码只在数据卷**首次初始化**时生效，之后修改 `.env` 不会改变已有账号的密码。需要重置时见“停止与重置”。
 
@@ -94,7 +97,7 @@ make run-delivery   # gRPC 127.0.0.1:19040（只用于注册和健康检查）
 make run-media      # HTTP 127.0.0.1:18050，gRPC 127.0.0.1:19050；文件默认存放在仓库下的 data/media/
 ```
 
-`make run-<服务>` 会加载 `.env`，再执行 `go run ./app/<服务>/cmd/<服务> -conf app/<服务>/configs`。服务启动时连接本服务的 MySQL（access、delivery 没有）、Redis 并注册到 Consul，任一依赖不可用会直接退出。首次启动前要先执行对应的 `make migrate-<服务>`。
+`make run-<服务>` 会加载 `.env`，再执行 `go run ./app/<服务>/cmd/<服务> -conf app/<服务>/configs`。服务启动时连接本服务的 MySQL（access、delivery 没有）、Redis 并注册到 Consul，任一依赖不可用会直接退出。Consul 连不上或还没有选出 leader 时先等待，最多 1 分钟（日志 `waiting for consul leader`），等不到再退出，见 TD-44。首次启动前要先执行对应的 `make migrate-<服务>`。
 
 服务之间经 Consul 发现，启动顺序不限。被调用的服务或 Kafka 不可用时，调用方照常启动并降级运行：
 
@@ -139,17 +142,19 @@ make grant-admin EMAIL=alice@example.test
 
 ## 容器模式
 
-用于多实例与故障实验（重构步骤 5）。服务镜像只含交叉编译的静态二进制，配置目录以只读方式挂载，地址类配置由 compose 中的 `MARSCHAT_` 环境变量覆盖。
+用于多实例、故障实验，以及完整的部署形态：服务、网关和前端页面都在容器里，打开 `http://localhost:19080` 即可使用。服务镜像只含交叉编译的静态二进制，配置目录以只读方式挂载，地址类配置由 compose 中的 `MARSCHAT_` 环境变量覆盖。容器模式与开发共用同一个 Compose 项目，依赖组件、数据卷都是同一套，不重复创建。
 
 ```bash
 make up                 # 依赖组件（已运行可跳过）；首次还要执行各服务的 make migrate-<服务>
 make images             # 宿主机交叉编译，构建 marschat/<服务>:dev
+make web-image          # 宿主机 pnpm build，构建 marschat/web:dev（需要先 make web-install）
 make cluster-up         # docker compose --profile apps up -d --wait
 make cluster-test       # 集群测试与故障实验（test/cluster，只经网关访问）
-make cluster-down       # 只删除应用服务和网关的容器，依赖组件保持运行
+make cluster-down       # 只删除应用服务、网关和前端的容器，依赖组件保持运行
+make call-up            # 可选：通话的 TURN 中继，见“通话中继（TURN）”
 ```
 
-`make cluster-up` 会先执行 `make certs`，为网关生成自签证书（已有时跳过）。
+`make cluster-up` 会先执行 `make certs`，为网关生成自签证书（已有时跳过），并检查前端镜像是否存在。容器模式运行时仍然可以同时用 `make web-dev` 开发前端，两个入口连的是同一套后端和数据。
 
 | 服务 | 实例数 | 容器内监听 |
 |---|---|---|
@@ -159,7 +164,9 @@ make cluster-down       # 只删除应用服务和网关的容器，依赖组件
 | delivery | 2 | HTTP 18040（探针与 `/metrics`）、gRPC 19040 |
 | access | 2 | HTTP 18000（WebSocket）、gRPC 19100 |
 | media | 1 | HTTP 18050、gRPC 19050；挂载仓库的 `data/media`（本地存储） |
-| apisix（网关） | 1 | 9080、9443，发布到宿主机 `127.0.0.1:19080`、`127.0.0.1:19443`；固定 IP `172.30.0.10` |
+| apisix（网关） | 1 | 9080、9443，默认发布到宿主机 `127.0.0.1:19080`、`127.0.0.1:19443`；固定 IP `172.30.0.10` |
+| web（前端） | 1 | nginx 8080，不发布宿主机端口，只由网关访问；固定 IP `172.30.0.11` |
+| coturn（profile `call`） | 1 | 3478（UDP、TCP）发布为 13478，中继端口 49160～49200/udp 按相同端口号发布；固定 IP `172.30.0.12` |
 
 - **与宿主机运行互斥**：两种模式共用 Consul 且服务名相同，宿主机实例注册 `127.0.0.1`，容器访问不到；容器实例注册容器 IP，宿主机访问不到。切换前先停掉另一种。宿主机进程被强制结束时，它在 Consul 中的实例要 20 秒后才变为 critical，这段时间内不要启动容器模式。
 - **不发布宿主机端口**：应用容器只在 Compose 网络内可访问，客户端入口是网关（见下节）。依赖组件的宿主机端口照常可用。
@@ -178,8 +185,10 @@ APISIX `3.20.0`（镜像 `apache/apisix:3.20.0-debian`），Standalone 模式：
 | 文件 | 内容 | 生效方式 |
 |---|---|---|
 | `config.yaml` | 监听端口、Consul 发现、启用的插件（`limit-req`、`limit-count`、`limit-conn`、`client-control`、`real-ip`）、worker 数（2） | 重启容器 |
-| `apisix.yaml` | 路由、上游、证书、限流、全局规则，文件以 `#END` 结尾 | **热更新**：保存后约 1 秒内生效，日志出现 `apisix.yaml reloaded` |
-| `certs/` | `make certs` 生成的自签证书（`localhost`、`127.0.0.1`），被 git 忽略 | 重启容器 |
+| `apisix.yaml` | 路由、上游、证书、限流、全局规则，文件以 `#END` 结尾 | **热更新**：保存后约 1 秒内生效，日志出现 `apisix.yaml reloaded`；单文件挂载的注意事项见下 |
+| `certs/` | `make certs` 生成的自签证书（`localhost`、`127.0.0.1`、`::1` 和 `MARSCHAT_CERT_HOSTS`），或换上去的正式证书，被 git 忽略 | 重启容器 |
+
+`apisix.yaml` 是单文件挂载。编辑器保存时如果先写新文件再改名替换（不少编辑器和工具是这样做的），容器里看到的仍是旧文件，在 Docker Desktop 上甚至是新旧混合、没有 `#END` 的内容，APISIX 认为文件没写完，保留旧配置，也不报错。改完后用 `docker compose exec apisix tail -1 /usr/local/apisix/conf/apisix.yaml` 确认末尾是 `#END`，不是就重建网关容器：`docker compose --profile apps up -d --no-deps --force-recreate apisix`。见 [lessons/single-file-bind-mount-stale.md](lessons/single-file-bind-mount-stale.md)。
 
 路由（未列出的路径由网关返回 404，`/healthz`、`/readyz` 不对外）：
 
@@ -190,12 +199,13 @@ APISIX `3.20.0`（镜像 `apache/apisix:3.20.0-debian`），Standalone 模式：
 | `/v1/conversations[/*]` | `marschat-message` |
 | `/v1/files`、`/v1/files/*` | `marschat-media`（请求体上限 101 MiB，超过时网关直接返回 413；发送、读取超时 300 秒） |
 | `/ws`（WebSocket） | `marschat-access`（`least_conn`，读超时 120 秒） |
+| `/`、`/*`（GET、HEAD，以上都不匹配时） | 前端 nginx `172.30.0.11:8080`（不经 Consul）；不存在的 `/v1/...` 由 nginx 返回 404 |
 
 - **服务发现**：按服务名取 Consul 中检查通过的实例，节点为服务的 `Address:Port`（HTTP 端口）。阻塞查询，实例变化约 1 秒内同步。HTTP 上游连接失败时换节点重试一次。2026-11-19 实测：杀掉一个 message 实例后连续请求没有失败，只有约 5 秒内的两个请求因 2 秒连接超时后重试而变慢；实例重启后约 2.5 秒重新接到流量。
-- **入口限流**（按客户端 IP，超限返回 429）：全部 HTTP 接口每秒 50 次、突发 100；`/v1/auth/*` 另加每分钟 60 次；`/ws` 每个 IP 最多 50 条并发连接、每秒 10 次握手。计数在网关进程内。
+- **入口限流**（按客户端 IP，超限返回 429）：全部 HTTP 接口每秒 50 次、突发 100；`/v1/auth/*` 另加每分钟 60 次；`/ws` 每个 IP 最多 50 条并发连接、每秒 10 次握手；前端静态文件每秒 200 次、突发 400（打开表情面板时一次请求上百张图片）。计数在网关进程内。
 - **客户端 IP**：经 Docker Desktop 端口转发访问时，本机所有请求的来源地址都是 compose 网络的网关 `172.30.0.128`，限流对本机流量相当于全局限流；account 看到的客户端 IP 也是它，集群测试清理的是这个 IP 的限流计数。
 - **压测来源**：全局规则 `real-ip` 只对 k6 容器的固定 IP `172.30.0.20` 信任 `X-Forwarded-For`，把其中最后一个地址作为 `remote_addr`；k6 给每个虚拟客户端分配 `198.18.0.0/15`（RFC 2544 基准测试网段）中的不同地址，网关和 account 的按 IP 限流按虚拟客户端生效。其他来源带的 `X-Forwarded-For` 不改变 `remote_addr`。这个地址在固定地址段中，不会被动态分配给其他容器。
-- **TLS**：`https://localhost:19443`、`wss://localhost:19443/ws`；用 IP 访问时按 `localhost` 匹配证书。证书经启动命令读入环境变量，由 `apisix.yaml` 用 `$env://` 引用。curl 需要指定证书：
+- **TLS**：`https://localhost:19443`、`wss://localhost:19443/ws`。证书配置为 `sni: "*"`，不管用什么域名访问都用 `certs/` 里这一张证书；用 IP 访问时浏览器不发 SNI，按 `fallback_sni` 落到同一张。证书经启动命令读入环境变量，由 `apisix.yaml` 用 `$env://` 引用。curl 需要指定证书：
 
 ```bash
 curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
@@ -203,6 +213,66 @@ curl --cacert deploy/apisix/certs/tls.crt https://localhost:19443/v1/users/me
 
 - **新增插件**：`config.yaml` 的插件列表要重启网关才生效（`docker compose --profile apps restart apisix`），而 `apisix.yaml` 是热更新的。在重启前就引用新插件的路由会被单独拒绝（错误日志 `unknown plugin`），其他路由不受影响；重启后正常。media 路由用到的 `client-control`（请求体上限）就是这样加入的。
 - **日志**：`docker compose logs -f apisix`，访问日志和错误日志都输出到容器的标准输出。
+
+### 前端
+
+设计见 [web-deployment.md](design/web-deployment.md)。镜像 `marschat/web:dev` 由 `make web-image` 构建：宿主机 `pnpm build`，再以 `web/dist` 为构建上下文打包，nginx 配置在 [deploy/web/](../deploy/web/)。基础镜像 `nginxinc/nginx-unprivileged:1.30.6-alpine3.24-slim`（按 digest 锁定），非 root、只读根文件系统，镜像约 130 MB，其中平台表情约 45 MB（`web/public/emoji-packs` 存在时打进镜像，开发者确认已获授权）。
+
+- **缓存**：带哈希的 `/assets/*` 带 `Cache-Control: public, max-age=31536000, immutable`；`index.html`、表情数据和图片是 `no-cache`（每次用 ETag 确认，没变时返回 304）。缺失的文件返回 404，不带缓存头。
+- **路由**：`/chat/...`、`/settings/...` 等前端路由返回 `index.html`；`/assets/` 下缺失的文件、不存在的 `/v1/...` 都返回 404，不回落成页面。
+- **发布新版本**：`make web-image` 后 `docker compose --profile apps up -d --no-deps web`。开着的页面刷新即可；没刷新的页面切换到已删除的旧文件时显示「页面加载失败」和刷新按钮。
+- **下载地址**：浏览器把本地存储的下载地址改成相对路径，跟着页面走，所以 `MARSCHAT_MEDIA_PUBLIC_BASE_URL`（默认 `https://127.0.0.1:19443`）与页面地址不同也能显示图片；它只影响直接调用接口的客户端。
+
+### 局域网访问与 HTTPS
+
+浏览器只在 HTTPS 或 `localhost` 下提供麦克风、摄像头和系统通知。本机用 `http://localhost:19080` 即可；局域网和公网必须用 HTTPS。完整说明（三种场景、是否需要域名、公网证书的申请与续期）见 [web-deployment.md 第 4 节](design/web-deployment.md#4-https-与域名)。
+
+局域网内其他设备访问（`192.168.1.10` 换成本机的局域网地址）：
+
+1. `.env` 中设置：
+
+   ```bash
+   MARSCHAT_GATEWAY_HTTPS_BIND=192.168.1.10:19443
+   MARSCHAT_CERT_HOSTS=192.168.1.10
+   MARSCHAT_MEDIA_PUBLIC_BASE_URL=https://192.168.1.10:19443
+   ```
+
+   HTTP 端口（`MARSCHAT_GATEWAY_HTTP_BIND`）保持默认的 `127.0.0.1:19080`，局域网内用 HTTP 打开拿不到麦克风和摄像头。
+2. 已有证书时 `make certs` 不覆盖，只提示缺少哪些名字：先删除 `deploy/apisix/certs/tls.crt` 和 `tls.key`，再 `make certs`，然后 `make cluster-up`。
+3. 访问的设备信任 `deploy/apisix/certs/tls.crt`（只拷贝证书，私钥不要离开本机）。
+4. Windows 防火墙可能拦截入站连接，需要时自行放行 19443。
+
+注意：开启后同一局域网的设备都能访问网关，测试账号使用弱密码时不要在公共网络中开启。
+
+公网部署（域名、正式证书）这次没有实施，做法见 web-deployment.md 4.3：证书文件替换 `deploy/apisix/certs/` 下的两个文件，`MARSCHAT_GATEWAY_HTTPS_BIND=0.0.0.0:443`，续期后 `docker compose --profile apps restart apisix`。
+
+### 通话中继（TURN）
+
+设计见 [turn-relay.md](design/turn-relay.md)。不部署时通话只能在可以直接互通的两端之间接通（同一台机器、同一局域网）。
+
+```bash
+make keys       # 生成 MARSCHAT_TURN_SECRET（已有时不覆盖）
+make call-up    # 启动 coturn（profile call），检查 .env 中有密钥
+make call-down  # 删除 coturn 容器
+```
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `MARSCHAT_TURN_URLS` | 空 | access 下发给客户端的地址，逗号分隔，例如 `turn:192.168.1.10:13478?transport=udp,turn:192.168.1.10:13478?transport=tcp`；为空时不下发。修改后要重建 access 容器（`make cluster-up`） |
+| `MARSCHAT_TURN_BIND_IP` | `127.0.0.1` | coturn 端口绑定的地址 |
+| `MARSCHAT_TURN_EXTERNAL_IP` | `127.0.0.1` | 告诉浏览器的中继地址（`--external-ip`），同时放行为中继对端（`--allowed-peer-ip`）；本机或局域网部署时与绑定地址相同 |
+
+- 镜像 `coturn/coturn:4.19.2-alpine3.24`，按 digest 锁定；配置在 [deploy/coturn/turnserver.conf](../deploy/coturn/turnserver.conf)，禁止中继到内网和回环地址，每个临时用户名最多 10 个并发分配。
+- 凭据有效期 12 小时（access 配置 `call.turn.ttl`）；`docker compose logs coturn` 查看认证失败（`credentials of user ... are wrong`）和被禁止的对端（`peer IP ... denied`）。
+- 排查：在浏览器控制台执行 `localStorage.setItem("marschat.debug.ice-relay", "1")`，之后的通话只走中继；`removeItem` 后恢复。也可以用 coturn 自带的工具测试，两个客户端互相经中继收发：
+
+  ```bash
+  S=$(sed -n 's/^MARSCHAT_TURN_SECRET=//p' .env); docker run --rm --network marschat_default --entrypoint turnutils_uclient \
+    coturn/coturn:4.19.2-alpine3.24 -y -W "$S" -u test -n 10 -m 1 -p 13478 <对外地址>
+  ```
+
+- 对外地址默认的 `127.0.0.1` 是回环地址，coturn 默认禁止中继到回环地址；两端都在本机时本来就能直连，不需要中继。要在本机验证中继，按局域网的做法把三个变量都设成局域网地址。
+- 公网部署时 coturn 需要公网地址和更大的中继端口段，通常用主机网络，见 turn-relay.md 第 6 节。
 
 ## 监控
 
@@ -504,10 +574,12 @@ media 的文件存储由 `storage.provider` 选择，设计见 [media-service.md
 | `make build` | 构建全部服务到 `bin/`，版本号取 `git describe` |
 | `make e2e` | 端到端测试，需要依赖组件已启动、account、social、message、media 已迁移，六个服务都在运行（media 使用默认的本地存储，测试文件写入 `data/media/`）；会加载 `.env`，并清理本机 IP（127.0.0.1）的限流计数。其中 `bloom_test.go` 直接连 Redis，用随机键前缀测试布隆过滤器，结束后清理；`kafka_test.go` 使用专用 topic `marschat.e2e.events`、`marschat.e2e.retry` 和随机消费组，并在死信队列中查找本次写入的记录。服务可以用 `sh scripts/host_services.sh start` 在宿主机后台启动（`wait` 等待就绪，`stop` 结束；二进制与日志在 `tmp/hostbin/`、`tmp/hostlogs/`，邮件固定用 `log` 发送方与验证码 `000000`），不能和容器模式同时运行 |
 | `make images` | 宿主机交叉编译全部服务并构建镜像 `marschat/<服务>:dev`，见“容器模式” |
-| `make certs` | 生成网关的自签证书到 `deploy/apisix/certs/`（已有时不覆盖） |
-| `make cluster-up` / `make cluster-down` | 启动容器模式的全部服务和网关 / 删除这些容器（依赖组件保持运行） |
+| `make web-image` | 构建前端并打包成镜像 `marschat/web:dev`，见“前端” |
+| `make certs` | 生成网关的自签证书到 `deploy/apisix/certs/`（已有时不覆盖；`.env` 的 `MARSCHAT_CERT_HOSTS` 加局域网地址或域名） |
+| `make cluster-up` / `make cluster-down` | 启动容器模式的全部服务、网关和前端 / 删除这些容器（依赖组件保持运行） |
+| `make call-up` / `make call-down` | 启动 / 删除 coturn，见“通话中继（TURN）” |
 | `make cluster-test` | 集群测试与故障实验，需要容器模式已启动；客户端只经网关访问，清理网关来源 IP 的限流计数。故障实验会停止、暂停、重启 MarsChat 的容器，见“容器模式” |
-| `make keys` | 生成 JWT 密钥对和 media 下载地址签名密钥写入 `.env`（已有的不覆盖） |
+| `make keys` | 生成 JWT 密钥对、media 下载地址签名密钥、Grafana 管理员密码和 TURN 密钥写入 `.env`（已有的不覆盖） |
 | `make migrate-<服务>` | 数据库迁移，`ARGS` 传子命令 |
 | `make monitoring-up` / `make monitoring-down` | 启动监控组件 / 删除它们的容器（保留 Prometheus 数据卷），见“监控” |
 | `make rules-test` | 用 Prometheus 镜像中的 promtool 校验配置、运行告警规则的单元测试，不需要启动监控组件 |
