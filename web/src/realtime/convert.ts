@@ -62,7 +62,8 @@ export function toChatMessage(m: PbMessage): ChatMessage {
   }
 }
 
-export function toChatUser(p: UserProfile): ChatUser {
+// 只取资料卡用到的字段，GetMe 返回的 User（自己的资料）也能直接传入
+export function toChatUser(p: Pick<UserProfile, "id" | "nickname" | "gender" | "signature" | "avatar">): ChatUser {
   const id = p.id.toString()
   const user: ChatUser = { id, nickname: p.nickname || `用户 ${id}` }
   if (p.gender === Gender.MALE) user.gender = "male"

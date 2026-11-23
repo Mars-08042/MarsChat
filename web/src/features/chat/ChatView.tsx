@@ -11,6 +11,7 @@ import { formatTimeDivider } from "@/lib/time"
 import { useNow, useSecondsUntil } from "@/lib/use-countdown"
 import { cn } from "@/lib/utils"
 import { callActions, chat } from "@/realtime/client"
+import { toChatUser } from "@/realtime/convert"
 import { useCall } from "@/stores/call"
 import { useChat, type Timeline as TimelineData } from "@/stores/chat"
 import { useSession } from "@/stores/session"
@@ -573,8 +574,10 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
   )
 }
 
-// 自己的资料来自登录状态（GetMe），不在聊天 store 的 users 里；还没加载时显示「用户 <ID>」
+// 自己的资料来自登录状态（GetMe），不在聊天 store 的 users 里；还没加载时显示「用户 <ID>」。
+// 按整个 user 对象记忆：修改资料、换头像后 session 换成新对象，时间线里自己的头像和资料卡随之更新，
+// 其他时候引用不变，不会让 memo 的消息行全部重新渲染
 function useMeAsUser(meId: string): ChatUser | undefined {
-  const nickname = useSession((s) => (s.userId === meId ? s.user?.nickname : undefined))
-  return useMemo(() => (nickname ? { id: meId, nickname } : undefined), [meId, nickname])
+  const user = useSession((s) => (s.userId === meId ? s.user : null))
+  return useMemo(() => (user ? toChatUser(user) : undefined), [user])
 }
