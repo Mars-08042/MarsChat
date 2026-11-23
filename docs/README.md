@@ -22,7 +22,7 @@ docs/
 │   ├── completed/           已完成的计划
 │   └── tech-debt.md         技术债与已知问题
 ├── lessons/                 踩过的坑与预防措施
-└── images/                  文档插图（SVG）
+└── images/                  文档插图（SVG）与界面截图
 ```
 
 已完成计划：[后端重构](plans/completed/backend-refactor.md)（含故障实验与压测结果）、[React 前端重写](plans/completed/frontend-rewrite.md)（含各阶段的联调记录）、[通话记录写入聊天](plans/completed/call-record.md)；旧基线时期的 [本地 Compose 开发环境](plans/completed/local-compose.md)、[无证书本地启动](plans/completed/local-http.md)、[前端迁移 pnpm](plans/completed/pnpm-migration.md)。
@@ -77,6 +77,7 @@ docs/
 - 用中文编写，代码标识符、路径、命令保持原样。
 - 文档文件名使用描述主题的短横线命名，不添加日期或时间戳前缀；日期记录在正文元信息中，ADR 保留顺序编号。
 - 插图放在 `images/`，用手写 SVG，风格与现有图一致：白底，`#b4b2a9` 灰色圆角框，`#2c6fd1` 浅蓝高亮重点，`#ecebe6` 注释框，标题用一句结论。
+- 界面截图也放在 `images/`，按 `computer-页面.png`、`phone-页面.jpg` 命名，供根目录 README 使用；邮箱、用户 ID 等个人信息打码后再提交。
 
 ### 设计文档
 

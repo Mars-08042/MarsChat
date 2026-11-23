@@ -1,19 +1,103 @@
+<div align="center">
+
 # MarsChat
 
-MarsChat 是一个 Web 即时通讯系统。后端用 Go + Kratos v3 拆分为六个微服务，实现了可靠消息（幂等、会话内有序、事务 Outbox、断线补拉）、多端同步、跨节点投递和慢连接隔离，并用端到端测试、故障实验和压测验证。前端在 `web/`，用 React + Vite + pnpm 编写，覆盖认证（登录、注册、令牌刷新、退出）、实时消息（会话列表、单聊与群聊的文字消息、已读回执、多端同步、断线补拉）、联系人与群组（好友、申请、黑名单、建群、成员管理、实时通知）、设置与管理（资料、登录设备、外观、封禁）、文件（图片与文件消息、上传进度、头像）和一对一音视频通话（可选部署 coturn 中继）；容器模式下由 nginx 容器经网关同源提供，可以开放给局域网访问。
+**让每一条消息都准时抵达**
 
-> 当前代码在 `dev` 分支。旧版本（Gin 单体 + Vue 3 前端）已在重构中移除，需要时查看提交 `6624cea`。
+在浏览器里使用的即时通讯系统：Go 微服务后端，React 前端。<br>
+实现了可靠消息投递、多端同步和一对一音视频通话，并用故障实验和压测做了验证。
+
+[功能](#功能) · [界面预览](#界面预览) · [架构](#架构) · [快速开始](#快速开始) · [文档](#文档)
+
+</div>
+
+![MarsChat 登录页](docs/images/computer-login.png)
 
 ## 功能
 
-- 邮箱验证码注册，密码或验证码登录；访问令牌与刷新令牌轮换，多设备管理，退出、踢设备、封禁后立即失效
-- 好友申请与审批、拉黑；群聊的创建、加入审批、邀请、成员角色、禁言、转让、解散
-- WebSocket 单聊、群聊：文本、图片、文件消息；未读数、已读回执、多端同步、断线补拉
-- 文件上传与缩略图，限时签名下载地址；存储可切换为本地目录或阿里云 OSS
-- 一对一音视频通话信令（媒体为 WebRTC 点对点），多端响铃、接听互斥
-- 指标、告警、链路追踪和慢查询日志；k6 压测与故障实验
+| 模块 | 能做什么 |
+|---|---|
+| 账号 | 邮箱验证码注册，密码或验证码登录；多设备同时在线，可以查看登录设备并让其中一台下线 |
+| 消息 | 单聊和群聊，支持文字、表情、图片和文件；未读数与已读回执；同一账号的多个设备实时同步，断线重连后自动补齐 |
+| 联系人与群组 | 好友申请与审批、黑名单；建群、入群审核、邀请、管理员、禁言、转让群主、解散 |
+| 音视频通话 | 一对一语音和视频，多个设备同时响铃，在一台上接听；通话结束后在聊天里留下记录，点击即可回拨 |
+| 设置与管理 | 资料与头像，明暗主题与字体，系统通知；管理员可以封禁用户，被封禁的账号所有设备立即下线 |
 
-各功能的实现状态与验证情况见 [features.md](docs/product/features.md)。
+每项功能的实现状态和验证方式见 [features.md](docs/product/features.md)。
+
+### 工程上的重点
+
+- **可靠消息**：`client_msg_id` 保证重发只存一条，消息在会话内按 seq 有序，写库与发布事件在同一个事务里（Outbox）。推送尽力而为，客户端发现 seq 有缺口时补拉。
+- **多实例投递**：Redis 记录每个连接所在的接入节点，事件经 Kafka 由 delivery 推送到对应节点。接入节点停机前先从注册中心注销，再分批通知客户端重连。
+- **故障实验**：在容器模式下杀掉接入节点、滚动重启、杀掉 delivery、杀掉持有 Outbox 租约的实例、暂停 Kafka、停掉 Redis，以及通话中杀掉接听方的节点。每项实验结束后都核对历史消息，已确认的消息没有丢失或重复（[实验结果](docs/plans/completed/backend-refactor.md#故障实验结果)）。
+- **压测基线**：在一台开发机的 Docker Desktop 上，1000 个在线连接、约每秒 1000 条消息时，推送 P99 约 300 ms，没有错误；瓶颈在 MySQL 的写路径（[压测结果](docs/plans/completed/backend-refactor.md#压测结果)）。
+- **缓存与限流**：布隆过滤器和空值标记防穿透，重建锁防击穿，TTL 抖动防雪崩；网关按 IP 限流，服务按用户限流。
+- **可观测**：Prometheus 指标与告警、Grafana 看板、Jaeger 链路追踪（跨 Kafka）、慢查询日志。
+
+## 界面预览
+
+### 桌面端
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/computer-chat.png" alt="会话列表" width="100%"></td>
+    <td width="50%"><img src="docs/images/computer-person.png" alt="联系人" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">消息：会话列表</td>
+    <td align="center">联系人：好友、申请与黑名单</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/computer-group.png" alt="群组" width="100%"></td>
+    <td><img src="docs/images/computer-profile.png" alt="资料设置" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">群组：标出自己的角色和是否需要审核</td>
+    <td align="center">设置：资料与头像</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/computer-devices.png" alt="登录设备" width="100%"></td>
+    <td><img src="docs/images/computer-admin.png" alt="后台管理" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center">设置：登录设备，可以让其他设备下线</td>
+    <td align="center">管理：用户列表与封禁</td>
+  </tr>
+</table>
+
+### 手机浏览器
+
+同一套前端在窄屏上改用底部导航。截图来自 Android 上的 Chrome，中文跟随系统字体（这台手机设置了书法字体）。
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/phone-login.jpg" alt="手机登录页" width="240"><br>验证码登录</td>
+    <td align="center"><img src="docs/images/phone-chat.jpg" alt="手机会话列表" width="240"><br>会话列表</td>
+    <td align="center"><img src="docs/images/phone-person.jpg" alt="手机联系人" width="240"><br>联系人</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/phone-group.jpg" alt="手机群组" width="240"><br>群组</td>
+    <td align="center"><img src="docs/images/phone-profile.jpg" alt="手机资料设置" width="240"><br>资料</td>
+    <td align="center"><img src="docs/images/phone-devices.jpg" alt="手机登录设备" width="240"><br>登录设备</td>
+  </tr>
+</table>
+
+## 架构
+
+![当前架构](docs/images/proposed-distributed-architecture.svg)
+
+客户端经 APISIX 网关访问：HTTP 接口直达各业务服务，WebSocket 只连接入服务 access。message 在一个事务里写消息和 Outbox 事件，事件经 Kafka 由 delivery 推送到持有连接的 access 实例。通话信令在 access 之间直接转发，媒体走浏览器之间的 WebRTC，可选部署 coturn 中继。
+
+| 服务 | 职责 |
+|---|---|
+| access | WebSocket 接入、心跳、在线路由、通话信令 |
+| account | 验证码、注册登录、令牌、资料、设备、封禁 |
+| social | 好友、申请、黑名单、群与成员角色 |
+| message | 发送、会话列表与未读数、历史、补拉、已读位置 |
+| delivery | 消费事件，推送到对应的 access 或踢下线 |
+| media | 文件上传、缩略图、签名下载地址 |
+
+服务划分、数据流与可靠性设计见 [ARCHITECTURE.md](ARCHITECTURE.md)，选型理由见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md) 和 [ADR-0006](docs/architecture/adr/0006-message-sync-model.md)。
 
 ## 技术栈
 
@@ -22,75 +106,54 @@ MarsChat 是一个 Web 即时通讯系统。后端用 Go + Kratos v3 拆分为�
 | 服务 | Go 1.27.3、Kratos v3（HTTP + gRPC，protobuf 契约）、wire、GORM、go-redis、franz-go、gorilla/websocket |
 | 前端 | React、TypeScript、Vite、Tailwind CSS、shadcn/ui、TanStack Query、zustand、Vitest，pnpm 管理依赖（[ADR-0008](docs/architecture/adr/0008-react-frontend.md)） |
 | 组件 | MySQL、Redis 8（含布隆过滤器）、Kafka、Consul、Apache APISIX，全部由 Docker Compose 提供 |
+| 通话 | WebRTC，可选 coturn 中继 |
 | 可观测 | OpenTelemetry、Prometheus、Alertmanager、Grafana、Jaeger；压测用 k6 |
 | 存储 | 本地目录或阿里云 OSS |
 | 工具 | buf、golang-migrate、GitHub Actions |
 
-## 架构
-
-![当前架构](docs/images/proposed-distributed-architecture.svg)
-
-服务划分、数据流和可靠性设计见 [ARCHITECTURE.md](ARCHITECTURE.md)。
-
-## 目录结构
-
-```
-app/<服务>/        access、account、social、message、delivery、media，按 Kratos 分层（server → service → biz → data）
-api/<服务>/v1/     接口契约 *.proto 与生成代码
-pkg/              跨服务公共组件：启动、鉴权、ID、缓存、布隆过滤器、限流、Outbox、Kafka、遥测等
-deploy/           MySQL、APISIX、Prometheus、Alertmanager、Grafana、Jaeger 的配置与初始化脚本
-test/             e2e（需要 Compose 环境）、cluster（容器模式的集群测试与故障实验）、load（k6 压测）
-web/              前端（React + Vite + pnpm），src/gen/ 为 buf 从 proto 生成的 TS 代码
-docs/             项目文档
-```
-
-完整说明见 [system.md](docs/architecture/system.md#2-仓库结构)。
-
 ## 快速开始
 
-需要 Go 1.27.3、Docker Desktop、buf 1.71.0，在 Git Bash 中执行：
+需要 Go 1.27.3、Docker Desktop、buf 1.71.0、Node.js 与 pnpm，在 Git Bash 中执行：
 
 ```bash
 cp .env.example .env    # 把 change-me 换成随机密码
-make keys               # 生成 JWT 密钥、下载地址签名密钥等，写入 .env
+make keys               # 生成 JWT 密钥等，写入 .env
 make up                 # 启动 MySQL、Redis、Kafka、Consul
 make migrate-account migrate-social migrate-message migrate-media
 make images             # 构建服务镜像
-make web-install        # 前端依赖（需要 Node.js 与 pnpm）
+make web-install        # 安装前端依赖
 make web-image          # 构建前端镜像
-make cluster-up         # 容器模式：多实例服务 + 网关 + 前端，打开 http://localhost:19080
-make call-up            # 可选：通话的 TURN 中继（coturn）
+make cluster-up         # 启动多实例服务、网关与前端，打开 http://localhost:19080
 ```
 
-也可以在宿主机逐个运行服务（`make run-account` 等，每个服务一个终端）。两种方式不能同时运行。
+以下内容见 [deployment.md](docs/deployment.md)：
 
-开发前端时用 Vite 开发服务器，可以和容器模式同时运行，连同一套后端：
+- 宿主机运行服务；
+- 前端开发服务器；
+- 设置管理员；
+- 局域网访问与 HTTPS（浏览器只在 HTTPS 或 localhost 下开放麦克风和摄像头）；
+- TURN 中继、验证码邮件、OSS 存储；
+- 监控与压测。
 
-```bash
-make web-dev            # 开发服务器 http://localhost:5173，/v1 与 /ws 默认代理到网关
-```
-
-浏览器只在 HTTPS 或 `localhost` 下提供麦克风、摄像头和系统通知。局域网内其他设备访问、HTTPS 与域名、TURN 中继的配置，以及端口、监控与压测见 [deployment.md](docs/deployment.md)。
-
-## 开发检查
-
-```bash
-make lint vet test build   # buf lint、go vet、单元测试、构建
-make web-check            # 前端：lint、类型检查、单元测试、构建
-make e2e                   # 端到端测试，需要先启动依赖并在宿主机运行全部服务
-make cluster-test          # 集群测试与故障实验，需要先 make cluster-up
-```
+开发检查命令见 [AGENTS.md](AGENTS.md#验证要求)。
 
 ## 文档
 
-| 文档 | 内容 |
+| 想了解 | 文档 |
 |---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 架构总览 |
-| [docs/README.md](docs/README.md) | 文档索引与编写规则 |
-| [docs/product/overview.md](docs/product/overview.md) | 产品定位与系统边界 |
-| [docs/deployment.md](docs/deployment.md) | 部署与配置 |
-| [AGENTS.md](AGENTS.md) | Coding Agent 工作指南 |
+| 架构总览 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 功能清单与实现状态 | [features.md](docs/product/features.md) |
+| 各模块的流程、接口与代码位置 | [模块文档](docs/README.md#模块文档) |
+| WebSocket 帧格式与通话信令 | [data-flow.md](docs/architecture/data-flow.md) |
+| 表结构与 Redis 键 | [data-model.md](docs/architecture/data-model.md) |
+| 架构决策 | [ADR 索引](docs/architecture/adr/README.md) |
+| 前端设计 | [frontend.md](docs/design/frontend.md) |
+| 部署与配置 | [deployment.md](docs/deployment.md) |
+| 故障实验与压测数据 | [后端重构计划](docs/plans/completed/backend-refactor.md#故障实验结果) |
+| 已知问题 | [tech-debt.md](docs/plans/tech-debt.md) |
+| 全部文档 | [文档索引](docs/README.md) |
+| Coding Agent 工作指南 | [AGENTS.md](AGENTS.md) |
 
 ## 许可证
 
-[MIT License](LICENSE)
+[MIT License](LICENSE)。前端使用的第三方源码与许可证见 [THIRD_PARTY_NOTICES.md](web/THIRD_PARTY_NOTICES.md)。
