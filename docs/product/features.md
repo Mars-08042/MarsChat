@@ -2,7 +2,7 @@
 
 > 本清单是功能实现状态的**唯一权威记录**。功能变化时同步更新本表和对应模块文档。
 
-状态均指后端接口（HTTP、gRPC 与 WebSocket）。前端在重写中，目前接入了认证（登录、注册、令牌刷新、退出）、实时消息（会话列表、文字消息、已读回执、多端同步、断线补拉）、联系人与群组（好友、申请、黑名单、建群、成员管理、好友与群通知）、设置与管理（资料、登录设备、外观、用户列表、封禁与解封）、文件（图片与文件消息、上传进度与取消、头像）、一对一音视频通话（可选 TURN 中继）和设置页的系统通知开关；容器模式下前端由 nginx 容器经网关同源提供（[deployment.md](../deployment.md#前端)），见[前端计划](../plans/active/frontend-rewrite.md)。
+状态均指后端接口（HTTP、gRPC 与 WebSocket）。前端已重写完成（2026-11-22），接入了认证（登录、注册、令牌刷新、退出）、实时消息（会话列表、文字消息、已读回执、多端同步、断线补拉）、联系人与群组（好友、申请、黑名单、建群、成员管理、好友与群通知）、设置与管理（资料、登录设备、外观、用户列表、封禁与解封）、文件（图片与文件消息、上传进度与取消、头像）、一对一音视频通话（可选 TURN 中继）和设置页的系统通知开关；容器模式下前端由 nginx 容器经网关同源提供（[deployment.md](../deployment.md#前端)），见[前端计划](../plans/completed/frontend-rewrite.md)。
 
 **状态**：
 
@@ -88,7 +88,7 @@
 
 ## 通话信令（access） · [av-call.md](modules/av-call.md)
 
-设计见 [call-signaling.md](../design/call-signaling.md)，流程见 [data-flow.md](../architecture/data-flow.md#9-通话信令)。服务端只做信令，媒体为 WebRTC 点对点。前端接入后，媒体连通已手动验证（2026-11-22，同一台机器上两个浏览器互相呼叫，媒体由页面生成，见[前端计划](../plans/active/frontend-rewrite.md)第 8 阶段）。
+设计见 [call-signaling.md](../design/call-signaling.md)，流程见 [data-flow.md](../architecture/data-flow.md#9-通话信令)。服务端只做信令，媒体为 WebRTC 点对点。前端接入后，媒体连通已手动验证（2026-11-22，同一台机器上两个浏览器互相呼叫，媒体由页面生成，见[前端计划](../plans/completed/frontend-rewrite.md)第 8 阶段）。
 
 | 功能 | 说明 | 状态 | 验证情况 | 已知问题 |
 |---|---|---|---|---|
@@ -113,10 +113,10 @@
 
 ## 未实现
 
-后端目前没有以下功能，是否实现随前端重构再定：删除会话、消息撤回、消息搜索、语音消息、离线推送；找回密码、修改密码、修改邮箱、注销账号；管理员操作审计。通话相关的缺口见上方“通话信令”一节。
+后端目前没有以下功能，是否实现另行决定：删除会话、消息撤回、消息搜索、语音消息、离线推送；找回密码、修改密码、修改邮箱、注销账号；管理员操作审计。通话相关的缺口见上方“通话信令”一节。
 
 ## 计划中
 
-- [React 前端重写](../plans/active/frontend-rewrite.md)：React + pnpm 新前端，设计 [frontend.md](../design/frontend.md) 已采纳（[ADR-0008](../architecture/adr/0008-react-frontend.md)），进行中。
+（暂无）
 
-后端已按[后端重构计划](../plans/completed/backend-refactor.md)完成（2026-11-21）。新计划在 `docs/plans/active/` 中建立（规则见 [docs/README.md](../README.md#计划文档)），并在此登记。
+后端已按[后端重构计划](../plans/completed/backend-refactor.md)完成（2026-11-21），前端已按[前端计划](../plans/completed/frontend-rewrite.md)完成（2026-11-22，设计 [frontend.md](../design/frontend.md)，[ADR-0008](../architecture/adr/0008-react-frontend.md)）。新计划在 `docs/plans/active/` 中建立（规则见 [docs/README.md](../README.md#计划文档)），并在此登记。

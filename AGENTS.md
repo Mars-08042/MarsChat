@@ -4,7 +4,7 @@
 
 ## 项目速览
 
-- MarsChat：Web 即时通讯系统，代码在 `dev` 分支。后端是 Kratos v3 微服务（access、account、social、message、delivery、media），接口用 protobuf 定义，2026-11-21 按后端重构计划完成；前端在 `web/` 用 React + pnpm 重写，已接入认证（登录、注册、令牌刷新、退出）、实时消息（文字消息、已读、多端同步、断线补拉）、联系人与群组（好友、申请、黑名单、建群、成员管理、实时通知）、设置与管理（资料、登录设备、外观、封禁）、文件（图片与文件消息、上传进度、头像）和一对一音视频通话（TURN 中继 coturn 可选部署）。容器模式下前端由 nginx 容器经网关同源提供，可以开放给局域网访问（[web-deployment.md](docs/design/web-deployment.md)）。
+- MarsChat：Web 即时通讯系统，代码在 `dev` 分支。后端是 Kratos v3 微服务（access、account、social、message、delivery、media），接口用 protobuf 定义，2026-11-21 按后端重构计划完成；前端在 `web/`，用 React + pnpm 重写，2026-11-22 按前端计划完成，覆盖认证（登录、注册、令牌刷新、退出）、实时消息（文字消息、已读、多端同步、断线补拉）、联系人与群组（好友、申请、黑名单、建群、成员管理、实时通知）、设置与管理（资料、登录设备、外观、封禁）、文件（图片与文件消息、上传进度、头像）和一对一音视频通话（TURN 中继 coturn 可选部署）。容器模式下前端由 nginx 容器经网关同源提供，可以开放给局域网访问（[web-deployment.md](docs/design/web-deployment.md)）。
 - 架构总览见 [ARCHITECTURE.md](ARCHITECTURE.md)，选型见 [ADR-0005](docs/architecture/adr/0005-distributed-architecture.md)、[ADR-0006](docs/architecture/adr/0006-message-sync-model.md) 和 [架构图](docs/images/proposed-distributed-architecture.svg)；后端重构的过程、实测数据与遗留项见 [docs/plans/completed/backend-refactor.md](docs/plans/completed/backend-refactor.md)。
 - Go module 为 `github.com/Mars-08042/MarsChat`。依赖组件由 Compose 提供：MySQL、Redis、Kafka、Consul、APISIX；监控组件（Prometheus、Alertmanager、Grafana、Jaeger）和压测工具 k6 在单独的 profile 中，见 [deployment.md](docs/deployment.md)。文件存储默认用仓库下的本地目录，可切换为阿里云 OSS（[ADR-0007](docs/architecture/adr/0007-object-storage.md)）。
 - 文档只描述当前代码。旧版本（Gin 单体 + Vue 前端）的描述已删除，需要时查看提交 `6624cea`；设计文档与 ADR 中提到的旧基线只是决策背景。
@@ -20,7 +20,7 @@
 | 表、索引、Redis 键 | [data-model.md](docs/architecture/data-model.md)，设计原则见重构计划 |
 | 分层与横切约定 | [system.md](docs/architecture/system.md) |
 | 运行、配置、部署 | [deployment.md](docs/deployment.md)，完整端口表见[重构计划](docs/plans/completed/backend-refactor.md#端口) |
-| 前端与 UI | [前端设计](docs/design/frontend.md)、[前端计划](docs/plans/active/frontend-rewrite.md)、[ADR-0008](docs/architecture/adr/0008-react-frontend.md) |
+| 前端与 UI | [前端设计](docs/design/frontend.md)、[前端计划](docs/plans/completed/frontend-rewrite.md)、[ADR-0008](docs/architecture/adr/0008-react-frontend.md) |
 | 参考实现 | `tmp/teamgram-server/`（只读参考，被 git 忽略），对照清单见重构计划。需要阅读其他第三方源码时同样克隆到 `tmp/`，并切到 `go.mod` 中使用的版本，例如 `tmp/kratos` |
 
 ## 工作规则

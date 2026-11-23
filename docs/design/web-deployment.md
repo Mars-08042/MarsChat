@@ -1,6 +1,6 @@
 # 设计：前端的容器化部署与 HTTPS
 
-- 状态：已采纳（2026-11-22） | 日期：2026-11-22 | 关联：[前端设计](frontend.md) 3.10、第 10 节第 81～82 条，[gateway-multi-instance.md](gateway-multi-instance.md)，[turn-relay.md](turn-relay.md)，[前端计划](../plans/active/frontend-rewrite.md) 第 9 阶段
+- 状态：已采纳（2026-11-22） | 日期：2026-11-22 | 关联：[前端设计](frontend.md) 3.10、第 10 节第 81～82 条，[gateway-multi-instance.md](gateway-multi-instance.md)，[turn-relay.md](turn-relay.md)，[前端计划](../plans/completed/frontend-rewrite.md) 第 9 阶段
 
 前端设计 3.10 约定：构建产物是静态文件，与网关同源，不开 CORS；具体方式在部署阶段单独设计。本文先以提议提交，开发者确认结果见第 8 节。
 

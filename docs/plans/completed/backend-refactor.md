@@ -32,7 +32,7 @@
 
 遗留：
 
-- **随前端重构**：coturn 部署、ICE 服务器与 TURN 临时凭据下发、群通话（步骤 7）；WebRTC 媒体在浏览器中的连通验证；通话记录。后端尚未实现的功能见 [features.md](../../product/features.md#未实现)。
+- **随前端重构**：coturn 部署、ICE 服务器与 TURN 临时凭据下发、群通话（步骤 7）；WebRTC 媒体在浏览器中的连通验证；通话记录。其中 coturn、TURN 临时凭据下发和浏览器中的媒体连通已在[前端计划](frontend-rewrite.md)第 8、9 阶段完成，群通话和通话记录仍未实现。后端尚未实现的功能见 [features.md](../../product/features.md#未实现)。
 - **步骤 10 的可选扩展**未实施：MySQL 主从与读写分离、Consul KV 配置中心、testcontainers 数据层集成测试。
 - **未关闭的技术债**（见 [tech-debt.md](../tech-debt.md)）：中优先级 TD-42（delivery 全部停止后没有告警）、TD-26（服务间 gRPC 没有认证）；低优先级 TD-25、TD-28、TD-32、TD-33、TD-37、TD-38、TD-43。
 

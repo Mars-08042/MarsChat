@@ -1,10 +1,40 @@
 # 计划：React 前端重写
 
-- 状态：进行中 | 开始：2026-11-20 | 分支：`dev`（2026-11-21 起；此前在 `ui` 分支的独立 worktree） | 关联设计：[frontend.md](../../design/frontend.md)（已采纳）、[ADR-0008](../../architecture/adr/0008-react-frontend.md)
+- 状态：已完成 | 开始：2026-11-20 | 完成：2026-11-22 | 分支：`dev`（2026-11-21 起；此前在 `ui` 分支的独立 worktree），合并进 `main`：`aebde87` | 关联设计：[frontend.md](../../design/frontend.md)（已采纳）、[ADR-0008](../../architecture/adr/0008-react-frontend.md)
 
 ## 目标
 
 用 React + pnpm 重写前端，覆盖新后端已有的全部用户功能。视觉以火星红为唯一强调色，暖色中性色为底，提供亮色和深色两套主题。按 [data-flow.md](../../architecture/data-flow.md) 的客户端约定实现连接与同步，把后端的可靠性（发送确认、幂等重发、断线补拉、多端同步、已读回执）做成用户看得见的交互。
+
+## 结果
+
+2026-11-22 完成。前端覆盖了后端已有的全部用户功能：认证、实时消息、联系人与群组、设置与管理、文件与头像、一对一音视频通话。容器模式下由 nginx 容器经网关同源提供，可以开放给局域网访问，coturn 中继可选部署。功能状态见 [features.md](../../product/features.md)，部署见 [deployment.md](../../deployment.md#前端)，实施中的调整见设计第 10 节（共 89 条）。
+
+| 阶段 | 提交 |
+|---|---|
+| 0. 设计确认 | `5966072` |
+| 1. 工程骨架 | `771c5f5` |
+| 2. 视觉原型 | `3f466b3`、`0edd721`（平台表情）、`9a737ab`（`ui` 合并进 `dev`）、`54a95f0`、`7d193b4`（删除演示数据） |
+| 3. 认证 | `07ac848` |
+| 4. 实时连接与消息 | `02870ff` |
+| 5. 联系人与群组 | `70ee228` |
+| 6. 设置与管理 | `833bdb7`、`e1d38be`（管理页分页列表） |
+| 7. 文件 | `22d74a5` |
+| 8. 通话 | `771b230`；联调中发现的 TD-44 的修复 `b803281`、删除通话原型 `6ee0a7e` |
+| 9. 打磨与部署 | `a758ef1`；本计划移到 `completed/` 的提交 |
+
+最终验证（2026-11-22，提交 `a758ef1`）：
+
+- 本地按 CI 的步骤运行：`buf lint`、`buf breaking`（对合并前的 `main`）、`make gen` 后无差异、`go mod tidy -diff`、`go vet ./...`、`go build ./...`、`go test -race ./...`（32 个包）、`make web-check`（单元测试 443 项、31 个文件，首屏 JS 1,018 KB）全部通过；改动的文档中相对链接全部可达；
+- `dev` 合并进 `main`（`aebde87`）并推送，GitHub Actions 的 CI 通过；
+- 容器模式（`make images`、`make web-image`、`make cluster-up`）部署的镜像与提交的代码一致，经 `http://localhost:19080` 使用；
+- 本计划期间没有运行宿主机模式的 `make e2e` 和容器模式的 `make cluster-test`，第 6 阶段新增的 e2e 用例 `TestAdminListUsers` 也没有运行。
+
+遗留：
+
+- **未实施**：虚拟列表（按实测数据不做，设计第 10 节第 83 条）；群通话（需要 SFU）；公网部署（HTTPS 与域名的做法见 [web-deployment.md](../../design/web-deployment.md) 第 4 节）；TURN 的 TLS 和凭据过期验证（TD-46）。后端没有的功能见 [features.md](../../product/features.md#未实现)。
+- **未验证**（各阶段记录的汇总）：手机和真正的窄屏视口；真实的摄像头和麦克风、授权后的系统通知、系统开启「减少动态效果」；其他设备经局域网访问和通话、跨网络的 TURN 中继；阿里云 OSS 模式下的前端联调；第 8 阶段一次用关闭码 4999 断开时通话没有结束，没能复现；第 9 阶段 `make cluster-up` 重建 MySQL 容器的原因。
+- **未关闭的技术债**（见 [tech-debt.md](../tech-debt.md)）：中优先级 TD-45、TD-42、TD-26；低优先级 TD-46、TD-25、TD-28、TD-32、TD-33、TD-37、TD-38、TD-43。
 
 ## 范围与约定
 
@@ -113,9 +143,9 @@
 - [x] 部署 coturn 与 TURN 临时凭据下发（从第 8 阶段推迟，开发者 2026-11-22 确认）：[turn-relay.md](../../design/turn-relay.md) 经开发者确认后实施（2026-11-22），`CallAck` 新增 `ice_servers`，coturn 在 profile `call`，用 relay-only 模式验证（第 89 条）。
 - [x] 系统通知的权限申请入口（第 8 阶段只在已授权时发送来电通知，设计第 10 节第 79 条）：设置页新增「通知」页签（2026-11-22，第 85 条）。
 - [x] 文档：`README.md`、`ARCHITECTURE.md`、`deployment.md`、`system.md`、`features.md`、各模块文档；设计补上「实施中的调整」（2026-11-22）。另外更新了 `AGENTS.md`（端口绑定的例外）、`data-flow.md` 9.5、`overview.md`、重构计划的端口表，新增 TD-46 和经验文档 [single-file-bind-mount-stale.md](../../lessons/single-file-bind-mount-stale.md)。
-- [ ] 补上本计划的最终结果和验证情况，移到 `plans/completed/`。
+- [x] 补上本计划的最终结果和验证情况，移到 `plans/completed/`（2026-11-22）。
 
-## 当前进度与下一步
+## 进度记录
 
 第 0 阶段已完成（2026-11-20）：设计已采纳，ADR-0008 已写好。核对依赖时，TypeScript 改为锁定 6.0.3（设计第 10 节）。提交 `5966072`（`ui` 分支）。
 
@@ -248,7 +278,7 @@
 - 测完删除了页面里的替换脚本，白露退出登录，5174 的 Vite 已停止；
 - 未验证：真实的摄像头和麦克风（媒体是页面里生成的），设备权限被拒、被占用的提示只有单元测试；铃声是否真的响（Web Audio 合成，无法听到）；系统通知（没有授权）；真实的断网和网络抖动（用关闭 WebSocket、关闭 `RTCPeerConnection` 模拟）；跨网络和 TURN（没有部署 coturn）；窄屏与手机布局。另外，第一次手动关闭 WebSocket（关闭码 4999）时通话没有结束，服务端也没有结束这通通话；之后用 4000、4999 各重试一次都正常结束，没能复现，原因未查明。
 
-第 9 阶段（2026-11-22）：前端打磨、部署与 coturn 都已完成，实施中的调整见设计第 10 节第 81～89 条，部署与 TURN 的确认结果和调整见 [web-deployment.md](../../design/web-deployment.md) 第 8 节、[turn-relay.md](../../design/turn-relay.md) 第 8～9 节。剩下最后一项：补最终结果、移到 `completed/`。
+第 9 阶段完成（2026-11-22，提交 `a758ef1`）：前端打磨、部署与 coturn，实施中的调整见设计第 10 节第 81～89 条，部署与 TURN 的确认结果和调整见 [web-deployment.md](../../design/web-deployment.md) 第 8 节、[turn-relay.md](../../design/turn-relay.md) 第 8～9 节。
 
 前端打磨的验证：
 - `make web-check` 通过：lint、类型检查、单元测试 440 项（31 个文件，新增通知页签 5 项、非 HTTPS 的设备提示 1 项）、构建，不再出现 Vite 的 500 KB 提示；
@@ -269,7 +299,7 @@
 - 验证用的局域网地址、TURN 地址只在命令行传入，`.env` 只由 `make keys` 追加了 `MARSCHAT_TURN_SECRET`；验证后网关恢复只绑定 `127.0.0.1`，coturn 已删除，access 恢复为不下发 TURN；
 - 未验证：真正的其他设备（手机）经局域网访问和通话（需要在设备上信任证书、放行防火墙）；在证书警告页点「继续访问」后浏览器是否允许使用麦克风；公网部署；跨网络的 TURN 中继、TURN over TCP 与 TLS、凭据过期（TD-46）；`make cluster-up` 时 MySQL 容器被重建（数据卷保留、数据完好），重建时间就是这次 `cluster-up`，本次改动没有涉及 MySQL 的配置，旧容器已删除，原因没能查明。
 
-下一步：开发者确认后补最终结果，把本计划移到 `plans/completed/`（同时更新引用它的链接）。
+收尾（2026-11-22）：开发者同意后，`dev` 合并进 `main`（`aebde87`）并推送，CI 通过；之后补上[结果](#结果)，本计划移到 `plans/completed/`，同时更新了引用它的链接和仍写着「前端重写中」的描述。
 
 ## 遇到的问题
 
