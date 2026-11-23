@@ -12,6 +12,7 @@ import { useSession } from "@/stores/session"
 import { useUi } from "@/stores/ui"
 import { useNavItems, type NavItem } from "./nav-items"
 import { NavRail } from "./NavRail"
+import { preloadAppPages } from "./pages"
 import { useNavBadge, useUnreadTitle } from "./use-unread-total"
 
 // 登录后的主框架（设计 3.4.4）：768px 及以上左侧导航栏；以下改为底部标签栏，进入会话时整屏显示会话
@@ -21,6 +22,7 @@ export function AppShell() {
   useCurrentUser()
   useRealtime()
   useRegisterNavigate()
+  usePreloadPages()
 
   return (
     <div className="flex h-svh overflow-hidden bg-background text-foreground">
@@ -78,6 +80,16 @@ function useRealtime() {
       }
     }
   }, [userId])
+}
+
+// 当前页面加载完、实时连接建立之后再预取其他页面，不和首屏的请求抢带宽
+const PRELOAD_DELAY_MS = 2000
+
+function usePreloadPages() {
+  useEffect(() => {
+    const timer = setTimeout(preloadAppPages, PRELOAD_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [])
 }
 
 function MobileTabBar() {

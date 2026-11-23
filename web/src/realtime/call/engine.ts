@@ -21,6 +21,7 @@ import {
   type CallIncoming,
   type CallSignal,
   type CallSignalSchema,
+  type IceServer,
 } from "@/gen/access/v1/call_pb"
 import type { StoreApi } from "zustand/vanilla"
 import {
@@ -80,8 +81,9 @@ export interface CallEngineDeps {
   createPeerConnection: (config: RTCConfiguration) => RTCPeerConnection
   // 浏览器能否建立 WebRTC 连接。一些防 IP 泄露的扩展会把 RTCPeerConnection 置为 undefined
   webrtcSupported: () => boolean
-  // 后端暂不下发 STUN/TURN（coturn 推迟到第 9 阶段），先返回空数组，同一台机器或局域网内可以直连
-  iceServers: () => RTCIceServer[]
+  // STUN/TURN 服务器来自这通通话的 CallAck（邀请或接听的回复），这里只决定是否强制只走中继：
+  // 排查 TURN 部署时用 "relay"，平时 "all"（docs/design/turn-relay.md 3.3）
+  iceTransportPolicy?: () => RTCIceTransportPolicy
   // 来电方的资料：本地有就直接用，没有时先显示「用户 <ID>」，取到后替换
   user: (id: string) => ChatUser | undefined
   loadUser: (id: string) => Promise<ChatUser | undefined>
@@ -138,6 +140,8 @@ interface Session {
   makingOffer: boolean
   ignoreOffer: boolean
   pendingIce: RTCIceCandidateInit[]
+  // CallAck 带来的 STUN/TURN 服务器；服务端没有配置 TURN 时为空，只用本机地址
+  iceServers: RTCIceServer[]
   // 收到的信令逐条处理，前一条的异步协商结束后再处理下一条
   chain: Promise<void>
   outbox: SignalPayload[]
@@ -217,6 +221,7 @@ export function createCallEngine(deps: CallEngineDeps): CallEngine {
     makingOffer: false,
     ignoreOffer: false,
     pendingIce: [],
+    iceServers: [],
     chain: Promise.resolve(),
     outbox: [],
     sentAt: [],
@@ -364,7 +369,7 @@ export function createCallEngine(deps: CallEngineDeps): CallEngine {
     if (s.pc) return s.pc
     let pc: RTCPeerConnection
     try {
-      pc = deps.createPeerConnection({ iceServers: deps.iceServers() })
+      pc = deps.createPeerConnection({ iceServers: s.iceServers, iceTransportPolicy: deps.iceTransportPolicy?.() ?? "all" })
     } catch (e) {
       warn("create peer connection failed", { error: String(e) })
       hangupAndEnd(s, "media-failed")
@@ -612,6 +617,8 @@ export function createCallEngine(deps: CallEngineDeps): CallEngine {
         return true
       }
       if (session !== s) return true
+      // 只有邀请和接听的回复带 ICE 服务器；主叫在 CallAccepted 之后、被叫在下面接听成功时才创建连接，都已拿到
+      if (p.kind === "invite" || p.kind === "accept") s.iceServers = toRtcIceServers(ack.iceServers)
       if (p.kind === "invite") {
         s.callId = ack.callId
         patchCall(s, { callId: ack.callId, phase: { kind: "outgoing", since: now() } })
@@ -715,4 +722,11 @@ export function createCallEngine(deps: CallEngineDeps): CallEngine {
       store.setState({ call: null, notice: null })
     },
   }
+}
+
+// CallAck 里的 IceServer 转成 RTCIceServer；STUN 没有用户名和密码，不带这两个字段
+export function toRtcIceServers(servers: IceServer[]): RTCIceServer[] {
+  return servers
+    .filter((s) => s.urls.length > 0)
+    .map((s) => (s.username ? { urls: [...s.urls], username: s.username, credential: s.credential } : { urls: [...s.urls] }))
 }

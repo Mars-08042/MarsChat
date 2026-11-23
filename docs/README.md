@@ -68,6 +68,7 @@ docs/
 | [consul-no-leader-resolver.md](lessons/consul-no-leader-resolver.md) | 服务在 Consul 选出 leader 之前启动，第一次服务发现查询失败后 contrib 留下空的登记，到下游的 gRPC 调用一直超时，直到重启 |
 | [background-tab-heartbeat-throttling.md](lessons/background-tab-heartbeat-throttling.md) | 后台标签页的定时器被节流到约每分钟一次，按「多久没收到帧」判断心跳超时会误判失联；改为按 `Ping` 有没有回音判断 |
 | [vite-hmr-module-singleton.md](lessons/vite-hmr-module-singleton.md) | 持有连接单例的模块被热替换后，组件拿到实例为空的新模块，打开会话、退群跳转静默失效；改为这个模块改动时整页刷新 |
+| [single-file-bind-mount-stale.md](lessons/single-file-bind-mount-stale.md) | 编辑器改名替换单文件挂载的 `apisix.yaml` 后，容器里仍是缺少 `#END` 的旧内容，APISIX 静默保留旧配置；重建网关容器 |
 
 ## 编写规则
 

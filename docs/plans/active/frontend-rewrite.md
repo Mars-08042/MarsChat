@@ -107,12 +107,12 @@
 
 ### 9. 打磨与部署
 
-- [ ] 逐项复核动效清单、「减少动态效果」降级、键盘可达性、对比度、产物体积。
-- [ ] 按路由拆包，登录页的 WebGL 背景单独懒加载；删除 `src/dev/`（演示数据和示例图片已于第 2 阶段删除）。第 2 阶段原型除表情面板外打成一个包，JS 822 KB（gzip 271 KB），超过 Vite 的 500 KB 提示线。
-- [ ] 设计部署方式（与网关同源，例如静态文件容器经 APISIX 的 `/` 路由提供）。修改 Compose 和网关配置前先确认。
-- [ ] 部署 coturn 与 TURN 临时凭据下发（从第 8 阶段推迟，开发者 2026-11-22 确认）：先审阅 [turn-relay.md](../../design/turn-relay.md) 的待确认问题，确认后再改 Compose、proto 和 access；用 relay-only 模式验证。
-- [ ] 系统通知的权限申请入口（第 8 阶段只在已授权时发送来电通知，设计第 10 节第 79 条）。
-- [ ] 文档：`README.md`、`ARCHITECTURE.md`、`deployment.md`、`system.md`、`features.md`、各模块文档；设计补上「实施中的调整」。
+- [x] 逐项复核动效清单、「减少动态效果」降级、键盘可达性、对比度、产物体积（2026-11-22）。补上弹层在「减少动态效果」下的 CSS 降级，消息行改为 `memo`，虚拟列表按实测数据建议不做（设计第 10 节第 83、86、87 条）。
+- [x] 按路由拆包，登录页的 WebGL 背景单独懒加载；删除 `src/dev/`（2026-11-22，第 82、84 条）。首屏 JS 从 1,289.79 KB 降到 1,018.05 KB（gzip 319.89 KB），最大的文件 350.11 KB。
+- [x] 设计部署方式（与网关同源，例如静态文件容器经 APISIX 的 `/` 路由提供）。修改 Compose 和网关配置前先确认。[web-deployment.md](../../design/web-deployment.md) 经开发者确认后实施（2026-11-22）：nginx 容器、网关 `/` 路由兜底、复用开发时的 Compose 项目；支持局域网访问；HTTPS 与域名的做法写在第 4 节，公网部署不实施（设计第 10 节第 88 条）。
+- [x] 部署 coturn 与 TURN 临时凭据下发（从第 8 阶段推迟，开发者 2026-11-22 确认）：[turn-relay.md](../../design/turn-relay.md) 经开发者确认后实施（2026-11-22），`CallAck` 新增 `ice_servers`，coturn 在 profile `call`，用 relay-only 模式验证（第 89 条）。
+- [x] 系统通知的权限申请入口（第 8 阶段只在已授权时发送来电通知，设计第 10 节第 79 条）：设置页新增「通知」页签（2026-11-22，第 85 条）。
+- [x] 文档：`README.md`、`ARCHITECTURE.md`、`deployment.md`、`system.md`、`features.md`、各模块文档；设计补上「实施中的调整」（2026-11-22）。另外更新了 `AGENTS.md`（端口绑定的例外）、`data-flow.md` 9.5、`overview.md`、重构计划的端口表，新增 TD-46 和经验文档 [single-file-bind-mount-stale.md](../../lessons/single-file-bind-mount-stale.md)。
 - [ ] 补上本计划的最终结果和验证情况，移到 `plans/completed/`。
 
 ## 当前进度与下一步
@@ -248,7 +248,28 @@
 - 测完删除了页面里的替换脚本，白露退出登录，5174 的 Vite 已停止；
 - 未验证：真实的摄像头和麦克风（媒体是页面里生成的），设备权限被拒、被占用的提示只有单元测试；铃声是否真的响（Web Audio 合成，无法听到）；系统通知（没有授权）；真实的断网和网络抖动（用关闭 WebSocket、关闭 `RTCPeerConnection` 模拟）；跨网络和 TURN（没有部署 coturn）；窄屏与手机布局。另外，第一次手动关闭 WebSocket（关闭码 4999）时通话没有结束，服务端也没有结束这通通话；之后用 4000、4999 各重试一次都正常结束，没能复现，原因未查明。
 
-下一步：第 9 阶段（打磨与部署），其中 coturn 先审阅 [turn-relay.md](../../design/turn-relay.md)；第 2 阶段剩余的「减少动态效果」和禁用 WebGL 时的降级检查。
+第 9 阶段（2026-11-22）：前端打磨、部署与 coturn 都已完成，实施中的调整见设计第 10 节第 81～89 条，部署与 TURN 的确认结果和调整见 [web-deployment.md](../../design/web-deployment.md) 第 8 节、[turn-relay.md](../../design/turn-relay.md) 第 8～9 节。剩下最后一项：补最终结果、移到 `completed/`。
+
+前端打磨的验证：
+- `make web-check` 通过：lint、类型检查、单元测试 440 项（31 个文件，新增通知页签 5 项、非 HTTPS 的设备提示 1 项）、构建，不再出现 Vite 的 500 KB 提示；
+- 拆包：生产构建的首屏 JS 1,018.05 KB（gzip 319.89 KB），原来是一个 1,289.79 KB 的主包；只改应用代码时四组第三方库文件的哈希不变。浏览器（`vite preview`）打开登录页只下载登录布局、登录表单和选中的背景，登录后再下载主框架和聊天页，2 秒后预取其他页面；把管理页的代码文件改名模拟发布新版本，打开管理页显示「页面加载失败」和刷新按钮，测完已改回；
+- 性能：生产构建往单聊注入合成消息，用 `PerformanceObserver` 记录长任务，数据见第 83 条；
+- 「减少动态效果」：在页面里注入媒体查询内的样式，确认弹层的缩放和位移变量被固定、起止状态没有 `scale`；
+- WebGL 降级：设置页外观预览里把 `getContext` 改为返回 `null`，切换三个背景都露出静态渐变，没有报错；
+- 通知页签：组件测试 5 项（申请、已阻止、非 HTTPS、不支持、切回页面重新读取）；浏览器里显示「还没有开启」和「允许通知」；
+- 非 HTTPS 的通话提示：单元测试；
+- 未验证：系统真正开启「减少动态效果」时的效果（浏览器扩展不能模拟 `prefers-reduced-motion`，只验证了样式规则）；点击「允许通知」和测试通知（会修改浏览器的网站权限，没有点击）；滚动帧率（Chrome 窗口被遮挡时 `requestAnimationFrame` 降到每秒 1 帧，测不了，改用长任务衡量）；用局域网 IP 经 HTTP 访问时的提示（本机只有 `localhost`）。
+
+部署与 TURN 的验证（容器模式，复用开发时的 Compose 项目）：
+- `buf lint`、`buf breaking`（对 `dev` 分支，`CallAck` 只加字段）、`go vet ./...`、`go build ./...`、`go test ./...`（32 个包，新增 access 的凭据与 `CallAck` 用例、配置校验，`tools/devcert` 的名单解析与不覆盖已有证书）通过；`make web-check` 通过：单元测试 443 项（31 个文件，新增引擎的 TURN 用例 3 项），首屏 JS 1,018.33 KB；
+- `make images`、`make web-image`（前端镜像约 130 MB）、`make cluster-up` 后用 curl 核对：`/`、`/chat/<id>`、`/settings/appearance` 返回页面且 `no-cache`；`/assets/*` 为 `immutable` 并经 gzip 压缩；缺失的 `/assets/nope.js` 返回 404 且不带缓存头（修正前带着一年的缓存头）；`/v1/不存在` 返回 nginx 的 404；原有的 `/v1/users/me`（401）、`/ws` 仍由原来的上游处理；带 ETag 的请求返回 304；HTTPS 用自定义域名访问时能匹配证书（`sni: "*"`）；
+- 浏览器经 `http://localhost:19080` 登录阿星，WebSocket 已连接；刷新深层地址正常；会话里 7 张图片都从页面同源加载（相对路径）；打开表情面板发出 119 个请求，全部 200，没有被限流；
+- 局域网：网关的 HTTPS 临时绑定到本机的局域网地址，经局域网 IP 访问页面 200、接口 401，HTTP 端口仍只在 `127.0.0.1`；`make certs` 的 `-hosts` 生成的证书包含局域网地址（单元测试与临时目录）；
+- TURN：coturn 自带工具与浏览器只走中继的通话都已验证，详见 turn-relay.md 第 9 节；
+- 验证用的局域网地址、TURN 地址只在命令行传入，`.env` 只由 `make keys` 追加了 `MARSCHAT_TURN_SECRET`；验证后网关恢复只绑定 `127.0.0.1`，coturn 已删除，access 恢复为不下发 TURN；
+- 未验证：真正的其他设备（手机）经局域网访问和通话（需要在设备上信任证书、放行防火墙）；在证书警告页点「继续访问」后浏览器是否允许使用麦克风；公网部署；跨网络的 TURN 中继、TURN over TCP 与 TLS、凭据过期（TD-46）；`make cluster-up` 时 MySQL 容器被重建（数据卷保留、数据完好），重建时间就是这次 `cluster-up`，本次改动没有涉及 MySQL 的配置，旧容器已删除，原因没能查明。
+
+下一步：开发者确认后补最终结果，把本计划移到 `plans/completed/`（同时更新引用它的链接）。
 
 ## 遇到的问题
 
@@ -271,4 +292,14 @@
 - 2026-11-22：第 8 阶段联调时，测试脚本包装 `RTCPeerConnection` 时报 `not a constructor`，查下来是开发者 Chrome 里的一个防 IP 泄露扩展把页面的 `RTCPeerConnection` 置为 `undefined`（属性还在，值是 `undefined`）。引擎原来没有检测，创建连接会直接抛错，于是补上了检测与提示，创建失败也会结束通话（设计第 10 节第 76 条）。经开发者同意，测试页借用 iframe 里的构造函数，能创建连接，但受浏览器 WebRTC IP 策略限制，连只带数据通道的连接也收集不到任何候选，15 秒后两端都按「网络无法直连」结束。开发者关闭这个扩展后，正常收集到 host 候选并连通。
 - 2026-11-22：Docker 重启后所有容器同时启动，除了 TD-44 记录的 access，message 调用 account、social，social 调用 account 的服务发现也失效了（会话列表、好友列表缺少昵称，日志为 `dependency unavailable`）。依次重启两个 message、两个 access 和 social 后恢复。随后修复了 TD-44（启动时先等 Consul 选出 leader），运行期间的同类问题记为 TD-45。
 - 2026-11-22：写 TURN 提议时 Context7 连接失败（`ECONNRESET`），coturn 的选项和 TURN REST API 约定改为直接读 coturn 仓库的 `examples/etc/turnserver.conf`。
+- 2026-11-22：删除 `fake-call-store.ts` 时用了 `git rm`，删除被直接暂存，随后跟着 TD-44 的修复一起进了提交 `b803281`，文档的后续修改单独提交为 `6ee0a7e`。没有改写历史；以后删除文件先用普通的 `rm`，提交时再按范围暂存。
+- 2026-11-22：第 9 阶段查 React Router 懒加载路由的用法时，Context7 连接失败（`ECONNRESET`），reactrouter.com 也无法抓取，改为直接读 `node_modules/react-router` 的类型声明和源码（占位只渲染到最深的带 `hydrateFallbackElement` 的路由，就是从源码里确认的）。
+- 2026-11-22：测量时间线性能时，Chrome 窗口被遮挡，`requestAnimationFrame` 降到每秒 1 帧，按帧计时的脚本超时；`long-animation-frame` 也拿不到记录。改用 `PerformanceObserver` 的 `longtask` 统计超过 50 毫秒的主线程任务。放在 `tmp/` 的 Vite 配置文件被当成 CommonJS 加载而报错，改成 `.mts` 后正常。
+- 2026-11-22：给网关加前端路由后 `/` 一直是 `404 Route Not Found`，自定义域名的 HTTPS 握手失败，日志没有加载错误。容器里的 `apisix.yaml` 还是旧文件、末尾没有 `#END`：编辑工具改名替换文件后，单文件挂载看不到新内容，APISIX 静默保留旧配置。重建网关容器后正常，写成经验文档 [single-file-bind-mount-stale.md](../../lessons/single-file-bind-mount-stale.md)。
+- 2026-11-22：coturn 配置 `user-quota=4` 时，coturn 自带的 `turnutils_uclient` 第一次认证分配就收到 486（Allocation Quota Reached）。另起临时 coturn 对比，去掉配额正常、设为 10 正常，改为 10（turn-relay.md 第 9 节）。
+- 2026-11-22：coturn 的密钥最初在 Compose 里写成 `${MARSCHAT_TURN_SECRET:?...}` 必填，结果 `docker compose config` 直接报错：Compose 不分 profile 插值整个文件，没配置 TURN 的人连 `make up` 都会失败。改为可空，由 `make call-up` 检查。
+- 2026-11-22：access 配置里的 TURN 有效期写成 `12h`，配置测试报 `invalid google.protobuf.Duration value`：protojson 的时长只能写成秒，改为 `43200s`。
+- 2026-11-22：nginx 的 `Cache-Control` 加了 `always`，缺失的 `/assets/` 文件返回的 404 也带上了一年的 `immutable`，浏览器可能把 404 缓存一年。去掉 `always` 后只给成功响应加缓存头。
+- 2026-11-22：浏览器扩展不允许打开 `127.0.0.1`，第二个用户改用 Vite 开发服务器 `[::1]:5173`（同一套后端）。被叫页面的接听用脚本 `click()` 触发，没有用户操作，页面里合成的音源没有启动，所以只验证了主叫到被叫方向的媒体包。
+- 2026-11-22：`make cluster-up` 重建了 MySQL 容器（数据卷保留），本次没有改 MySQL 的配置，旧容器已删除，原因没能查明。之后执行 `make cluster-up` 时留意它是否还会重建。
 - 2026-11-21：第一次测多标签页刷新时，用 `setTimeout` 约定同一时刻触发，但两个后台标签页的定时器被 Chrome 节流，晚了约 100 毫秒，这时前台标签页已经刷新完，没有形成锁竞争。改用 BroadcastChannel 唤醒（后台标签页的消息事件不受定时器节流影响），并把刷新请求延迟 300 毫秒，三次刷新才真正重叠。

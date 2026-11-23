@@ -43,6 +43,48 @@ func TestConfigFileParses(t *testing.T) {
 	if got := bc.GetCall().GetRingTimeout().AsDuration(); got != 60*time.Second {
 		t.Errorf("call.ring_timeout = %v, want 60s", got)
 	}
+	// 没有设置 MARSCHAT_TURN_URLS 时不下发 TURN，开发环境不依赖 coturn
+	if got := bc.GetCall().GetTurn().GetUrls(); got != "" {
+		t.Errorf("call.turn.urls = %q, want empty by default", got)
+	}
+	if got := bc.GetCall().GetTurn().GetTtl().AsDuration(); got != 12*time.Hour {
+		t.Errorf("call.turn.ttl = %v, want 12h", got)
+	}
+}
+
+// 环境变量填了 TURN 地址时，配置能读到；配置了地址却没有密钥，校验必须拒绝。
+func TestTurnConfig(t *testing.T) {
+	t.Setenv(bootstrap.EnvPrefix+"JWT_PUBLIC_KEY", "test-public-key")
+	t.Setenv(bootstrap.EnvPrefix+"TURN_URLS", "turn:192.0.2.10:13478?transport=udp,turn:192.0.2.10:13478?transport=tcp")
+	t.Setenv(bootstrap.EnvPrefix+"TURN_SECRET", "s3cret")
+	var bc conf.Bootstrap
+	c, err := bootstrap.LoadConfig("../../configs", &bc)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	defer c.Close()
+	if got := bc.GetCall().GetTurn().GetSecret(); got != "s3cret" {
+		t.Errorf("call.turn.secret = %q, want s3cret", got)
+	}
+
+	for _, tc := range []struct {
+		name string
+		turn *conf.Turn
+		ok   bool
+	}{
+		{"disabled", &conf.Turn{}, true},
+		{"udp and tcp", &conf.Turn{Urls: "turn:a:3478?transport=udp, turns:a:5349?transport=tcp", Secret: "s"}, true},
+		{"stun", &conf.Turn{Urls: "stun:a:3478", Secret: "s"}, true},
+		{"missing secret", &conf.Turn{Urls: "turn:a:3478"}, false},
+		{"wrong scheme", &conf.Turn{Urls: "http://a:3478", Secret: "s"}, false},
+		{"empty item", &conf.Turn{Urls: "turn:a:3478,,turn:b:3478", Secret: "s"}, false},
+		{"ttl too short", &conf.Turn{Urls: "turn:a:3478", Secret: "s", Ttl: durationpb.New(time.Second)}, false},
+	} {
+		err := protovalidate.Validate(tc.turn)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: err = %v, want ok=%v", tc.name, err, tc.ok)
+		}
+	}
 }
 
 // 心跳超时不大于心跳间隔时，客户端按间隔发心跳也会被断开，配置校验必须拒绝。

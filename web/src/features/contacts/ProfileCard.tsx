@@ -9,7 +9,7 @@ import { CopyId } from "@/components/common/CopyId"
 import { UserAvatar } from "@/components/common/UserAvatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import type { ChatUser, Conversation } from "@/features/chat/types"
+import type { ChatUser, ConversationRef } from "@/features/chat/types"
 import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { chat } from "@/realtime/client"
@@ -25,7 +25,7 @@ interface ProfileCardProps {
   // store 里已有的资料，打开前先用它渲染头像
   user?: ChatUser
   // 在哪个会话里打开：单聊里点对方头像时不再显示「发消息」
-  conversation?: Conversation
+  conversation?: ConversationRef
   children: ReactNode
 }
 
@@ -78,7 +78,7 @@ function CardContent({
 }: {
   userId: string
   fallback?: ChatUser
-  conversation?: Conversation
+  conversation?: ConversationRef
   onDone: () => void
 }) {
   const meId = useChat((s) => s.meId)
@@ -111,7 +111,7 @@ function CardContent({
   )
 }
 
-function Actions({ userId, name, conversation, onDone }: { userId: string; name: string; conversation?: Conversation; onDone: () => void }) {
+function Actions({ userId, name, conversation, onDone }: { userId: string; name: string; conversation?: ConversationRef; onDone: () => void }) {
   const friends = useFriends()
   const sent = useSentRequests()
   const [composing, setComposing] = useState(false)

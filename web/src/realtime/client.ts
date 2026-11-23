@@ -21,7 +21,7 @@ import { RevokeReason } from "@/gen/account/v1/events_pb"
 import { ConversationType } from "@/gen/message/v1/message_pb"
 import { planChatUpload } from "@/features/chat/files"
 import { toLocalFile } from "@/features/chat/local-file"
-import type { CallMedia } from "@/features/call/call-text"
+import { INSECURE_CONTEXT_ERROR, type CallMedia } from "@/features/call/call-text"
 import type { ChatMessage, ChatUser, Conversation, MessageContent } from "@/features/chat/types"
 import { groupBlock, type GroupInfo, type MemberItem } from "@/features/groups/model"
 import { groupQuery, membersQuery } from "@/features/groups/queries"
@@ -100,6 +100,15 @@ interface Instance {
 let current: Instance | null = null
 
 const patch = (p: Partial<ReturnType<typeof chatStore.getState>>) => chatStore.setState(p)
+
+// 隐私模式等情况下读 localStorage 会抛错，当作没有打开
+function readDebugFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1"
+  } catch {
+    return false
+  }
+}
 
 function replaceInOutbox(message: ChatMessage) {
   chatStore.setState((s) => {
@@ -198,14 +207,18 @@ export function startRealtime(meId: string): (options?: StopOptions) => void {
   const calls = createCallEngine({
     store: callStore,
     send: (body) => conn.send(body),
-    // 非安全上下文（http 且不是本机地址）没有 mediaDevices，按设备不可用提示
-    getUserMedia: (constraints) =>
-      navigator.mediaDevices ? navigator.mediaDevices.getUserMedia(constraints) : Promise.reject(new DOMException("mediaDevices unavailable", "NotSupportedError")),
+    // 非安全上下文（http 且不是 localhost、127.0.0.1、[::1]）浏览器不提供 mediaDevices，单独提示要用 HTTPS
+    getUserMedia: (constraints) => {
+      if (!window.isSecureContext) return Promise.reject(new DOMException("insecure context", INSECURE_CONTEXT_ERROR))
+      if (!navigator.mediaDevices) return Promise.reject(new DOMException("mediaDevices unavailable", "NotSupportedError"))
+      return navigator.mediaDevices.getUserMedia(constraints)
+    },
     createPeerConnection: (config) => new RTCPeerConnection(config),
     // 不能写成 "RTCPeerConnection" in window：扩展把它置为 undefined 时属性仍然存在
     webrtcSupported: () => typeof window.RTCPeerConnection === "function",
-    // 后端暂不下发 STUN/TURN（coturn 推迟到第 9 阶段，设计 3.9.5）
-    iceServers: () => [],
+    // 排查 TURN 部署用：在控制台执行 localStorage.setItem("marschat.debug.ice-relay", "1") 后，
+    // 通话只走中继，连不通说明 coturn 或凭据有问题（docs/design/turn-relay.md 3.3）。只影响本机这个浏览器
+    iceTransportPolicy: () => (readDebugFlag("marschat.debug.ice-relay") ? "relay" : "all"),
     user: (id) => chatStore.getState().users[id],
     loadUser: async (id) => {
       await loadUser(id)

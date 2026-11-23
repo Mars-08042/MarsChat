@@ -17,7 +17,7 @@
 | delivery | 消费消息、账号与社交事件，按在线路由推送或踢连接 | Redis（在线路由、去重） | 2 |
 | media | 上传、缩略图、下载地址；给 message 核实文件 | MySQL `marschat_media`、本地目录或阿里云 OSS | 1 |
 
-依赖组件：MySQL（按服务分库分账号）、Redis（缓存、限流、租约、在线路由）、Kafka（事件分发）、Consul（服务注册发现，APISIX 也从这里发现上游）、APISIX（TLS、入口限流、路由）。监控组件 Prometheus、Alertmanager、Grafana、Jaeger 与压测工具 k6 在单独的 Compose profile 中。端口与启动方式见 [deployment.md](docs/deployment.md)。
+依赖组件：MySQL（按服务分库分账号）、Redis（缓存、限流、租约、在线路由）、Kafka（事件分发）、Consul（服务注册发现，APISIX 也从这里发现上游）、APISIX（TLS、入口限流、路由，`/` 兜底转给前端）、nginx（前端静态文件）。TURN 中继 coturn、监控组件 Prometheus、Alertmanager、Grafana、Jaeger 与压测工具 k6 在单独的 Compose profile 中。端口与启动方式见 [deployment.md](docs/deployment.md)。
 
 ## 关键数据流
 
@@ -47,7 +47,9 @@
 
 ## 主要约束
 
-- 前端接入了认证、实时消息（文字消息、已读、多端同步、断线补拉）、联系人与群组（含好友与群的实时通知）、设置与管理、文件（图片、文件消息与头像）和一对一音视频通话。TURN 中继（coturn）与 ICE 服务器下发推迟到前端第 9 阶段，提议见 [turn-relay.md](docs/design/turn-relay.md)，在此之前只有能直接互通的两端才能接通；群通话需要 SFU，后端没有实现，不在前端重写范围内。
+- 前端接入了认证、实时消息（文字消息、已读、多端同步、断线补拉）、联系人与群组（含好友与群的实时通知）、设置与管理、文件（图片、文件消息与头像）和一对一音视频通话。容器模式下前端是一个 nginx 容器，由网关的 `/` 路由兜底提供，与接口同源（[web-deployment.md](docs/design/web-deployment.md)）。
+- 通话的媒体是浏览器之间的 WebRTC。可选部署 coturn（Compose profile `call`）：access 在邀请和接听的回复里下发 TURN 临时凭据，隔着 NAT 的两端经中继连通（[turn-relay.md](docs/design/turn-relay.md)）；不部署时只有能直接互通的两端才能接通。群通话需要 SFU，后端没有实现，不在前端重写范围内。
+- 网关默认只在本机访问；可以改为局域网地址，局域网和公网访问都要用 HTTPS（浏览器只在 HTTPS 或 localhost 下提供麦克风和摄像头）。公网部署没有实施，做法见 web-deployment.md 第 4.3 节。
 - 服务间调用没有认证，依赖内网隔离（TD-26）；media 只有一个实例，多实例需要共享存储目录或使用 OSS。
 - Compose 是唯一的部署方式，组件本身不做高可用；压测数据只作为这台开发机上的对比基线。
 - 已知问题见 [tech-debt.md](docs/plans/tech-debt.md)。

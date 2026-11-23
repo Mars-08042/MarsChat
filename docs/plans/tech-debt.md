@@ -36,6 +36,13 @@
 
 ## 低
 
+### TD-46 TURN 没有 TLS，凭据过期后的中继断开没有验证
+
+- 发现：2026-11-22，前端第 9 阶段部署 coturn
+- 位置：`deploy/coturn/turnserver.conf`（`no-tls`）；access 的 `call.turn.ttl`（`app/access/internal/biz/turn.go`）
+- 现状：coturn 只提供 UDP 和 TCP 的 3478（宿主机 13478），没有 `turns:`。只放行 443 端口或屏蔽 UDP 的网络（部分企业网、公共 Wi-Fi）连不上 TURN，这时通话仍会按「网络无法直连」结束。凭据有效期 12 小时，超过 12 小时的通话在浏览器续期中继分配时会认证失败、中继断开；这个行为和「过期凭据被 coturn 拒绝」都只按 TURN REST API 的约定推断，没有实测。
+- 处理：公网部署时给 coturn 配证书，开 5349 或复用 443 提供 `turns:`，access 的 `MARSCHAT_TURN_URLS` 加上对应地址；把有效期临时调到 1 分钟，验证过期凭据被拒绝、通话中续期失败的表现，再决定是否需要在通话中下发新凭据。
+
 ### TD-25 account 的资料缓存删除失败时最长有 30 分钟旧数据
 
 - 发现：2026-11-18，重构步骤 2；步骤 3 扩大到 social，优先级调为中；步骤 4 解决 social 部分后调回低

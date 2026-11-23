@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { deviceErrorText, endReasonText, inviteErrorText, type CallEndReason, type EndContext } from "./call-text"
+import { deviceErrorText, endReasonText, INSECURE_CONTEXT_ERROR, inviteErrorText, type CallEndReason, type EndContext } from "./call-text"
 
 const outgoing: EndContext = { direction: "outgoing", connected: false }
 const incoming: EndContext = { direction: "incoming", connected: false }
@@ -51,5 +51,9 @@ describe("deviceErrorText", () => {
     expect(deviceErrorText("NotAllowedError", "audio")).toContain("麦克风权限")
     expect(deviceErrorText("NotFoundError", "video")).toContain("摄像头或麦克风")
     expect(deviceErrorText("AbortError", "audio")).toBe("无法使用麦克风")
+  })
+
+  it("非安全上下文提示改用 HTTPS", () => {
+    expect(deviceErrorText(INSECURE_CONTEXT_ERROR, "video")).toBe("当前页面不是 HTTPS 连接，浏览器不允许使用摄像头或麦克风，请改用 HTTPS 地址访问")
   })
 })

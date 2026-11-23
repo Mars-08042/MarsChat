@@ -52,23 +52,25 @@ docs/             项目文档
 
 ```bash
 cp .env.example .env    # 把 change-me 换成随机密码
-make keys               # 生成 JWT 密钥与下载地址签名密钥，写入 .env
+make keys               # 生成 JWT 密钥、下载地址签名密钥等，写入 .env
 make up                 # 启动 MySQL、Redis、Kafka、Consul
 make migrate-account migrate-social migrate-message migrate-media
 make images             # 构建服务镜像
-make cluster-up         # 容器模式：多实例服务 + 网关，入口 https://127.0.0.1:19443
+make web-install        # 前端依赖（需要 Node.js 与 pnpm）
+make web-image          # 构建前端镜像
+make cluster-up         # 容器模式：多实例服务 + 网关 + 前端，打开 http://localhost:19080
+make call-up            # 可选：通话的 TURN 中继（coturn）
 ```
 
 也可以在宿主机逐个运行服务（`make run-account` 等，每个服务一个终端）。两种方式不能同时运行。
 
-前端需要 Node.js 与 pnpm：
+开发前端时用 Vite 开发服务器，可以和容器模式同时运行，连同一套后端：
 
 ```bash
-make web-install        # 按锁文件安装依赖
 make web-dev            # 开发服务器 http://localhost:5173，/v1 与 /ws 默认代理到网关
 ```
 
-端口、配置、监控与压测见 [deployment.md](docs/deployment.md)。
+浏览器只在 HTTPS 或 `localhost` 下提供麦克风、摄像头和系统通知。局域网内其他设备访问、HTTPS 与域名、TURN 中继的配置，以及端口、监控与压测见 [deployment.md](docs/deployment.md)。
 
 ## 开发检查
 

@@ -360,6 +360,9 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
   }, [confirmed, outbox])
   const items = useMemo(() => buildTimeline(messages, marker), [messages, marker])
   const readId = readMarkId(messages, conversation, meId)
+  // 消息行是 memo 的，只给它会话里不常变的两个字段（types.ts 的 ConversationRef）
+  const { kind, peerId } = conversation
+  const rowConversation = useMemo(() => ({ kind, peerId }), [kind, peerId])
 
   const hasOlder = timeline?.hasOlder ?? false
   const loadingOlder = timeline?.loadingOlder ?? false
@@ -524,7 +527,7 @@ function MessageList({ conversation, timeline }: { conversation: Conversation; t
               <MessageRow
                 key={item.key}
                 message={m}
-                conversation={conversation}
+                conversation={rowConversation}
                 sender={m.senderId === meId ? me : users[m.senderId]}
                 mine={m.senderId === meId}
                 firstInGroup={item.firstInGroup}

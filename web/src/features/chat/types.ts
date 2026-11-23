@@ -35,6 +35,10 @@ export interface Conversation {
   blockedReason?: string
 }
 
+// 消息行和资料卡只用到会话的类型和单聊对方。只传这两个字段：会话的未读数、最新消息每来一条消息都会变，
+// 传整个会话会让时间线上所有消息行一起重新渲染（设计第 10 节第 83 条）
+export type ConversationRef = Pick<Conversation, "kind" | "peerId">
+
 // 对应 FileContent：名称、大小、类型以 media 的记录为准，客户端上送的值会被服务端覆盖
 export interface FileMeta {
   fileId: string

@@ -110,6 +110,27 @@ message Call {
     (buf.validate.field).required = true,
     (buf.validate.field).duration.gte = {seconds: 0}
   ];
+  // TURN 中继，不配置时不下发 ICE 服务器（docs/design/turn-relay.md）
+  Turn turn = 4;
+}
+
+// Turn 是 coturn 的地址与临时凭据参数（TURN REST API，coturn 的 use-auth-secret）。
+message Turn {
+  option (buf.validate.message).cel = {
+    id: "turn_secret"
+    message: "secret is required when urls is set"
+    expression: "this.urls == '' || this.secret != ''"
+  };
+  // 下发给客户端的地址，多个用逗号分隔，例如 turn:192.0.2.10:13478?transport=udp,turn:192.0.2.10:13478?transport=tcp。
+  // 用字符串而不是列表，是为了能用一个环境变量（MARSCHAT_TURN_URLS）整体传入。为空时不下发，secret 与 ttl 不生效
+  string urls = 1 [(buf.validate.field).string.pattern = "^$|^(stuns?|turns?):[^,\\s]+(\\s*,\\s*(stuns?|turns?):[^,\\s]+)*$"];
+  // 与 coturn 的 static-auth-secret 相同
+  string secret = 2;
+  // 凭据有效期。浏览器续期中继分配时要重新认证，过期后中继断开，所以要覆盖最长的通话
+  google.protobuf.Duration ttl = 3 [(buf.validate.field).duration = {
+    gte: {seconds: 60}
+    lte: {seconds: 172800}
+  }];
 }
 
 // Policy 是限额类参数。修改配置文件后自动热更新，校验不通过时保留旧值。

@@ -9,15 +9,17 @@ import { Role } from "@/gen/account/v1/account_pb"
 import { useMe, useSession } from "@/stores/session"
 import { AppearanceTab } from "./AppearanceTab"
 import { DevicesTab } from "./DevicesTab"
+import { NotificationsTab } from "./NotificationsTab"
 import { ProfileTab } from "./ProfileTab"
 
 const TABS = [
   { to: "/settings/profile", label: "资料" },
   { to: "/settings/devices", label: "登录设备" },
   { to: "/settings/appearance", label: "外观" },
+  { to: "/settings/notifications", label: "通知" },
 ] as const
 
-// 设置：资料、登录设备、外观三个页签对应三个路由（设计 3.5、3.6.8）。
+// 设置：资料、登录设备、外观、通知四个页签对应四个路由（设计 3.5、3.6.8）。
 // 窄屏没有导航栏的头像菜单，退出登录放在账号卡片里
 export function SettingsPage() {
   const { pathname } = useLocation()
@@ -37,6 +39,7 @@ export function SettingsPage() {
           {active === "/settings/profile" && <ProfileTab />}
           {active === "/settings/devices" && <DevicesTab />}
           {active === "/settings/appearance" && <AppearanceTab />}
+          {active === "/settings/notifications" && <NotificationsTab />}
         </div>
       </div>
     </div>

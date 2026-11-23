@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf"
 import { timestampFromMs } from "@bufbuild/protobuf/wkt"
 import { DownloadUrlSchema, FileKind, Purpose, Variant } from "@/gen/media/v1/media_pb"
 import { ApiError, uploadErrorText } from "./errors"
-import { createDownloadUrlCache, createUploader, isUploadAborted, MAX_BATCH, REUSE_MARGIN_MS, toProxiedUrl, type DownloadUrlItem } from "./files"
+import { createDownloadUrlCache, createUploader, isUploadAborted, MAX_BATCH, REUSE_MARGIN_MS, toRelativeUrl, type DownloadUrlItem } from "./files"
 import type { TokenStore } from "./tokens"
 
 // ---------- 上传 ----------
@@ -256,12 +256,12 @@ describe("createDownloadUrlCache", () => {
   })
 })
 
-describe("toProxiedUrl", () => {
+describe("toRelativeUrl", () => {
   it("本地存储的下载地址改成相对路径，其他地址不变", () => {
-    expect(toProxiedUrl("https://127.0.0.1:19443/v1/files/12/content?variant=2&expires=1&signature=abc")).toBe("/v1/files/12/content?variant=2&expires=1&signature=abc")
-    expect(toProxiedUrl("http://127.0.0.1:18050/v1/files/12/content?variant=1")).toBe("/v1/files/12/content?variant=1")
+    expect(toRelativeUrl("https://127.0.0.1:19443/v1/files/12/content?variant=2&expires=1&signature=abc")).toBe("/v1/files/12/content?variant=2&expires=1&signature=abc")
+    expect(toRelativeUrl("http://127.0.0.1:18050/v1/files/12/content?variant=1")).toBe("/v1/files/12/content?variant=1")
     const oss = "https://bucket.oss-cn-hangzhou.aliyuncs.com/marschat/12?Expires=1&Signature=x"
-    expect(toProxiedUrl(oss)).toBe(oss)
-    expect(toProxiedUrl("not a url")).toBe("not a url")
+    expect(toRelativeUrl(oss)).toBe(oss)
+    expect(toRelativeUrl("not a url")).toBe("not a url")
   })
 })

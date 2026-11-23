@@ -4,7 +4,7 @@
 import { deviceInfo } from "./device"
 import { getDownloadUrls, refreshToken } from "./endpoints"
 import { ApiError, UNKNOWN } from "./errors"
-import { createDownloadUrlCache, createUploader, toProxiedUrl } from "./files"
+import { createDownloadUrlCache, createUploader, toRelativeUrl } from "./files"
 import { createHttp } from "./http"
 import { AUTH_KEY, createTokenStore } from "./tokens"
 
@@ -29,7 +29,7 @@ export const uploadFile = createUploader({ createXhr: () => new XMLHttpRequest()
 
 export const downloadUrls = createDownloadUrlCache({
   fetch: async (items) => (await api.send(getDownloadUrls, { items })).urls,
-  rewrite: import.meta.env.DEV ? toProxiedUrl : undefined,
+  rewrite: toRelativeUrl,
 })
 
 // 其他标签页登录、退出或刷新令牌后同步；key 为 null 表示 localStorage 被整体清空

@@ -27,13 +27,13 @@ MarsChat 是一个 Web 即时通讯系统：用户用邮箱注册登录，添加
 
 ## 系统边界
 
-**包含**：六个后端服务（HTTP、gRPC、WebSocket）；APISIX 网关；MySQL、Redis、Kafka、Consul；本地目录或阿里云 OSS 文件存储；SMTP 发送验证码邮件；浏览器之间的 WebRTC 媒体流（服务端只转发信令）；监控、告警与链路追踪组件。全部由 Docker Compose 在单机上编排。
+**包含**：六个后端服务（HTTP、gRPC、WebSocket）；APISIX 网关；MySQL、Redis、Kafka、Consul；本地目录或阿里云 OSS 文件存储；SMTP 发送验证码邮件；浏览器之间的 WebRTC 媒体流（服务端只转发信令，可选 coturn 中继）；React 前端（nginx 容器，经网关同源提供）；监控、告警与链路追踪组件。全部由 Docker Compose 在单机上编排，可以在局域网内访问。
 
 **当前不包含**：
 
-- 前端（重写中）、移动端与桌面端客户端
+- 移动端与桌面端客户端；公网部署（做法见 [web-deployment.md](../design/web-deployment.md) 第 4.3 节，没有实施）
 - 离线推送、消息撤回、消息搜索、语音消息、删除会话
-- 群通话、TURN 中继与 ICE 服务器下发（推迟到前端第 9 阶段，提议见 [turn-relay.md](../design/turn-relay.md)）、通话记录
+- 群通话、通话记录
 - 找回密码、修改密码、注销账号
 - 端到端加密、内容审核、管理员操作审计
 - 组件高可用与跨机房部署

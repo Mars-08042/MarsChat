@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { create } from "@bufbuild/protobuf"
 import { createStore } from "zustand/vanilla"
-import { CallAckSchema, CallEndReason, CallEventSchema, CallMedia, SdpType } from "@/gen/access/v1/call_pb"
+import { CallAckSchema, CallEndReason, CallEventSchema, CallMedia, IceServerSchema, SdpType } from "@/gen/access/v1/call_pb"
 import { ErrorSchema } from "@/gen/access/v1/frame_pb"
 import type { MessageInitShape } from "@bufbuild/protobuf"
 import type { ChatUser } from "@/features/chat/types"
@@ -14,6 +14,7 @@ import {
   ENDED_HOLD_MS,
   SIGNAL_FRAMES_PER_SECOND,
   createCallEngine,
+  toRtcIceServers,
   type CallState,
 } from "./engine"
 
@@ -114,7 +115,7 @@ function setup() {
   const sent: SentAction[] = []
   const pcs: FakePc[] = []
   let nextId = 1n
-  const env = { connected: true, webrtc: true }
+  const env = { connected: true, webrtc: true, relay: false }
   const getUserMedia = vi.fn(async (c: MediaStreamConstraints) => fakeStream(c) as unknown as MediaStream)
   const loadUser = vi.fn(async (id: string): Promise<ChatUser | undefined> => ({ id, nickname: "后来取到的名字" }))
   const engine = createCallEngine({
@@ -133,7 +134,7 @@ function setup() {
       return pc as unknown as RTCPeerConnection
     },
     webrtcSupported: () => env.webrtc,
-    iceServers: () => [],
+    iceTransportPolicy: () => (env.relay ? "relay" : "all"),
     user: (id) => (id === linwan.id ? linwan : undefined),
     loadUser,
   })
@@ -141,7 +142,8 @@ function setup() {
   const call = () => store.getState().call
   const last = (kind: string) => [...sent].reverse().find((s) => s.kind === kind)
   const signals = () => sent.filter((s) => s.kind === "signal")
-  const ack = (kind: string, callId = 0n) => engine.handleAck(last(kind)!.id, create(CallAckSchema, { callId }))
+  const ack = (kind: string, callId = 0n, iceServers: MessageInitShape<typeof CallAckSchema>["iceServers"] = []) =>
+    engine.handleAck(last(kind)!.id, create(CallAckSchema, { callId, iceServers }))
   const error = (kind: string, reason: string) => engine.handleError(last(kind)!.id, create(ErrorSchema, { code: 409, reason }))
   const event = (init: MessageInitShape<typeof CallEventSchema>["event"]) => engine.handleEvent(create(CallEventSchema, { event: init }))
   const remoteSdp = (callId: bigint, type: SdpType) => event({ case: "signal", value: { callId, payload: { case: "sdp", value: { type, sdp: "remote-sdp" } } } })
@@ -198,7 +200,8 @@ describe("主叫", () => {
     expect(t.call()?.phase.kind).toBe("connecting")
     await flush()
     const pc = t.pcs[0]
-    expect(pc.config).toEqual({ iceServers: [] })
+    // 服务端没有配置 TURN：CallAck 不带 ICE 服务器，只用本机地址
+    expect(pc.config).toEqual({ iceServers: [], iceTransportPolicy: "all" })
     expect(pc.added.map((tr) => tr.kind)).toEqual(["audio", "video"])
     expect(t.signals()[0].value).toMatchObject({ callId: 9n, payload: { case: "sdp", value: { type: SdpType.OFFER, sdp: "offer-sdp" } } })
 
@@ -572,5 +575,39 @@ describe("静音与摄像头", () => {
     await flush()
     t.engine.toggleCamera()
     expect(t.call()?.cameraOff).toBe(false)
+  })
+})
+
+describe("TURN 中继", () => {
+  const turn = { urls: ["turn:192.0.2.10:13478?transport=udp", "turn:192.0.2.10:13478?transport=tcp"], username: "1700043200:1", credential: "c2VjcmV0" }
+
+  it("主叫用邀请回复里的 ICE 服务器创建连接", async () => {
+    const t = setup()
+    t.engine.start(linwan, "audio")
+    await flush()
+    t.ack("invite", 9n, [turn])
+    t.event({ case: "accepted", value: { callId: 9n } })
+    await flush()
+    expect(t.pcs[0].config).toEqual({ iceServers: [turn], iceTransportPolicy: "all" })
+  })
+
+  it("被叫用接听回复里的 ICE 服务器；打开只走中继的开关时 iceTransportPolicy 为 relay", async () => {
+    const t = setup()
+    t.env.relay = true
+    t.event({ case: "incoming", value: { callId: 7n, callerId: 2n, media: CallMedia.AUDIO } })
+    t.engine.accept()
+    await flush()
+    t.ack("accept", 7n, [turn])
+    expect(t.pcs[0].config).toEqual({ iceServers: [turn], iceTransportPolicy: "relay" })
+  })
+
+  it("转换时丢掉没有地址的项，STUN 不带用户名和密码", () => {
+    expect(
+      toRtcIceServers([
+        create(IceServerSchema, { urls: [] }),
+        create(IceServerSchema, { urls: ["stun:192.0.2.10:13478"] }),
+        create(IceServerSchema, turn),
+      ]),
+    ).toEqual([{ urls: ["stun:192.0.2.10:13478"] }, turn])
   })
 })

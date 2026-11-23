@@ -104,7 +104,7 @@ export interface DownloadUrlItem {
 
 export interface DownloadUrlCacheDeps {
   fetch: (items: DownloadUrlItem[]) => Promise<DownloadUrl[]>
-  // 改写服务端返回的地址（开发时改成相对路径走 Vite 代理，见 toProxiedUrl）
+  // 改写服务端返回的地址（本地存储的下载地址改成相对路径，见 toRelativeUrl）
   rewrite?: (url: string) => string
   now?: () => number
   // 同一轮渲染里的请求合并成一次，默认在下一个宏任务发出
@@ -211,10 +211,10 @@ export function createDownloadUrlCache(deps: DownloadUrlCacheDeps): DownloadUrlC
   }
 }
 
-// 开发时浏览器只访问 Vite 的源（设计 3.10）。容器模式下本地存储的下载地址指向网关的 HTTPS 端口，
-// 证书是自签的，浏览器直接加载会失败；把 media 本地下载接口的地址改成相对路径，经 Vite 代理转发。
-// OSS 的预签名地址路径不同，原样保留
-export function toProxiedUrl(url: string): string {
+// 页面与接口同源（开发时经 Vite 代理，部署后经网关，设计 3.10），而 media 本地存储返回的下载地址是
+// 配置的 MARSCHAT_MEDIA_PUBLIC_BASE_URL（例如 https://127.0.0.1:19443），和页面地址不一定相同，
+// 证书也可能不被信任；把本地下载接口的地址改成相对路径，跟着页面走。OSS 的预签名地址路径不同，原样保留
+export function toRelativeUrl(url: string): string {
   try {
     const u = new URL(url)
     return /^\/v1\/files\/\d+\/content$/.test(u.pathname) ? `${u.pathname}${u.search}` : url

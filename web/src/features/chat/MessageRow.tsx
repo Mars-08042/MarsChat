@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { memo, useEffect, useState } from "react"
 import { motion } from "motion/react"
 import { CircleExclamationPoint, LoaderCircle, RotateCw } from "lucide-react"
 import { UserAvatar } from "@/components/common/UserAvatar"
@@ -7,14 +7,14 @@ import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { FileAttachment, ImageAttachment } from "./attachments"
 import { EmojiText } from "./EmojiText"
-import type { ChatMessage, ChatUser, Conversation, SendStatus } from "./types"
+import type { ChatMessage, ChatUser, ConversationRef, SendStatus } from "./types"
 
 // 发送中超过这个时间才显示转圈，网络正常时确认在几十毫秒内到达，不必闪一下
 export const PENDING_SPINNER_DELAY_MS = 1000
 
 interface MessageRowProps {
   message: ChatMessage
-  conversation: Conversation
+  conversation: ConversationRef
   sender?: ChatUser
   mine: boolean
   firstInGroup: boolean
@@ -25,7 +25,9 @@ interface MessageRowProps {
   onCancelUpload: (messageId: string) => void
 }
 
-export function MessageRow({
+// memo：时间线有几百条消息时，收到一条新消息只渲染新增和分组变化的行。props 都要保持引用稳定
+// （消息对象没变就是同一个引用，回调用 realtime 的固定函数，会话只传 ConversationRef）
+export const MessageRow = memo(function MessageRow({
   message,
   conversation,
   sender,
@@ -83,7 +85,7 @@ export function MessageRow({
       </div>
     </motion.div>
   )
-}
+})
 
 function Bubble({
   message,
@@ -151,7 +153,7 @@ function SendingMark({ status }: { status: SendStatus }) {
   if (!pending || !slow) return null
   return (
     <span role="status" className="text-muted-foreground">
-      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+      <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
       <span className="sr-only">发送中</span>
     </span>
   )

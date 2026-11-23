@@ -6,6 +6,8 @@
 
 - 后端按 ADR-0005 拆分为 access、account、social、message、delivery、media 六个服务。目前 account 已提供注册、登录、令牌、资料、设备与封禁接口（HTTP 与 gRPC），设计见 [account-service.md](../design/account-service.md)；social 已提供好友、拉黑、群接口和给 message、delivery 用的内部 gRPC，设计见 [social-service.md](../design/social-service.md)；message、access、delivery 组成核心消息链路（会话、发送、推送、多端同步、补拉），设计见 [message-pipeline.md](../design/message-pipeline.md)，流转见 [data-flow.md](data-flow.md)；access 同时处理一对一通话信令（状态在 Redis，access 之间直连转发），设计见 [call-signaling.md](../design/call-signaling.md)；media 提供文件上传、下载地址和给 message 用的内部文件查询，文件存储可切换（默认仓库下的本地目录 `data/media/`，可选阿里云 OSS，[ADR-0007](adr/0007-object-storage.md)），设计见 [media-service.md](../design/media-service.md)。
 - 服务有两种运行方式：日常开发运行在宿主机，监听 `127.0.0.1`；容器模式（compose profile `apps`）中 access、message、delivery 各两个实例（media 一个，本地存储挂载仓库的 `data/media`），客户端经 APISIX 网关（Standalone 模式，上游经 Consul 发现）访问。MySQL、Redis、Kafka、Consul 由 [compose.yaml](../../compose.yaml) 提供。设计见 [gateway-multi-instance.md](../design/gateway-multi-instance.md)。
+- 前端的构建产物由 nginx 容器（`web`，profile `apps`）提供，网关的 `/` 路由兜底转发，与接口同源；网关默认只绑定 `127.0.0.1`，可以改为局域网地址，局域网和公网访问用 HTTPS。设计见 [web-deployment.md](../design/web-deployment.md)。
+- 通话的 TURN 中继 coturn 在 compose profile `call` 中，可选部署；access 签发临时凭据（TURN REST API），设计见 [turn-relay.md](../design/turn-relay.md)。
 - 可观测组件在 compose profile `monitoring` 中：Prometheus（经 Consul 发现抓取各实例）、Alertmanager、Grafana、Jaeger，只配合容器模式使用；压测工具 k6 在 profile `loadtest` 中按需运行。设计见 [observability.md](../design/observability.md)。
 - 端口规则、启动方式见 [deployment.md](../deployment.md)。
 
@@ -44,7 +46,7 @@ pkg/telemetry/           OpenTelemetry 初始化（Prometheus 指标导出、OTL
                          telemetrytest 供单元测试读取指标
 tools/jwtkey/            生成开发用 JWT 密钥与 media 下载地址签名密钥（make keys）
 scripts/                 运维与开发脚本（make grant-admin、make web-emoji、宿主机运行全部服务的 host_services.sh）
-deploy/                  依赖组件的初始化脚本与配置：MySQL 初始化、APISIX、Prometheus 与告警规则、Alertmanager、Grafana、Jaeger
+deploy/                  镜像与组件配置：服务镜像、前端镜像与 nginx（web/）、MySQL 初始化、APISIX、coturn、Prometheus 与告警规则、Alertmanager、Grafana、Jaeger
 test/e2e/                依赖 compose 环境的端到端测试（构建标签 e2e）
 test/cluster/            容器模式的集群测试与故障实验（构建标签 cluster）
 test/testkit/            e2e 与集群测试共用的调用、注册、WebSocket 与 Redis 读取函数

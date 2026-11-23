@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file access/v1/call.proto.
  */
 export const file_access_v1_call: GenFile = /*@__PURE__*/
-  fileDesc("ChRhY2Nlc3MvdjEvY2FsbC5wcm90bxIJYWNjZXNzLnYxIusBCgtDYWxsUmVxdWVzdBInCgZpbnZpdGUYASABKAsyFS5hY2Nlc3MudjEuQ2FsbEludml0ZUgAEicKBmFjY2VwdBgCIAEoCzIVLmFjY2Vzcy52MS5DYWxsQWNjZXB0SAASJwoGcmVqZWN0GAMgASgLMhUuYWNjZXNzLnYxLkNhbGxSZWplY3RIABInCgZoYW5ndXAYBCABKAsyFS5hY2Nlc3MudjEuQ2FsbEhhbmd1cEgAEicKBnNpZ25hbBgFIAEoCzIVLmFjY2Vzcy52MS5DYWxsU2lnbmFsSABCDwoGYWN0aW9uEgW6SAIIASJZCgpDYWxsSW52aXRlEhoKCWNhbGxlZV9pZBgBIAEoA0IHukgEIgIgABIvCgVtZWRpYRgCIAEoDjIULmFjY2Vzcy52MS5DYWxsTWVkaWFCCrpIB4IBBBABIAAiJgoKQ2FsbEFjY2VwdBIYCgdjYWxsX2lkGAEgASgDQge6SAQiAiAAIiYKCkNhbGxSZWplY3QSGAoHY2FsbF9pZBgBIAEoA0IHukgEIgIgACImCgpDYWxsSGFuZ3VwEhgKB2NhbGxfaWQYASABKANCB7pIBCICIAAimAEKCkNhbGxTaWduYWwSGAoHY2FsbF9pZBgBIAEoA0IHukgEIgIgABIsCgNzZHAYAiABKAsyHS5hY2Nlc3MudjEuU2Vzc2lvbkRlc2NyaXB0aW9uSAASMAoNaWNlX2NhbmRpZGF0ZRgDIAEoCzIXLmFjY2Vzcy52MS5JY2VDYW5kaWRhdGVIAEIQCgdwYXlsb2FkEgW6SAIIASJcChJTZXNzaW9uRGVzY3JpcHRpb24SLAoEdHlwZRgBIAEoDjISLmFjY2Vzcy52MS5TZHBUeXBlQgq6SAeCAQQQASAAEhgKA3NkcBgCIAEoCUILukgIcgYQASiAgAIinAEKDEljZUNhbmRpZGF0ZRIbCgljYW5kaWRhdGUYASABKAlCCLpIBXIDKIAIEhgKB3NkcF9taWQYAiABKAlCB7pIBHICKEASHAoPc2RwX21saW5lX2luZGV4GAMgASgNSACIAQESIwoRdXNlcm5hbWVfZnJhZ21lbnQYBCABKAlCCLpIBXIDKIACQhIKEF9zZHBfbWxpbmVfaW5kZXgiGgoHQ2FsbEFjaxIPCgdjYWxsX2lkGAEgASgDIr4BCglDYWxsRXZlbnQSKwoIaW5jb21pbmcYASABKAsyFy5hY2Nlc3MudjEuQ2FsbEluY29taW5nSAASKwoIYWNjZXB0ZWQYAiABKAsyFy5hY2Nlc3MudjEuQ2FsbEFjY2VwdGVkSAASJQoFZW5kZWQYAyABKAsyFC5hY2Nlc3MudjEuQ2FsbEVuZGVkSAASJwoGc2lnbmFsGAQgASgLMhUuYWNjZXNzLnYxLkNhbGxTaWduYWxIAEIHCgVldmVudCJXCgxDYWxsSW5jb21pbmcSDwoHY2FsbF9pZBgBIAEoAxIRCgljYWxsZXJfaWQYAiABKAMSIwoFbWVkaWEYAyABKA4yFC5hY2Nlc3MudjEuQ2FsbE1lZGlhIh8KDENhbGxBY2NlcHRlZBIPCgdjYWxsX2lkGAEgASgDIkYKCUNhbGxFbmRlZBIPCgdjYWxsX2lkGAEgASgDEigKBnJlYXNvbhgCIAEoDjIYLmFjY2Vzcy52MS5DYWxsRW5kUmVhc29uKlMKCUNhbGxNZWRpYRIaChZDQUxMX01FRElBX1VOU1BFQ0lGSUVEEAASFAoQQ0FMTF9NRURJQV9BVURJTxABEhQKEENBTExfTUVESUFfVklERU8QAipMCgdTZHBUeXBlEhgKFFNEUF9UWVBFX1VOU1BFQ0lGSUVEEAASEgoOU0RQX1RZUEVfT0ZGRVIQARITCg9TRFBfVFlQRV9BTlNXRVIQAirzAQoNQ2FsbEVuZFJlYXNvbhIfChtDQUxMX0VORF9SRUFTT05fVU5TUEVDSUZJRUQQABIaChZDQUxMX0VORF9SRUFTT05fSEFOR1VQEAESHAoYQ0FMTF9FTkRfUkVBU09OX1JFSkVDVEVEEAISGwoXQ0FMTF9FTkRfUkVBU09OX1RJTUVPVVQQAxImCiJDQUxMX0VORF9SRUFTT05fQU5TV0VSRURfRUxTRVdIRVJFEAQSIAocQ0FMTF9FTkRfUkVBU09OX0RJU0NPTk5FQ1RFRBAFEiAKHENBTExfRU5EX1JFQVNPTl9QRUVSX09GRkxJTkUQBkIxWi9naXRodWIuY29tL01hcnMtMDgwNDIvTWFyc0NoYXQvYXBpL2FjY2Vzcy92MTt2MWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("ChRhY2Nlc3MvdjEvY2FsbC5wcm90bxIJYWNjZXNzLnYxIusBCgtDYWxsUmVxdWVzdBInCgZpbnZpdGUYASABKAsyFS5hY2Nlc3MudjEuQ2FsbEludml0ZUgAEicKBmFjY2VwdBgCIAEoCzIVLmFjY2Vzcy52MS5DYWxsQWNjZXB0SAASJwoGcmVqZWN0GAMgASgLMhUuYWNjZXNzLnYxLkNhbGxSZWplY3RIABInCgZoYW5ndXAYBCABKAsyFS5hY2Nlc3MudjEuQ2FsbEhhbmd1cEgAEicKBnNpZ25hbBgFIAEoCzIVLmFjY2Vzcy52MS5DYWxsU2lnbmFsSABCDwoGYWN0aW9uEgW6SAIIASJZCgpDYWxsSW52aXRlEhoKCWNhbGxlZV9pZBgBIAEoA0IHukgEIgIgABIvCgVtZWRpYRgCIAEoDjIULmFjY2Vzcy52MS5DYWxsTWVkaWFCCrpIB4IBBBABIAAiJgoKQ2FsbEFjY2VwdBIYCgdjYWxsX2lkGAEgASgDQge6SAQiAiAAIiYKCkNhbGxSZWplY3QSGAoHY2FsbF9pZBgBIAEoA0IHukgEIgIgACImCgpDYWxsSGFuZ3VwEhgKB2NhbGxfaWQYASABKANCB7pIBCICIAAimAEKCkNhbGxTaWduYWwSGAoHY2FsbF9pZBgBIAEoA0IHukgEIgIgABIsCgNzZHAYAiABKAsyHS5hY2Nlc3MudjEuU2Vzc2lvbkRlc2NyaXB0aW9uSAASMAoNaWNlX2NhbmRpZGF0ZRgDIAEoCzIXLmFjY2Vzcy52MS5JY2VDYW5kaWRhdGVIAEIQCgdwYXlsb2FkEgW6SAIIASJcChJTZXNzaW9uRGVzY3JpcHRpb24SLAoEdHlwZRgBIAEoDjISLmFjY2Vzcy52MS5TZHBUeXBlQgq6SAeCAQQQASAAEhgKA3NkcBgCIAEoCUILukgIcgYQASiAgAIinAEKDEljZUNhbmRpZGF0ZRIbCgljYW5kaWRhdGUYASABKAlCCLpIBXIDKIAIEhgKB3NkcF9taWQYAiABKAlCB7pIBHICKEASHAoPc2RwX21saW5lX2luZGV4GAMgASgNSACIAQESIwoRdXNlcm5hbWVfZnJhZ21lbnQYBCABKAlCCLpIBXIDKIACQhIKEF9zZHBfbWxpbmVfaW5kZXgiRQoHQ2FsbEFjaxIPCgdjYWxsX2lkGAEgASgDEikKC2ljZV9zZXJ2ZXJzGAIgAygLMhQuYWNjZXNzLnYxLkljZVNlcnZlciI/CglJY2VTZXJ2ZXISDAoEdXJscxgBIAMoCRIQCgh1c2VybmFtZRgCIAEoCRISCgpjcmVkZW50aWFsGAMgASgJIr4BCglDYWxsRXZlbnQSKwoIaW5jb21pbmcYASABKAsyFy5hY2Nlc3MudjEuQ2FsbEluY29taW5nSAASKwoIYWNjZXB0ZWQYAiABKAsyFy5hY2Nlc3MudjEuQ2FsbEFjY2VwdGVkSAASJQoFZW5kZWQYAyABKAsyFC5hY2Nlc3MudjEuQ2FsbEVuZGVkSAASJwoGc2lnbmFsGAQgASgLMhUuYWNjZXNzLnYxLkNhbGxTaWduYWxIAEIHCgVldmVudCJXCgxDYWxsSW5jb21pbmcSDwoHY2FsbF9pZBgBIAEoAxIRCgljYWxsZXJfaWQYAiABKAMSIwoFbWVkaWEYAyABKA4yFC5hY2Nlc3MudjEuQ2FsbE1lZGlhIh8KDENhbGxBY2NlcHRlZBIPCgdjYWxsX2lkGAEgASgDIkYKCUNhbGxFbmRlZBIPCgdjYWxsX2lkGAEgASgDEigKBnJlYXNvbhgCIAEoDjIYLmFjY2Vzcy52MS5DYWxsRW5kUmVhc29uKlMKCUNhbGxNZWRpYRIaChZDQUxMX01FRElBX1VOU1BFQ0lGSUVEEAASFAoQQ0FMTF9NRURJQV9BVURJTxABEhQKEENBTExfTUVESUFfVklERU8QAipMCgdTZHBUeXBlEhgKFFNEUF9UWVBFX1VOU1BFQ0lGSUVEEAASEgoOU0RQX1RZUEVfT0ZGRVIQARITCg9TRFBfVFlQRV9BTlNXRVIQAirzAQoNQ2FsbEVuZFJlYXNvbhIfChtDQUxMX0VORF9SRUFTT05fVU5TUEVDSUZJRUQQABIaChZDQUxMX0VORF9SRUFTT05fSEFOR1VQEAESHAoYQ0FMTF9FTkRfUkVBU09OX1JFSkVDVEVEEAISGwoXQ0FMTF9FTkRfUkVBU09OX1RJTUVPVVQQAxImCiJDQUxMX0VORF9SRUFTT05fQU5TV0VSRURfRUxTRVdIRVJFEAQSIAocQ0FMTF9FTkRfUkVBU09OX0RJU0NPTk5FQ1RFRBAFEiAKHENBTExfRU5EX1JFQVNPTl9QRUVSX09GRkxJTkUQBkIxWi9naXRodWIuY29tL01hcnMtMDgwNDIvTWFyc0NoYXQvYXBpL2FjY2Vzcy92MTt2MWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * CallRequest 是客户端发起的通话操作。
@@ -251,6 +251,15 @@ export type CallAck = Message<"access.v1.CallAck"> & {
    * @generated from field: int64 call_id = 1;
    */
   callId: bigint;
+
+  /**
+   * STUN/TURN 服务器，只在邀请和接听的 CallAck 中返回，客户端创建 RTCPeerConnection 时使用。
+   * 服务端没有配置 TURN 时为空，客户端只用本机地址（同一台机器、同一局域网内可以直连）。
+   * TURN 凭据是临时的，有效期由服务端配置（默认 12 小时），只用于这通通话
+   *
+   * @generated from field: repeated access.v1.IceServer ice_servers = 2;
+   */
+  iceServers: IceServer[];
 };
 
 /**
@@ -259,6 +268,41 @@ export type CallAck = Message<"access.v1.CallAck"> & {
  */
 export const CallAckSchema: GenMessage<CallAck> = /*@__PURE__*/
   messageDesc(file_access_v1_call, 8);
+
+/**
+ * IceServer 对应 RTCIceServer。
+ *
+ * @generated from message access.v1.IceServer
+ */
+export type IceServer = Message<"access.v1.IceServer"> & {
+  /**
+   * 例如 turn:turn.example.com:3478?transport=udp
+   *
+   * @generated from field: repeated string urls = 1;
+   */
+  urls: string[];
+
+  /**
+   * TURN REST API 约定的临时用户名：<过期时刻 Unix 秒>:<用户 ID>；STUN 为空
+   *
+   * @generated from field: string username = 2;
+   */
+  username: string;
+
+  /**
+   * base64(HMAC-SHA1(共享密钥, username))；STUN 为空
+   *
+   * @generated from field: string credential = 3;
+   */
+  credential: string;
+};
+
+/**
+ * Describes the message access.v1.IceServer.
+ * Use `create(IceServerSchema)` to create a new message.
+ */
+export const IceServerSchema: GenMessage<IceServer> = /*@__PURE__*/
+  messageDesc(file_access_v1_call, 9);
 
 /**
  * CallEvent 是服务端主动推送的通话事件（request_id 为 0）。
@@ -309,7 +353,7 @@ export type CallEvent = Message<"access.v1.CallEvent"> & {
  * Use `create(CallEventSchema)` to create a new message.
  */
 export const CallEventSchema: GenMessage<CallEvent> = /*@__PURE__*/
-  messageDesc(file_access_v1_call, 9);
+  messageDesc(file_access_v1_call, 10);
 
 /**
  * @generated from message access.v1.CallIncoming
@@ -336,7 +380,7 @@ export type CallIncoming = Message<"access.v1.CallIncoming"> & {
  * Use `create(CallIncomingSchema)` to create a new message.
  */
 export const CallIncomingSchema: GenMessage<CallIncoming> = /*@__PURE__*/
-  messageDesc(file_access_v1_call, 10);
+  messageDesc(file_access_v1_call, 11);
 
 /**
  * @generated from message access.v1.CallAccepted
@@ -353,7 +397,7 @@ export type CallAccepted = Message<"access.v1.CallAccepted"> & {
  * Use `create(CallAcceptedSchema)` to create a new message.
  */
 export const CallAcceptedSchema: GenMessage<CallAccepted> = /*@__PURE__*/
-  messageDesc(file_access_v1_call, 11);
+  messageDesc(file_access_v1_call, 12);
 
 /**
  * @generated from message access.v1.CallEnded
@@ -375,7 +419,7 @@ export type CallEnded = Message<"access.v1.CallEnded"> & {
  * Use `create(CallEndedSchema)` to create a new message.
  */
 export const CallEndedSchema: GenMessage<CallEnded> = /*@__PURE__*/
-  messageDesc(file_access_v1_call, 12);
+  messageDesc(file_access_v1_call, 13);
 
 /**
  * CallMedia 是通话类型，只用于展示；通话中切换音视频由客户端重新协商 SDP，服务端不感知。

@@ -5,7 +5,6 @@ import { router } from "@/app/router"
 import { SessionEndedDialog } from "@/app/SessionEndedDialog"
 import { Toaster } from "@/components/common/Toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { PrototypePanel } from "@/dev/PrototypePanel"
 import { queryClient } from "@/lib/query"
 import { watchSystemTheme } from "@/lib/theme"
 
@@ -18,7 +17,6 @@ export function App() {
         <RouterProvider router={router} />
         <SessionEndedDialog />
         <Toaster />
-        {import.meta.env.DEV && <PrototypePanel />}
       </TooltipProvider>
     </QueryClientProvider>
   )

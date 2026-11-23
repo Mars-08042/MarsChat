@@ -238,11 +238,17 @@ func signalFrame(rid uint64, s *v1.CallSignal) *v1.ClientFrame {
 // expectAck 读下一帧，要求是 request_id 为 rid 的 CallAck，返回 call_id。
 func (c *client) expectAck(rid uint64) int64 {
 	c.t.Helper()
+	return c.expectAckFrame(rid).GetCallId()
+}
+
+// expectAckFrame 与 expectAck 相同，返回整个 CallAck。
+func (c *client) expectAckFrame(rid uint64) *v1.CallAck {
+	c.t.Helper()
 	f := c.recv()
 	if f.GetCallAck() == nil || f.GetRequestId() != rid {
 		c.t.Fatalf("want CallAck with request_id %d, got %v", rid, f)
 	}
-	return f.GetCallAck().GetCallId()
+	return f.GetCallAck()
 }
 
 // expectEvent 读下一帧，要求是通话事件。
