@@ -330,7 +330,7 @@ make load-restore                # 按 .env 重建应用容器，恢复邮件发
 
 ## 前端开发
 
-前端在 `web/`（React + Vite，pnpm 管理依赖），设计见 [frontend.md](design/frontend.md)，进度见[前端计划](plans/active/frontend-rewrite.md)。
+前端在 `web/`（React + Vite，pnpm 管理依赖），设计见 [frontend.md](design/frontend.md)，实施过程见[前端计划](plans/completed/frontend-rewrite.md)。
 
 ```bash
 make web-install        # 按 web/pnpm-lock.yaml 安装依赖（cd web && pnpm install --frozen-lockfile）

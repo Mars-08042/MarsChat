@@ -1,6 +1,8 @@
 // 聊天界面使用的数据结构。字段对应 message 服务的会话与消息、media 服务的文件（设计第 4 节），
 // 由同步引擎（realtime/sync.ts）从接口和推送转换而来：ID 用字符串，seq 用 number（会话内连续递增，不会超出安全整数）。
 
+import type { CallMedia } from "@/features/call/call-text"
+
 export interface ChatUser {
   id: string
   nickname: string
@@ -54,10 +56,21 @@ export interface ImageMeta extends FileMeta {
   height: number
 }
 
+// 通话记录（docs/design/call-record.md）：只由服务端在单聊通话结束时写入，发送者是主叫
+export type CallResult = "completed" | "cancelled" | "rejected" | "missed" | "failed"
+
+export interface CallRecord {
+  media: CallMedia
+  result: CallResult
+  // 只有 completed 有值：从接听到结束的秒数
+  durationSeconds: number
+}
+
 export type MessageContent =
   | { kind: "text"; text: string }
   | { kind: "image"; image: ImageMeta }
   | { kind: "file"; file: FileMeta }
+  | { kind: "call"; call: CallRecord }
 
 // 上传中的本地状态。上传完成拿到 file_id 和 access_key 之后，消息才进入发送队列
 export interface UploadState {
@@ -108,5 +121,7 @@ export function contentPreview(content: MessageContent): string {
       return "[图片]"
     case "file":
       return `[文件] ${content.file.name}`
+    case "call":
+      return content.call.media === "video" ? "[视频通话]" : "[语音通话]"
   }
 }

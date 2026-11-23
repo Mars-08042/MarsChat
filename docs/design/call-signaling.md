@@ -337,6 +337,7 @@ call:
 5. **通话记录**：本步骤不写入聊天记录，与计划的“不落库”一致；通话起止只记日志，`features.md` 中记为未实现。
    - 推荐本步骤不做；
    - 备选：通话结束时由 access 调 message 写一条“通话记录”消息。这要扩展消息类型，属于 message 协议变更，建议与前端一起做。
+   - 后续：2026-11-23 按备选方案实现，设计见 [call-record.md](call-record.md)。
 6. **抽取 `pkg/accessclient`**：把 delivery 的 access 客户端缓存（按地址直连、不可达时冷却，TD-31）移到 `pkg`，供 delivery 与 access 共用。这是 delivery 的小范围重构，行为不变。推荐采用。
 7. **推迟项**：群通话，以及 ICE 服务器下发（STUN 地址、TURN 临时凭据），随 coturn 推迟到前端重构。推荐采用。
 

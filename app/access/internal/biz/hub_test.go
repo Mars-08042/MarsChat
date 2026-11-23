@@ -153,6 +153,53 @@ func (s *fakeSender) Send(_ context.Context, p auth.Principal, connID int64, m *
 	return fn(m)
 }
 
+type recordCall struct {
+	callID, callerID, calleeID int64
+	content                    *messagev1.CallContent
+}
+
+// fakeRecorder 记下每次写通话记录的调用；errs 依次作为前几次调用的结果，用完后成功。
+// 写入在后台协程中进行，测试用 waitRecords 等待。
+type fakeRecorder struct {
+	mu    sync.Mutex
+	calls []recordCall
+	errs  []error
+}
+
+func (r *fakeRecorder) WriteCallRecord(_ context.Context, callID, callerID, calleeID int64, c *messagev1.CallContent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, recordCall{callID, callerID, calleeID, c})
+	if len(r.errs) > 0 {
+		err := r.errs[0]
+		r.errs = r.errs[1:]
+		return err
+	}
+	return nil
+}
+
+func (r *fakeRecorder) snapshot() []recordCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]recordCall(nil), r.calls...)
+}
+
+// waitRecords 等到写通话记录的调用达到 n 次，返回全部调用。
+func (r *fakeRecorder) waitRecords(t *testing.T, n int) []recordCall {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		calls := r.snapshot()
+		if len(calls) >= n {
+			return calls
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("got %d call record writes, want %d", len(calls), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // ---- 测试环境 ----
 
 type env struct {
@@ -161,10 +208,11 @@ type env struct {
 	routes *fakeRoutes
 	sender *fakeSender
 	policy *PolicyHolder
-	calls  *fakeCallRepo
-	perm   *fakePerm
-	fwd    *fakeForwarder
-	url    string
+	calls   *fakeCallRepo
+	perm    *fakePerm
+	fwd     *fakeForwarder
+	records *fakeRecorder
+	url     string
 }
 
 func testConf() *conf.WebSocket {
@@ -196,12 +244,14 @@ func newEnvWithCall(t *testing.T, mutate func(*conf.WebSocket), callConf *conf.C
 			return &messagev1.SendResult{ConversationId: 100, Seq: 1}, nil
 		}},
 		policy: NewPolicyHolder(&conf.Policy{FramesPerSecond: 30}),
-		calls:  newFakeCallRepo(),
-		perm:   &fakePerm{},
-		fwd:    &fakeForwarder{},
+		calls:   newFakeCallRepo(),
+		perm:    &fakePerm{},
+		fwd:     &fakeForwarder{},
+		records: &fakeRecorder{},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	calls := NewCalls(callConf, c, e.calls, e.perm, e.routes, e.fwd, logger)
+	calls := NewCalls(callConf, c, e.calls, e.perm, e.routes, e.fwd, e.records, logger)
+	calls.recordRetry = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 	e.hub = NewHub(c, e.policy, e.auth, e.routes, e.sender, calls, logger)
 	upgrader := websocket.Upgrader{Subprotocols: Subprotocols}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

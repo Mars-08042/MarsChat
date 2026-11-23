@@ -37,7 +37,9 @@ var ProviderSet = wire.NewSet(
 	NewAuthenticator,
 	NewRouteRepo,
 	wire.Bind(new(biz.RouteRepo), new(*RouteRepo)),
-	NewMessageSender,
+	NewMessageClient,
+	wire.Bind(new(biz.MessageSender), new(*MessageClient)),
+	wire.Bind(new(biz.CallRecorder), new(*MessageClient)),
 	NewCallRepo,
 	NewCallPermission,
 	NewForwarder,
@@ -117,15 +119,16 @@ func (r *RouteRepo) Addr() string {
 	return r.addr
 }
 
-type messageSender struct {
+// MessageClient 是 message 内部接口的客户端，实现 biz.MessageSender 与 biz.CallRecorder。
+type MessageClient struct {
 	c messagev1.MessageInternalServiceClient
 }
 
-// NewMessageSender 创建 message 客户端，默认地址 discovery:///marschat-message。
+// NewMessageClient 创建 message 客户端，默认地址 discovery:///marschat-message。
 // 连接是惰性的，message 暂时不可用不影响启动；超时同时也是服务发现首次解析的等待上限。
-// SendMessage 按 client_msg_id 幂等（重复执行只存一条、返回同一个 seq），连接级失败时重试一次；
-// 按接口熔断，重试在外层。
-func NewMessageSender(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (biz.MessageSender, func(), error) {
+// SendMessage 按 client_msg_id 幂等、WriteCallRecord 按通话 ID 幂等（重复执行只存一条、返回同一个 seq），
+// 连接级失败时重试一次；按接口熔断，重试在外层。
+func NewMessageClient(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logger) (*MessageClient, func(), error) {
 	c := bc.GetMessage()
 	// 链路追踪与请求指标放在重试、熔断之前，按整次调用统计
 	mws, err := telemetry.ClientMiddlewares()
@@ -137,7 +140,7 @@ func NewMessageSender(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logge
 		kgrpc.WithDiscovery(r),
 		kgrpc.WithTimeout(c.GetTimeout().AsDuration()),
 		kgrpc.WithMiddleware(append(mws,
-			retry.Client(messagev1.MessageInternalService_SendMessage_FullMethodName),
+			retry.Client(messagev1.MessageInternalService_SendMessage_FullMethodName, messagev1.MessageInternalService_WriteCallRecord_FullMethodName),
 			circuitbreaker.Client(),
 		)...),
 	)
@@ -149,13 +152,13 @@ func NewMessageSender(bc *conf.Bootstrap, r *consul.Registry, logger *slog.Logge
 			logger.Warn("close client failed", slog.String("upstream", "message"), slog.Any("error", err))
 		}
 	}
-	return &messageSender{c: messagev1.NewMessageInternalServiceClient(conn)}, cleanup, nil
+	return &MessageClient{c: messagev1.NewMessageInternalServiceClient(conn)}, cleanup, nil
 }
 
 // Send 区分两类错误：带错误原因的错误原样返回，客户端看到具体原因，包括 message 的业务错误，
 // 以及熔断打开时的 503 CIRCUITBREAKER（请求没有发出，可以稍后重发）；
 // 超时、连接失败等没有错误原因的错误统一为 503 UPSTREAM_UNAVAILABLE（结果未知）。
-func (s *messageSender) Send(ctx context.Context, p auth.Principal, connID int64, m *messagev1.OutgoingMessage) (*messagev1.SendResult, error) {
+func (s *MessageClient) Send(ctx context.Context, p auth.Principal, connID int64, m *messagev1.OutgoingMessage) (*messagev1.SendResult, error) {
 	resp, err := s.c.SendMessage(ctx, &messagev1.SendMessageRequest{
 		SenderId:     p.UserID,
 		SessionId:    p.SessionID,
@@ -163,12 +166,25 @@ func (s *messageSender) Send(ctx context.Context, p auth.Principal, connID int64
 		Message:      m,
 	})
 	if err != nil {
-		if e := kerrors.FromError(err); e.Reason != "" {
-			return nil, e
-		}
-		return nil, biz.ErrUpstreamUnavailable(err)
+		return nil, messageError(err)
 	}
 	return resp.GetResult(), nil
+}
+
+// WriteCallRecord 写通话记录，错误规则同 Send。
+func (s *MessageClient) WriteCallRecord(ctx context.Context, callID, callerID, calleeID int64, c *messagev1.CallContent) error {
+	_, err := s.c.WriteCallRecord(ctx, &messagev1.WriteCallRecordRequest{CallId: callID, CallerId: callerID, CalleeId: calleeID, Call: c})
+	if err != nil {
+		return messageError(err)
+	}
+	return nil
+}
+
+func messageError(err error) error {
+	if e := kerrors.FromError(err); e.Reason != "" {
+		return e
+	}
+	return biz.ErrUpstreamUnavailable(err)
 }
 
 type callPermission struct {

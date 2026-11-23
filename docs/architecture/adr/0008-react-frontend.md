@@ -2,7 +2,7 @@
 
 - 状态：已采纳（2026-11-20 开发者确认）
 - 日期：2026-11-20
-- 关联：[前端设计](../../design/frontend.md)、[前端计划](../../plans/active/frontend-rewrite.md)、[ADR-0004](0004-frontend-pnpm.md)（pnpm）
+- 关联：[前端设计](../../design/frontend.md)、[前端计划](../../plans/completed/frontend-rewrite.md)、[ADR-0004](0004-frontend-pnpm.md)（pnpm）
 
 ## 背景
 

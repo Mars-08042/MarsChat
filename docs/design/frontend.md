@@ -1,6 +1,6 @@
 # 设计：React 前端与 UI
 
-- 状态：已采纳（2026-11-20 开发者确认，第 9 节的 6 个问题均按推荐方案） | 日期：2026-11-20 | 关联：[前端计划](../plans/active/frontend-rewrite.md)、[ADR-0008](../architecture/adr/0008-react-frontend.md)（技术栈与代码位置）、[ADR-0004](../architecture/adr/0004-frontend-pnpm.md)（pnpm）、[ADR-0006](../architecture/adr/0006-message-sync-model.md)（同步模型）、[data-flow.md](../architecture/data-flow.md)（帧协议与客户端约定）、[account-service.md](account-service.md)（令牌）、[media-service.md](media-service.md)（文件）、[call-signaling.md](call-signaling.md)（通话信令）、[gateway-multi-instance.md](gateway-multi-instance.md)（网关）
+- 状态：已采纳（2026-11-20 开发者确认，第 9 节的 6 个问题均按推荐方案） | 日期：2026-11-20 | 关联：[前端计划](../plans/completed/frontend-rewrite.md)、[ADR-0008](../architecture/adr/0008-react-frontend.md)（技术栈与代码位置）、[ADR-0004](../architecture/adr/0004-frontend-pnpm.md)（pnpm）、[ADR-0006](../architecture/adr/0006-message-sync-model.md)（同步模型）、[data-flow.md](../architecture/data-flow.md)（帧协议与客户端约定）、[account-service.md](account-service.md)（令牌）、[media-service.md](media-service.md)（文件）、[call-signaling.md](call-signaling.md)（通话信令）、[gateway-multi-instance.md](gateway-multi-instance.md)（网关）
 
 ## 1. 背景与目标
 
@@ -24,7 +24,7 @@
 - 用 IndexedDB 在本地持久化消息（5.4）。
 - 后端不支持的功能：在线状态、正在输入、消息撤回、消息搜索、用户搜索。
 - 国际化，只提供简体中文。
-- 后端暂不支持的通话能力：群通话、断线后恢复通话、通话记录写入聊天记录（call-signaling 第 1 节）。
+- 后端暂不支持的通话能力：群通话、断线后恢复通话（call-signaling 第 1 节）。通话记录写入聊天记录已在前端重写之后实现，见 [call-record.md](call-record.md)。
 
 ## 2. 需求与约束
 
@@ -761,7 +761,7 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
 
 ## 8. 实施顺序
 
-见[前端计划](../plans/active/frontend-rewrite.md)：设计确认 → 工程骨架 → 视觉原型（假数据）→ 认证 → 实时连接与消息 → 联系人与群组 → 设置与管理 → 文件 → 通话 → 打磨与部署。
+见[前端计划](../plans/completed/frontend-rewrite.md)：设计确认 → 工程骨架 → 视觉原型（假数据）→ 认证 → 实时连接与消息 → 联系人与群组 → 设置与管理 → 文件 → 通话 → 打磨与部署。
 
 先做视觉原型，是为了在接入后端之前定下配色、字体和动效基调，避免接完数据之后再大改样式。
 

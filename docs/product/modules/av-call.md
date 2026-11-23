@@ -5,10 +5,11 @@
 | 层 | 位置 |
 |---|---|
 | 接口 | `api/access/v1/call.proto`（`CallRequest`、`CallAck`、`CallEvent`）；`frame.proto` 的 `ClientFrame.call`、`ServerFrame.call_ack`、`ServerFrame.call_event`；`error_reason.proto` |
-| access | `app/access/internal/biz/call.go`（状态机、通知、振铃定时器）、`turn.go`（TURN 临时凭据）、`conn.go`（分发通话帧、心跳续期、断线结束）；`internal/data/call.go`（Redis 状态与 Lua 脚本）、`data.go`（social 权限客户端、转发器） |
+| access | `app/access/internal/biz/call.go`（状态机、通知、振铃定时器）、`call_record.go`（结束后写通话记录）、`turn.go`（TURN 临时凭据）、`conn.go`（分发通话帧、心跳续期、断线结束）；`internal/data/call.go`（Redis 状态与 Lua 脚本）、`data.go`（social 权限客户端、message 客户端、转发器） |
+| message | `app/message/internal/biz/message.go` 的 `WriteCallRecord`（与发送共用写入事务） |
 | 部署 | coturn（Compose profile `call`，`make call-up`）：`deploy/coturn/turnserver.conf`，配置项见 [deployment.md](../../deployment.md#通话中继turn) |
 | 公共 | `pkg/accessclient`（按地址直连 access，delivery 与 access 共用）、`pkg/route` |
-| 前端 | `web/src/realtime/call/engine.ts`（状态机、WebRTC 协商、资源释放）、`web/src/stores/call.ts`；`web/src/features/call/`（通话层、来电提醒、文案） |
+| 前端 | `web/src/realtime/call/engine.ts`（状态机、WebRTC 协商、资源释放）、`web/src/stores/call.ts`；`web/src/features/call/`（通话层、来电提醒、文案）；`web/src/features/chat/CallRecordBubble.tsx`（通话记录气泡与回拨） |
 
 要点：
 
@@ -16,7 +17,7 @@
 - 只能呼叫好友，任一方拉黑都不能呼叫（与单聊发消息相同）；对方不在线立即返回 `CALL_PEER_OFFLINE`。
 - 振铃 60 秒无人接听由服务端结束；信令连接断开时通话结束，对方收到 `DISCONNECTED`。
 - SDP 与 ICE 只在接听之后、只在主叫连接与接听连接之间转发，不回显给发送方，也不发给被叫的其他设备。
-- 不落库：通话记录不写入聊天记录，通话起止只记日志。
+- 通话状态不落库，通话起止记日志；结束时由 access 调 message 的 `WriteCallRecord`，在两人的会话里写一条通话记录（发送者为主叫，按通话 ID 幂等），客户端按主叫、被叫显示不同文案，点击回拨。设计见 [call-record.md](../../design/call-record.md)，流程见 [data-flow.md](../../architecture/data-flow.md#96-通话记录)。
 - TURN 中继（可选）：邀请和接听的 `CallAck` 带 ICE 服务器与 12 小时的临时凭据（TURN REST API，access 与 coturn 共用密钥），双方隔着 NAT 时经 coturn 中继；没有配置时只有能直接互通的两端（例如同一局域网）才能建立媒体连接。设计见 [turn-relay.md](../../design/turn-relay.md)。
 
 | 操作 | WebSocket 帧 | 说明 |
@@ -29,4 +30,4 @@
 
 错误原因：`CALL_NOT_FOUND`、`CALL_PEER_OFFLINE`、`CALL_BUSY`、`ALREADY_IN_CALL`、`CALL_ALREADY_ANSWERED`、`INVALID_FRAME`、`UPSTREAM_UNAVAILABLE`；呼叫的权限错误沿用 social 的 `NOT_FRIENDS`、`BLOCKED`、`USER_NOT_FOUND`。
 
-尚未实现：群通话；TURN over TLS（`turns:`，随公网部署配置证书）；通话记录；断线重连后恢复通话。
+尚未实现：群通话；TURN over TLS（`turns:`，随公网部署配置证书）；断线重连后恢复通话；忙线时的通话记录。

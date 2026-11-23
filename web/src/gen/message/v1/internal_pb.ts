@@ -5,7 +5,7 @@
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
-import type { OutgoingMessage, SendResult } from "./message_pb";
+import type { CallContent, OutgoingMessage, SendResult } from "./message_pb";
 import { file_message_v1_message } from "./message_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -13,7 +13,56 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file message/v1/internal.proto.
  */
 export const file_message_v1_internal: GenFile = /*@__PURE__*/
-  fileDesc("ChltZXNzYWdlL3YxL2ludGVybmFsLnByb3RvEgptZXNzYWdlLnYxIqMBChJTZW5kTWVzc2FnZVJlcXVlc3QSGgoJc2VuZGVyX2lkGAEgASgDQge6SAQiAiAAEhsKCnNlc3Npb25faWQYAiABKANCB7pIBCICIAASHgoNY29ubmVjdGlvbl9pZBgDIAEoA0IHukgEIgIgABI0CgdtZXNzYWdlGAQgASgLMhsubWVzc2FnZS52MS5PdXRnb2luZ01lc3NhZ2VCBrpIA8gBASI9ChNTZW5kTWVzc2FnZVJlc3BvbnNlEiYKBnJlc3VsdBgBIAEoCzIWLm1lc3NhZ2UudjEuU2VuZFJlc3VsdDJoChZNZXNzYWdlSW50ZXJuYWxTZXJ2aWNlEk4KC1NlbmRNZXNzYWdlEh4ubWVzc2FnZS52MS5TZW5kTWVzc2FnZVJlcXVlc3QaHy5tZXNzYWdlLnYxLlNlbmRNZXNzYWdlUmVzcG9uc2VCMlowZ2l0aHViLmNvbS9NYXJzLTA4MDQyL01hcnNDaGF0L2FwaS9tZXNzYWdlL3YxO3YxYgZwcm90bzM", [file_buf_validate_validate, file_message_v1_message]);
+  fileDesc("ChltZXNzYWdlL3YxL2ludGVybmFsLnByb3RvEgptZXNzYWdlLnYxIosCChZXcml0ZUNhbGxSZWNvcmRSZXF1ZXN0EhgKB2NhbGxfaWQYASABKANCB7pIBCICIAASGgoJY2FsbGVyX2lkGAIgASgDQge6SAQiAiAAEhoKCWNhbGxlZV9pZBgDIAEoA0IHukgEIgIgABItCgRjYWxsGAQgASgLMhcubWVzc2FnZS52MS5DYWxsQ29udGVudEIGukgDyAEBOnC6SG0aawoid3JpdGVfY2FsbF9yZWNvcmQuZGlzdGluY3RfcGFydGllcxIjY2FsbGVyX2lkIGFuZCBjYWxsZWVfaWQgbXVzdCBkaWZmZXIaIHRoaXMuY2FsbGVyX2lkICE9IHRoaXMuY2FsbGVlX2lkIkEKF1dyaXRlQ2FsbFJlY29yZFJlc3BvbnNlEiYKBnJlc3VsdBgBIAEoCzIWLm1lc3NhZ2UudjEuU2VuZFJlc3VsdCKjAQoSU2VuZE1lc3NhZ2VSZXF1ZXN0EhoKCXNlbmRlcl9pZBgBIAEoA0IHukgEIgIgABIbCgpzZXNzaW9uX2lkGAIgASgDQge6SAQiAiAAEh4KDWNvbm5lY3Rpb25faWQYAyABKANCB7pIBCICIAASNAoHbWVzc2FnZRgEIAEoCzIbLm1lc3NhZ2UudjEuT3V0Z29pbmdNZXNzYWdlQga6SAPIAQEiPQoTU2VuZE1lc3NhZ2VSZXNwb25zZRImCgZyZXN1bHQYASABKAsyFi5tZXNzYWdlLnYxLlNlbmRSZXN1bHQyxAEKFk1lc3NhZ2VJbnRlcm5hbFNlcnZpY2USTgoLU2VuZE1lc3NhZ2USHi5tZXNzYWdlLnYxLlNlbmRNZXNzYWdlUmVxdWVzdBofLm1lc3NhZ2UudjEuU2VuZE1lc3NhZ2VSZXNwb25zZRJaCg9Xcml0ZUNhbGxSZWNvcmQSIi5tZXNzYWdlLnYxLldyaXRlQ2FsbFJlY29yZFJlcXVlc3QaIy5tZXNzYWdlLnYxLldyaXRlQ2FsbFJlY29yZFJlc3BvbnNlQjJaMGdpdGh1Yi5jb20vTWFycy0wODA0Mi9NYXJzQ2hhdC9hcGkvbWVzc2FnZS92MTt2MWIGcHJvdG8z", [file_buf_validate_validate, file_message_v1_message]);
+
+/**
+ * @generated from message message.v1.WriteCallRecordRequest
+ */
+export type WriteCallRecordRequest = Message<"message.v1.WriteCallRecordRequest"> & {
+  /**
+   * @generated from field: int64 call_id = 1;
+   */
+  callId: bigint;
+
+  /**
+   * @generated from field: int64 caller_id = 2;
+   */
+  callerId: bigint;
+
+  /**
+   * @generated from field: int64 callee_id = 3;
+   */
+  calleeId: bigint;
+
+  /**
+   * @generated from field: message.v1.CallContent call = 4;
+   */
+  call?: CallContent | undefined;
+};
+
+/**
+ * Describes the message message.v1.WriteCallRecordRequest.
+ * Use `create(WriteCallRecordRequestSchema)` to create a new message.
+ */
+export const WriteCallRecordRequestSchema: GenMessage<WriteCallRecordRequest> = /*@__PURE__*/
+  messageDesc(file_message_v1_internal, 0);
+
+/**
+ * @generated from message message.v1.WriteCallRecordResponse
+ */
+export type WriteCallRecordResponse = Message<"message.v1.WriteCallRecordResponse"> & {
+  /**
+   * @generated from field: message.v1.SendResult result = 1;
+   */
+  result?: SendResult | undefined;
+};
+
+/**
+ * Describes the message message.v1.WriteCallRecordResponse.
+ * Use `create(WriteCallRecordResponseSchema)` to create a new message.
+ */
+export const WriteCallRecordResponseSchema: GenMessage<WriteCallRecordResponse> = /*@__PURE__*/
+  messageDesc(file_message_v1_internal, 1);
 
 /**
  * @generated from message message.v1.SendMessageRequest
@@ -51,7 +100,7 @@ export type SendMessageRequest = Message<"message.v1.SendMessageRequest"> & {
  * Use `create(SendMessageRequestSchema)` to create a new message.
  */
 export const SendMessageRequestSchema: GenMessage<SendMessageRequest> = /*@__PURE__*/
-  messageDesc(file_message_v1_internal, 0);
+  messageDesc(file_message_v1_internal, 2);
 
 /**
  * @generated from message message.v1.SendMessageResponse
@@ -68,7 +117,7 @@ export type SendMessageResponse = Message<"message.v1.SendMessageResponse"> & {
  * Use `create(SendMessageResponseSchema)` to create a new message.
  */
 export const SendMessageResponseSchema: GenMessage<SendMessageResponse> = /*@__PURE__*/
-  messageDesc(file_message_v1_internal, 1);
+  messageDesc(file_message_v1_internal, 3);
 
 /**
  * MessageInternalService 只供其他服务通过 gRPC 调用，不经网关暴露（没有 HTTP 注解）。
@@ -86,6 +135,18 @@ export const MessageInternalService: GenService<{
     methodKind: "unary";
     input: typeof SendMessageRequestSchema;
     output: typeof SendMessageResponseSchema;
+  },
+  /**
+   * 在两人的单聊会话里写一条通话记录，由 access 在通话结束时调用，发送者为主叫。
+   * 通话在邀请时已经校验过好友关系，这里不做发言权限检查，也不计入发消息的限流。
+   * 以 (caller_id, "call-<call_id>") 作为幂等键，重复调用只存一条、返回同一个结果。
+   *
+   * @generated from rpc message.v1.MessageInternalService.WriteCallRecord
+   */
+  writeCallRecord: {
+    methodKind: "unary";
+    input: typeof WriteCallRecordRequestSchema;
+    output: typeof WriteCallRecordResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_message_v1_internal, 0);

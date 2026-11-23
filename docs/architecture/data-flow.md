@@ -338,9 +338,25 @@ social 发布器 ─→ marschat.social.events ─→ delivery
 - 没有配置时为空，客户端只用本机地址，只能在可以直接互通的网络中建立连接；
 - 客户端为每通通话保存这份列表，主叫收到 `accepted`、被叫收到接听的 `CallAck` 后创建 `RTCPeerConnection` 时使用。
 
-### 9.6 尚未实现
+### 9.6 通话记录
 
-群通话；通话记录写入聊天记录；断线重连后恢复通话。
+每通单聊通话结束时，在两人的会话里写一条通话记录消息（设计见 [call-record.md](../design/call-record.md)）：
+
+```
+结束通话的 access（Redis 原子结束，只有一个实例走到这里）
+  ─后台 gRPC MessageInternalService.WriteCallRecord{call_id, caller_id, callee_id, CallContent{media, result, duration_seconds}}─→ message
+  message：发送者为主叫，client_msg_id 为 call:<call_id>（重复调用只存一条），不限流、不校验发言权限
+    → 与普通消息相同的事务、Outbox、Kafka、delivery 推送（不排除任何连接）与补拉
+```
+
+- 结果按结束原因和是否接听映射：接听后挂断或断开为 `COMPLETED`（时长从接听算起），振铃中主叫挂断为 `CANCELLED`，`REJECTED`、`TIMEOUT` 分别为 `REJECTED`、`MISSED`，接听前断开或被叫不在线为 `FAILED`；`ANSWERED_ELSEWHERE` 不是整通通话的结束，不写记录；忙线时没有建立通话，也不写；
+- message 不可用时按 1、2、4 秒重试 3 次，仍然失败就放弃并记 WARN；停机时不再重试。access 没有持久化，进程在写入前退出时缺这条记录；
+- 客户端发送的 `OutgoingMessage` 带 `CallContent` 时，message 的校验中间件返回 `VALIDATOR`；
+- 客户端按查看者是否主叫显示文案，点击记录回拨。
+
+### 9.7 尚未实现
+
+群通话；断线重连后恢复通话。
 
 ## 10. 链路追踪
 

@@ -1349,6 +1349,22 @@ components:
                     items:
                         $ref: '#/components/schemas/media.v1.DownloadUrl'
                     description: 与请求的顺序一致，校验不通过的项被省略
+        message.v1.CallContent:
+            type: object
+            properties:
+                media:
+                    type: integer
+                    format: enum
+                result:
+                    type: integer
+                    format: enum
+                durationSeconds:
+                    type: integer
+                    description: 只有 CALL_RESULT_COMPLETED 有值：从接听到结束的秒数，按信令时间计算，不是媒体实际连通的时间
+                    format: int32
+            description: |-
+                CallContent 是通话记录，由 access 在单聊通话结束时经内部接口 WriteCallRecord 写入，发送者为主叫。
+                 客户端发送时返回 VALIDATOR（见 OutgoingMessage）。设计见 docs/design/call-record.md。
         message.v1.Conversation:
             type: object
             properties:
@@ -1516,6 +1532,10 @@ components:
                     $ref: '#/components/schemas/message.v1.ImageContent'
                 file:
                     $ref: '#/components/schemas/message.v1.FileContent'
+                call:
+                    allOf:
+                        - $ref: '#/components/schemas/message.v1.CallContent'
+                    description: 只由服务端写入
             description: MessageContent 是消息正文，按类型取其中一种。
         message.v1.TextContent:
             type: object

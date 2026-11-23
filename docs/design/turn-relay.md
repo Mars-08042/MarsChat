@@ -1,6 +1,6 @@
 # 设计：通话的 TURN 中继与临时凭据
 
-- 状态：已采纳（2026-11-22） | 日期：2026-11-22 | 关联：[call-signaling.md](call-signaling.md)（第 1 节「不在本步骤范围内」、第 8 节问题 7）、[前端设计](frontend.md) 3.9.5、[web-deployment.md](web-deployment.md)、[前端计划](../plans/active/frontend-rewrite.md) 第 9 阶段
+- 状态：已采纳（2026-11-22） | 日期：2026-11-22 | 关联：[call-signaling.md](call-signaling.md)（第 1 节「不在本步骤范围内」、第 8 节问题 7）、[前端设计](frontend.md) 3.9.5、[web-deployment.md](web-deployment.md)、[前端计划](../plans/completed/frontend-rewrite.md) 第 9 阶段
 
 开发者已确认（2026-11-22）：前端第 8 阶段先不部署 coturn，放到第 9 阶段与部署方式一起实施。本文先以提议提交，确认结果与实施中的调整见第 8、9 节；第 3 节已按实施结果更新。
 

@@ -22,6 +22,118 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type WriteCallRecordRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CallId        int64                  `protobuf:"varint,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	CallerId      int64                  `protobuf:"varint,2,opt,name=caller_id,json=callerId,proto3" json:"caller_id,omitempty"`
+	CalleeId      int64                  `protobuf:"varint,3,opt,name=callee_id,json=calleeId,proto3" json:"callee_id,omitempty"`
+	Call          *CallContent           `protobuf:"bytes,4,opt,name=call,proto3" json:"call,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteCallRecordRequest) Reset() {
+	*x = WriteCallRecordRequest{}
+	mi := &file_message_v1_internal_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteCallRecordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteCallRecordRequest) ProtoMessage() {}
+
+func (x *WriteCallRecordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_message_v1_internal_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteCallRecordRequest.ProtoReflect.Descriptor instead.
+func (*WriteCallRecordRequest) Descriptor() ([]byte, []int) {
+	return file_message_v1_internal_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *WriteCallRecordRequest) GetCallId() int64 {
+	if x != nil {
+		return x.CallId
+	}
+	return 0
+}
+
+func (x *WriteCallRecordRequest) GetCallerId() int64 {
+	if x != nil {
+		return x.CallerId
+	}
+	return 0
+}
+
+func (x *WriteCallRecordRequest) GetCalleeId() int64 {
+	if x != nil {
+		return x.CalleeId
+	}
+	return 0
+}
+
+func (x *WriteCallRecordRequest) GetCall() *CallContent {
+	if x != nil {
+		return x.Call
+	}
+	return nil
+}
+
+type WriteCallRecordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Result        *SendResult            `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteCallRecordResponse) Reset() {
+	*x = WriteCallRecordResponse{}
+	mi := &file_message_v1_internal_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteCallRecordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteCallRecordResponse) ProtoMessage() {}
+
+func (x *WriteCallRecordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_message_v1_internal_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteCallRecordResponse.ProtoReflect.Descriptor instead.
+func (*WriteCallRecordResponse) Descriptor() ([]byte, []int) {
+	return file_message_v1_internal_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *WriteCallRecordResponse) GetResult() *SendResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
 type SendMessageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 以下三项来自 access 上已鉴权的连接，不来自客户端
@@ -37,7 +149,7 @@ type SendMessageRequest struct {
 
 func (x *SendMessageRequest) Reset() {
 	*x = SendMessageRequest{}
-	mi := &file_message_v1_internal_proto_msgTypes[0]
+	mi := &file_message_v1_internal_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -49,7 +161,7 @@ func (x *SendMessageRequest) String() string {
 func (*SendMessageRequest) ProtoMessage() {}
 
 func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_message_v1_internal_proto_msgTypes[0]
+	mi := &file_message_v1_internal_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -62,7 +174,7 @@ func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendMessageRequest) Descriptor() ([]byte, []int) {
-	return file_message_v1_internal_proto_rawDescGZIP(), []int{0}
+	return file_message_v1_internal_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SendMessageRequest) GetSenderId() int64 {
@@ -102,7 +214,7 @@ type SendMessageResponse struct {
 
 func (x *SendMessageResponse) Reset() {
 	*x = SendMessageResponse{}
-	mi := &file_message_v1_internal_proto_msgTypes[1]
+	mi := &file_message_v1_internal_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -114,7 +226,7 @@ func (x *SendMessageResponse) String() string {
 func (*SendMessageResponse) ProtoMessage() {}
 
 func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_message_v1_internal_proto_msgTypes[1]
+	mi := &file_message_v1_internal_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -127,7 +239,7 @@ func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageResponse.ProtoReflect.Descriptor instead.
 func (*SendMessageResponse) Descriptor() ([]byte, []int) {
-	return file_message_v1_internal_proto_rawDescGZIP(), []int{1}
+	return file_message_v1_internal_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SendMessageResponse) GetResult() *SendResult {
@@ -142,7 +254,15 @@ var File_message_v1_internal_proto protoreflect.FileDescriptor
 const file_message_v1_internal_proto_rawDesc = "" +
 	"\n" +
 	"\x19message/v1/internal.proto\x12\n" +
-	"message.v1\x1a\x1bbuf/validate/validate.proto\x1a\x18message/v1/message.proto\"\xcf\x01\n" +
+	"message.v1\x1a\x1bbuf/validate/validate.proto\x1a\x18message/v1/message.proto\"\xad\x02\n" +
+	"\x16WriteCallRecordRequest\x12 \n" +
+	"\acall_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\x06callId\x12$\n" +
+	"\tcaller_id\x18\x02 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\bcallerId\x12$\n" +
+	"\tcallee_id\x18\x03 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\bcalleeId\x123\n" +
+	"\x04call\x18\x04 \x01(\v2\x17.message.v1.CallContentB\x06\xbaH\x03\xc8\x01\x01R\x04call:p\xbaHm\x1ak\n" +
+	"\"write_call_record.distinct_parties\x12#caller_id and callee_id must differ\x1a this.caller_id != this.callee_id\"I\n" +
+	"\x17WriteCallRecordResponse\x12.\n" +
+	"\x06result\x18\x01 \x01(\v2\x16.message.v1.SendResultR\x06result\"\xcf\x01\n" +
 	"\x12SendMessageRequest\x12$\n" +
 	"\tsender_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\bsenderId\x12&\n" +
 	"\n" +
@@ -150,9 +270,10 @@ const file_message_v1_internal_proto_rawDesc = "" +
 	"\rconnection_id\x18\x03 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\fconnectionId\x12=\n" +
 	"\amessage\x18\x04 \x01(\v2\x1b.message.v1.OutgoingMessageB\x06\xbaH\x03\xc8\x01\x01R\amessage\"E\n" +
 	"\x13SendMessageResponse\x12.\n" +
-	"\x06result\x18\x01 \x01(\v2\x16.message.v1.SendResultR\x06result2h\n" +
+	"\x06result\x18\x01 \x01(\v2\x16.message.v1.SendResultR\x06result2\xc4\x01\n" +
 	"\x16MessageInternalService\x12N\n" +
-	"\vSendMessage\x12\x1e.message.v1.SendMessageRequest\x1a\x1f.message.v1.SendMessageResponseB2Z0github.com/Mars-08042/MarsChat/api/message/v1;v1b\x06proto3"
+	"\vSendMessage\x12\x1e.message.v1.SendMessageRequest\x1a\x1f.message.v1.SendMessageResponse\x12Z\n" +
+	"\x0fWriteCallRecord\x12\".message.v1.WriteCallRecordRequest\x1a#.message.v1.WriteCallRecordResponseB2Z0github.com/Mars-08042/MarsChat/api/message/v1;v1b\x06proto3"
 
 var (
 	file_message_v1_internal_proto_rawDescOnce sync.Once
@@ -166,23 +287,30 @@ func file_message_v1_internal_proto_rawDescGZIP() []byte {
 	return file_message_v1_internal_proto_rawDescData
 }
 
-var file_message_v1_internal_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_message_v1_internal_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_message_v1_internal_proto_goTypes = []any{
-	(*SendMessageRequest)(nil),  // 0: message.v1.SendMessageRequest
-	(*SendMessageResponse)(nil), // 1: message.v1.SendMessageResponse
-	(*OutgoingMessage)(nil),     // 2: message.v1.OutgoingMessage
-	(*SendResult)(nil),          // 3: message.v1.SendResult
+	(*WriteCallRecordRequest)(nil),  // 0: message.v1.WriteCallRecordRequest
+	(*WriteCallRecordResponse)(nil), // 1: message.v1.WriteCallRecordResponse
+	(*SendMessageRequest)(nil),      // 2: message.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),     // 3: message.v1.SendMessageResponse
+	(*CallContent)(nil),             // 4: message.v1.CallContent
+	(*SendResult)(nil),              // 5: message.v1.SendResult
+	(*OutgoingMessage)(nil),         // 6: message.v1.OutgoingMessage
 }
 var file_message_v1_internal_proto_depIdxs = []int32{
-	2, // 0: message.v1.SendMessageRequest.message:type_name -> message.v1.OutgoingMessage
-	3, // 1: message.v1.SendMessageResponse.result:type_name -> message.v1.SendResult
-	0, // 2: message.v1.MessageInternalService.SendMessage:input_type -> message.v1.SendMessageRequest
-	1, // 3: message.v1.MessageInternalService.SendMessage:output_type -> message.v1.SendMessageResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 0: message.v1.WriteCallRecordRequest.call:type_name -> message.v1.CallContent
+	5, // 1: message.v1.WriteCallRecordResponse.result:type_name -> message.v1.SendResult
+	6, // 2: message.v1.SendMessageRequest.message:type_name -> message.v1.OutgoingMessage
+	5, // 3: message.v1.SendMessageResponse.result:type_name -> message.v1.SendResult
+	2, // 4: message.v1.MessageInternalService.SendMessage:input_type -> message.v1.SendMessageRequest
+	0, // 5: message.v1.MessageInternalService.WriteCallRecord:input_type -> message.v1.WriteCallRecordRequest
+	3, // 6: message.v1.MessageInternalService.SendMessage:output_type -> message.v1.SendMessageResponse
+	1, // 7: message.v1.MessageInternalService.WriteCallRecord:output_type -> message.v1.WriteCallRecordResponse
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_message_v1_internal_proto_init() }
@@ -197,7 +325,7 @@ func file_message_v1_internal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_message_v1_internal_proto_rawDesc), len(file_message_v1_internal_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

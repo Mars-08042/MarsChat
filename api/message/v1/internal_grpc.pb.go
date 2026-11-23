@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MessageInternalService_SendMessage_FullMethodName = "/message.v1.MessageInternalService/SendMessage"
+	MessageInternalService_SendMessage_FullMethodName     = "/message.v1.MessageInternalService/SendMessage"
+	MessageInternalService_WriteCallRecord_FullMethodName = "/message.v1.MessageInternalService/WriteCallRecord"
 )
 
 // MessageInternalServiceClient is the client API for MessageInternalService service.
@@ -31,6 +32,10 @@ type MessageInternalServiceClient interface {
 	// 发送消息，由 access 在收到客户端的 SendMessage 帧后调用。写库成功才返回确认。
 	// 发言权限不足时原样返回 social 的错误（NOT_FRIENDS、BLOCKED、MEMBER_MUTED 等）。
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
+	// 在两人的单聊会话里写一条通话记录，由 access 在通话结束时调用，发送者为主叫。
+	// 通话在邀请时已经校验过好友关系，这里不做发言权限检查，也不计入发消息的限流。
+	// 以 (caller_id, "call-<call_id>") 作为幂等键，重复调用只存一条、返回同一个结果。
+	WriteCallRecord(ctx context.Context, in *WriteCallRecordRequest, opts ...grpc.CallOption) (*WriteCallRecordResponse, error)
 }
 
 type messageInternalServiceClient struct {
@@ -51,6 +56,16 @@ func (c *messageInternalServiceClient) SendMessage(ctx context.Context, in *Send
 	return out, nil
 }
 
+func (c *messageInternalServiceClient) WriteCallRecord(ctx context.Context, in *WriteCallRecordRequest, opts ...grpc.CallOption) (*WriteCallRecordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WriteCallRecordResponse)
+	err := c.cc.Invoke(ctx, MessageInternalService_WriteCallRecord_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MessageInternalServiceServer is the server API for MessageInternalService service.
 // All implementations must embed UnimplementedMessageInternalServiceServer
 // for forward compatibility.
@@ -60,6 +75,10 @@ type MessageInternalServiceServer interface {
 	// 发送消息，由 access 在收到客户端的 SendMessage 帧后调用。写库成功才返回确认。
 	// 发言权限不足时原样返回 social 的错误（NOT_FRIENDS、BLOCKED、MEMBER_MUTED 等）。
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
+	// 在两人的单聊会话里写一条通话记录，由 access 在通话结束时调用，发送者为主叫。
+	// 通话在邀请时已经校验过好友关系，这里不做发言权限检查，也不计入发消息的限流。
+	// 以 (caller_id, "call-<call_id>") 作为幂等键，重复调用只存一条、返回同一个结果。
+	WriteCallRecord(context.Context, *WriteCallRecordRequest) (*WriteCallRecordResponse, error)
 	mustEmbedUnimplementedMessageInternalServiceServer()
 }
 
@@ -72,6 +91,9 @@ type UnimplementedMessageInternalServiceServer struct{}
 
 func (UnimplementedMessageInternalServiceServer) SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendMessage not implemented")
+}
+func (UnimplementedMessageInternalServiceServer) WriteCallRecord(context.Context, *WriteCallRecordRequest) (*WriteCallRecordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteCallRecord not implemented")
 }
 func (UnimplementedMessageInternalServiceServer) mustEmbedUnimplementedMessageInternalServiceServer() {
 }
@@ -113,6 +135,24 @@ func _MessageInternalService_SendMessage_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MessageInternalService_WriteCallRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteCallRecordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MessageInternalServiceServer).WriteCallRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MessageInternalService_WriteCallRecord_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MessageInternalServiceServer).WriteCallRecord(ctx, req.(*WriteCallRecordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MessageInternalService_ServiceDesc is the grpc.ServiceDesc for MessageInternalService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -123,6 +163,10 @@ var MessageInternalService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendMessage",
 			Handler:    _MessageInternalService_SendMessage_Handler,
+		},
+		{
+			MethodName: "WriteCallRecord",
+			Handler:    _MessageInternalService_WriteCallRecord_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -18,7 +18,7 @@ import type { Message as Message$1 } from "@bufbuild/protobuf";
  * Describes the file message/v1/message.proto.
  */
 export const file_message_v1_message: GenFile = /*@__PURE__*/
-  fileDesc("ChhtZXNzYWdlL3YxL21lc3NhZ2UucHJvdG8SCm1lc3NhZ2UudjEiJwoLVGV4dENvbnRlbnQSGAoEdGV4dBgBIAEoCUIKukgHcgUQARigHyKVAQoMSW1hZ2VDb250ZW50EhgKB2ZpbGVfaWQYASABKANCB7pIBCICIAASHQoKYWNjZXNzX2tleRgCIAEoCUIJukgGcgQQARhAEgwKBG5hbWUYAyABKAkSDAoEc2l6ZRgEIAEoAxIRCgltaW1lX3R5cGUYBSABKAkSDQoFd2lkdGgYBiABKAUSDgoGaGVpZ2h0GAcgASgFInUKC0ZpbGVDb250ZW50EhgKB2ZpbGVfaWQYASABKANCB7pIBCICIAASHQoKYWNjZXNzX2tleRgCIAEoCUIJukgGcgQQARhAEgwKBG5hbWUYAyABKAkSDAoEc2l6ZRgEIAEoAxIRCgltaW1lX3R5cGUYBSABKAkinAEKDk1lc3NhZ2VDb250ZW50EicKBHRleHQYASABKAsyFy5tZXNzYWdlLnYxLlRleHRDb250ZW50SAASKQoFaW1hZ2UYAiABKAsyGC5tZXNzYWdlLnYxLkltYWdlQ29udGVudEgAEicKBGZpbGUYAyABKAsyFy5tZXNzYWdlLnYxLkZpbGVDb250ZW50SABCDQoEYm9keRIFukgCCAEi7wEKB01lc3NhZ2USFwoPY29udmVyc2F0aW9uX2lkGAEgASgDEjcKEWNvbnZlcnNhdGlvbl90eXBlGAIgASgOMhwubWVzc2FnZS52MS5Db252ZXJzYXRpb25UeXBlEgsKA3NlcRgDIAEoAxIRCglzZW5kZXJfaWQYBCABKAMSFQoNY2xpZW50X21zZ19pZBgFIAEoCRIrCgdjb250ZW50GAYgASgLMhoubWVzc2FnZS52MS5NZXNzYWdlQ29udGVudBIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLRAQoPT3V0Z29pbmdNZXNzYWdlEjsKCXBlZXJfdHlwZRgBIAEoDjIcLm1lc3NhZ2UudjEuQ29udmVyc2F0aW9uVHlwZUIKukgHggEEEAEgABIYCgdwZWVyX2lkGAIgASgDQge6SAQiAiAAEjIKDWNsaWVudF9tc2dfaWQYAyABKAlCG7pIGHIWEAEYQDIQXltBLVphLXowLTlfLV0rJBIzCgdjb250ZW50GAQgASgLMhoubWVzc2FnZS52MS5NZXNzYWdlQ29udGVudEIGukgDyAEBImIKClNlbmRSZXN1bHQSFwoPY29udmVyc2F0aW9uX2lkGAEgASgDEgsKA3NlcRgCIAEoAxIuCgpjcmVhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJKCgxSZWFkUG9zaXRpb24SFwoPY29udmVyc2F0aW9uX2lkGAEgASgDEg8KB3VzZXJfaWQYAiABKAMSEAoIcmVhZF9zZXEYAyABKAMidAoKR3JvdXBCcmllZhIKCgJpZBgBIAEoAxIMCgRuYW1lGAIgASgJEg4KBmF2YXRhchgDIAEoCRImCgZzdGF0dXMYBCABKA4yFi5zb2NpYWwudjEuR3JvdXBTdGF0dXMSFAoMbWVtYmVyX2NvdW50GAUgASgFIpQCCgxDb252ZXJzYXRpb24SCgoCaWQYASABKAMSKgoEdHlwZRgCIAEoDjIcLm1lc3NhZ2UudjEuQ29udmVyc2F0aW9uVHlwZRIqCglwZWVyX3VzZXIYAyABKAsyFy5hY2NvdW50LnYxLlVzZXJQcm9maWxlEiUKBWdyb3VwGAQgASgLMhYubWVzc2FnZS52MS5Hcm91cEJyaWVmEg8KB21heF9zZXEYBSABKAMSEAoIcmVhZF9zZXEYBiABKAMSFAoMdW5yZWFkX2NvdW50GAcgASgDEhUKDXBlZXJfcmVhZF9zZXEYCCABKAMSKQoMbGFzdF9tZXNzYWdlGAkgASgLMhMubWVzc2FnZS52MS5NZXNzYWdlIk0KGExpc3RDb252ZXJzYXRpb25zUmVxdWVzdBIXCgZjdXJzb3IYASABKANCB7pIBCICKAASGAoFbGltaXQYAiABKAVCCbpIBhoEGGQoACJhChlMaXN0Q29udmVyc2F0aW9uc1Jlc3BvbnNlEi8KDWNvbnZlcnNhdGlvbnMYASADKAsyGC5tZXNzYWdlLnYxLkNvbnZlcnNhdGlvbhITCgtuZXh0X2N1cnNvchgCIAEoAyI6ChZHZXRDb252ZXJzYXRpb25SZXF1ZXN0EiAKD2NvbnZlcnNhdGlvbl9pZBgBIAEoA0IHukgEIgIgACJJChdHZXRDb252ZXJzYXRpb25SZXNwb25zZRIuCgxjb252ZXJzYXRpb24YASABKAsyGC5tZXNzYWdlLnYxLkNvbnZlcnNhdGlvbiJuChNMaXN0TWVzc2FnZXNSZXF1ZXN0EiAKD2NvbnZlcnNhdGlvbl9pZBgBIAEoA0IHukgEIgIgABIbCgpiZWZvcmVfc2VxGAIgASgDQge6SAQiAigAEhgKBWxpbWl0GAMgASgFQgm6SAYaBBhkKAAiVgoUTGlzdE1lc3NhZ2VzUmVzcG9uc2USJQoIbWVzc2FnZXMYASADKAsyEy5tZXNzYWdlLnYxLk1lc3NhZ2USFwoPbmV4dF9iZWZvcmVfc2VxGAIgASgDIm4KFEdldERpZmZlcmVuY2VSZXF1ZXN0EiAKD2NvbnZlcnNhdGlvbl9pZBgBIAEoA0IHukgEIgIgABIZCghmcm9tX3NlcRgCIAEoA0IHukgEIgIoABIZCgVsaW1pdBgDIAEoBUIKukgHGgUYyAEoACKUAQoVR2V0RGlmZmVyZW5jZVJlc3BvbnNlEiwKBnJlc3VsdBgBIAEoDjIcLm1lc3NhZ2UudjEuRGlmZmVyZW5jZVJlc3VsdBIlCghtZXNzYWdlcxgCIAMoCzITLm1lc3NhZ2UudjEuTWVzc2FnZRIVCg1uZXh0X2Zyb21fc2VxGAMgASgDEg8KB21heF9zZXEYBCABKAMiSQoPTWFya1JlYWRSZXF1ZXN0EiAKD2NvbnZlcnNhdGlvbl9pZBgBIAEoA0IHukgEIgIgABIUCgNzZXEYAiABKANCB7pIBCICIAAiJAoQTWFya1JlYWRSZXNwb25zZRIQCghyZWFkX3NlcRgBIAEoAypwChBDb252ZXJzYXRpb25UeXBlEiEKHUNPTlZFUlNBVElPTl9UWVBFX1VOU1BFQ0lGSUVEEAASHAoYQ09OVkVSU0FUSU9OX1RZUEVfU0lOR0xFEAESGwoXQ09OVkVSU0FUSU9OX1RZUEVfR1JPVVAQAiqSAQoQRGlmZmVyZW5jZVJlc3VsdBIhCh1ESUZGRVJFTkNFX1JFU1VMVF9VTlNQRUNJRklFRBAAEh4KGkRJRkZFUkVOQ0VfUkVTVUxUX0NPTVBMRVRFEAESGwoXRElGRkVSRU5DRV9SRVNVTFRfU0xJQ0UQAhIeChpESUZGRVJFTkNFX1JFU1VMVF9UT09fTE9ORxADMqwFCg5NZXNzYWdlU2VydmljZRJ7ChFMaXN0Q29udmVyc2F0aW9ucxIkLm1lc3NhZ2UudjEuTGlzdENvbnZlcnNhdGlvbnNSZXF1ZXN0GiUubWVzc2FnZS52MS5MaXN0Q29udmVyc2F0aW9uc1Jlc3BvbnNlIhmC0+STAhMSES92MS9jb252ZXJzYXRpb25zEocBCg9HZXRDb252ZXJzYXRpb24SIi5tZXNzYWdlLnYxLkdldENvbnZlcnNhdGlvblJlcXVlc3QaIy5tZXNzYWdlLnYxLkdldENvbnZlcnNhdGlvblJlc3BvbnNlIiuC0+STAiUSIy92MS9jb252ZXJzYXRpb25zL3tjb252ZXJzYXRpb25faWR9EocBCgxMaXN0TWVzc2FnZXMSHy5tZXNzYWdlLnYxLkxpc3RNZXNzYWdlc1JlcXVlc3QaIC5tZXNzYWdlLnYxLkxpc3RNZXNzYWdlc1Jlc3BvbnNlIjSC0+STAi4SLC92MS9jb252ZXJzYXRpb25zL3tjb252ZXJzYXRpb25faWR9L21lc3NhZ2VzEowBCg1HZXREaWZmZXJlbmNlEiAubWVzc2FnZS52MS5HZXREaWZmZXJlbmNlUmVxdWVzdBohLm1lc3NhZ2UudjEuR2V0RGlmZmVyZW5jZVJlc3BvbnNlIjaC0+STAjASLi92MS9jb252ZXJzYXRpb25zL3tjb252ZXJzYXRpb25faWR9L2RpZmZlcmVuY2USegoITWFya1JlYWQSGy5tZXNzYWdlLnYxLk1hcmtSZWFkUmVxdWVzdBocLm1lc3NhZ2UudjEuTWFya1JlYWRSZXNwb25zZSIzgtPkkwItOgEqIigvdjEvY29udmVyc2F0aW9ucy97Y29udmVyc2F0aW9uX2lkfS9yZWFkQjJaMGdpdGh1Yi5jb20vTWFycy0wODA0Mi9NYXJzQ2hhdC9hcGkvbWVzc2FnZS92MTt2MWIGcHJvdG8z", [file_account_v1_account, file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_social_v1_social]);
+  fileDesc("ChhtZXNzYWdlL3YxL21lc3NhZ2UucHJvdG8SCm1lc3NhZ2UudjEiJwoLVGV4dENvbnRlbnQSGAoEdGV4dBgBIAEoCUIKukgHcgUQARigHyKVAQoMSW1hZ2VDb250ZW50EhgKB2ZpbGVfaWQYASABKANCB7pIBCICIAASHQoKYWNjZXNzX2tleRgCIAEoCUIJukgGcgQQARhAEgwKBG5hbWUYAyABKAkSDAoEc2l6ZRgEIAEoAxIRCgltaW1lX3R5cGUYBSABKAkSDQoFd2lkdGgYBiABKAUSDgoGaGVpZ2h0GAcgASgFInUKC0ZpbGVDb250ZW50EhgKB2ZpbGVfaWQYASABKANCB7pIBCICIAASHQoKYWNjZXNzX2tleRgCIAEoCUIJukgGcgQQARhAEgwKBG5hbWUYAyABKAkSDAoEc2l6ZRgEIAEoAxIRCgltaW1lX3R5cGUYBSABKAkinAEKC0NhbGxDb250ZW50EjYKBW1lZGlhGAEgASgOMhsubWVzc2FnZS52MS5DYWxsUmVjb3JkTWVkaWFCCrpIB4IBBBABIAASMgoGcmVzdWx0GAIgASgOMhYubWVzc2FnZS52MS5DYWxsUmVzdWx0Qgq6SAeCAQQQASAAEiEKEGR1cmF0aW9uX3NlY29uZHMYAyABKAVCB7pIBBoCKAAixQEKDk1lc3NhZ2VDb250ZW50EicKBHRleHQYASABKAsyFy5tZXNzYWdlLnYxLlRleHRDb250ZW50SAASKQoFaW1hZ2UYAiABKAsyGC5tZXNzYWdlLnYxLkltYWdlQ29udGVudEgAEicKBGZpbGUYAyABKAsyFy5tZXNzYWdlLnYxLkZpbGVDb250ZW50SAASJwoEY2FsbBgEIAEoCzIXLm1lc3NhZ2UudjEuQ2FsbENvbnRlbnRIAEINCgRib2R5EgW6SAIIASLvAQoHTWVzc2FnZRIXCg9jb252ZXJzYXRpb25faWQYASABKAMSNwoRY29udmVyc2F0aW9uX3R5cGUYAiABKA4yHC5tZXNzYWdlLnYxLkNvbnZlcnNhdGlvblR5cGUSCwoDc2VxGAMgASgDEhEKCXNlbmRlcl9pZBgEIAEoAxIVCg1jbGllbnRfbXNnX2lkGAUgASgJEisKB2NvbnRlbnQYBiABKAsyGi5tZXNzYWdlLnYxLk1lc3NhZ2VDb250ZW50Ei4KCmNyZWF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrACCg9PdXRnb2luZ01lc3NhZ2USOwoJcGVlcl90eXBlGAEgASgOMhwubWVzc2FnZS52MS5Db252ZXJzYXRpb25UeXBlQgq6SAeCAQQQASAAEhgKB3BlZXJfaWQYAiABKANCB7pIBCICIAASMgoNY2xpZW50X21zZ19pZBgDIAEoCUIbukgYchYQARhAMhBeW0EtWmEtejAtOV8tXSskEpEBCgdjb250ZW50GAQgASgLMhoubWVzc2FnZS52MS5NZXNzYWdlQ29udGVudEJkukhhugFbCiBvdXRnb2luZ19tZXNzYWdlLmNvbnRlbnQubm9fY2FsbBImY2FsbCByZWNvcmRzIGFyZSB3cml0dGVuIGJ5IHRoZSBzZXJ2ZXIaDyFoYXModGhpcy5jYWxsKcgBASJiCgpTZW5kUmVzdWx0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoAxILCgNzZXEYAiABKAMSLgoKY3JlYXRlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiSgoMUmVhZFBvc2l0aW9uEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoAxIPCgd1c2VyX2lkGAIgASgDEhAKCHJlYWRfc2VxGAMgASgDInQKCkdyb3VwQnJpZWYSCgoCaWQYASABKAMSDAoEbmFtZRgCIAEoCRIOCgZhdmF0YXIYAyABKAkSJgoGc3RhdHVzGAQgASgOMhYuc29jaWFsLnYxLkdyb3VwU3RhdHVzEhQKDG1lbWJlcl9jb3VudBgFIAEoBSKUAgoMQ29udmVyc2F0aW9uEgoKAmlkGAEgASgDEioKBHR5cGUYAiABKA4yHC5tZXNzYWdlLnYxLkNvbnZlcnNhdGlvblR5cGUSKgoJcGVlcl91c2VyGAMgASgLMhcuYWNjb3VudC52MS5Vc2VyUHJvZmlsZRIlCgVncm91cBgEIAEoCzIWLm1lc3NhZ2UudjEuR3JvdXBCcmllZhIPCgdtYXhfc2VxGAUgASgDEhAKCHJlYWRfc2VxGAYgASgDEhQKDHVucmVhZF9jb3VudBgHIAEoAxIVCg1wZWVyX3JlYWRfc2VxGAggASgDEikKDGxhc3RfbWVzc2FnZRgJIAEoCzITLm1lc3NhZ2UudjEuTWVzc2FnZSJNChhMaXN0Q29udmVyc2F0aW9uc1JlcXVlc3QSFwoGY3Vyc29yGAEgASgDQge6SAQiAigAEhgKBWxpbWl0GAIgASgFQgm6SAYaBBhkKAAiYQoZTGlzdENvbnZlcnNhdGlvbnNSZXNwb25zZRIvCg1jb252ZXJzYXRpb25zGAEgAygLMhgubWVzc2FnZS52MS5Db252ZXJzYXRpb24SEwoLbmV4dF9jdXJzb3IYAiABKAMiOgoWR2V0Q29udmVyc2F0aW9uUmVxdWVzdBIgCg9jb252ZXJzYXRpb25faWQYASABKANCB7pIBCICIAAiSQoXR2V0Q29udmVyc2F0aW9uUmVzcG9uc2USLgoMY29udmVyc2F0aW9uGAEgASgLMhgubWVzc2FnZS52MS5Db252ZXJzYXRpb24ibgoTTGlzdE1lc3NhZ2VzUmVxdWVzdBIgCg9jb252ZXJzYXRpb25faWQYASABKANCB7pIBCICIAASGwoKYmVmb3JlX3NlcRgCIAEoA0IHukgEIgIoABIYCgVsaW1pdBgDIAEoBUIJukgGGgQYZCgAIlYKFExpc3RNZXNzYWdlc1Jlc3BvbnNlEiUKCG1lc3NhZ2VzGAEgAygLMhMubWVzc2FnZS52MS5NZXNzYWdlEhcKD25leHRfYmVmb3JlX3NlcRgCIAEoAyJuChRHZXREaWZmZXJlbmNlUmVxdWVzdBIgCg9jb252ZXJzYXRpb25faWQYASABKANCB7pIBCICIAASGQoIZnJvbV9zZXEYAiABKANCB7pIBCICKAASGQoFbGltaXQYAyABKAVCCrpIBxoFGMgBKAAilAEKFUdldERpZmZlcmVuY2VSZXNwb25zZRIsCgZyZXN1bHQYASABKA4yHC5tZXNzYWdlLnYxLkRpZmZlcmVuY2VSZXN1bHQSJQoIbWVzc2FnZXMYAiADKAsyEy5tZXNzYWdlLnYxLk1lc3NhZ2USFQoNbmV4dF9mcm9tX3NlcRgDIAEoAxIPCgdtYXhfc2VxGAQgASgDIkkKD01hcmtSZWFkUmVxdWVzdBIgCg9jb252ZXJzYXRpb25faWQYASABKANCB7pIBCICIAASFAoDc2VxGAIgASgDQge6SAQiAiAAIiQKEE1hcmtSZWFkUmVzcG9uc2USEAoIcmVhZF9zZXEYASABKAMqcAoQQ29udmVyc2F0aW9uVHlwZRIhCh1DT05WRVJTQVRJT05fVFlQRV9VTlNQRUNJRklFRBAAEhwKGENPTlZFUlNBVElPTl9UWVBFX1NJTkdMRRABEhsKF0NPTlZFUlNBVElPTl9UWVBFX0dST1VQEAIqbgoPQ2FsbFJlY29yZE1lZGlhEiEKHUNBTExfUkVDT1JEX01FRElBX1VOU1BFQ0lGSUVEEAASGwoXQ0FMTF9SRUNPUkRfTUVESUFfQVVESU8QARIbChdDQUxMX1JFQ09SRF9NRURJQV9WSURFTxACKqkBCgpDYWxsUmVzdWx0EhsKF0NBTExfUkVTVUxUX1VOU1BFQ0lGSUVEEAASGQoVQ0FMTF9SRVNVTFRfQ09NUExFVEVEEAESGQoVQ0FMTF9SRVNVTFRfQ0FOQ0VMTEVEEAISGAoUQ0FMTF9SRVNVTFRfUkVKRUNURUQQAxIWChJDQUxMX1JFU1VMVF9NSVNTRUQQBBIWChJDQUxMX1JFU1VMVF9GQUlMRUQQBSqSAQoQRGlmZmVyZW5jZVJlc3VsdBIhCh1ESUZGRVJFTkNFX1JFU1VMVF9VTlNQRUNJRklFRBAAEh4KGkRJRkZFUkVOQ0VfUkVTVUxUX0NPTVBMRVRFEAESGwoXRElGRkVSRU5DRV9SRVNVTFRfU0xJQ0UQAhIeChpESUZGRVJFTkNFX1JFU1VMVF9UT09fTE9ORxADMqwFCg5NZXNzYWdlU2VydmljZRJ7ChFMaXN0Q29udmVyc2F0aW9ucxIkLm1lc3NhZ2UudjEuTGlzdENvbnZlcnNhdGlvbnNSZXF1ZXN0GiUubWVzc2FnZS52MS5MaXN0Q29udmVyc2F0aW9uc1Jlc3BvbnNlIhmC0+STAhMSES92MS9jb252ZXJzYXRpb25zEocBCg9HZXRDb252ZXJzYXRpb24SIi5tZXNzYWdlLnYxLkdldENvbnZlcnNhdGlvblJlcXVlc3QaIy5tZXNzYWdlLnYxLkdldENvbnZlcnNhdGlvblJlc3BvbnNlIiuC0+STAiUSIy92MS9jb252ZXJzYXRpb25zL3tjb252ZXJzYXRpb25faWR9EocBCgxMaXN0TWVzc2FnZXMSHy5tZXNzYWdlLnYxLkxpc3RNZXNzYWdlc1JlcXVlc3QaIC5tZXNzYWdlLnYxLkxpc3RNZXNzYWdlc1Jlc3BvbnNlIjSC0+STAi4SLC92MS9jb252ZXJzYXRpb25zL3tjb252ZXJzYXRpb25faWR9L21lc3NhZ2VzEowBCg1HZXREaWZmZXJlbmNlEiAubWVzc2FnZS52MS5HZXREaWZmZXJlbmNlUmVxdWVzdBohLm1lc3NhZ2UudjEuR2V0RGlmZmVyZW5jZVJlc3BvbnNlIjaC0+STAjASLi92MS9jb252ZXJzYXRpb25zL3tjb252ZXJzYXRpb25faWR9L2RpZmZlcmVuY2USegoITWFya1JlYWQSGy5tZXNzYWdlLnYxLk1hcmtSZWFkUmVxdWVzdBocLm1lc3NhZ2UudjEuTWFya1JlYWRSZXNwb25zZSIzgtPkkwItOgEqIigvdjEvY29udmVyc2F0aW9ucy97Y29udmVyc2F0aW9uX2lkfS9yZWFkQjJaMGdpdGh1Yi5jb20vTWFycy0wODA0Mi9NYXJzQ2hhdC9hcGkvbWVzc2FnZS92MTt2MWIGcHJvdG8z", [file_account_v1_account, file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_timestamp, file_social_v1_social]);
 
 /**
  * @generated from message message.v1.TextContent
@@ -128,6 +128,38 @@ export const FileContentSchema: GenMessage<FileContent> = /*@__PURE__*/
   messageDesc(file_message_v1_message, 2);
 
 /**
+ * CallContent 是通话记录，由 access 在单聊通话结束时经内部接口 WriteCallRecord 写入，发送者为主叫。
+ * 客户端发送时返回 VALIDATOR（见 OutgoingMessage）。设计见 docs/design/call-record.md。
+ *
+ * @generated from message message.v1.CallContent
+ */
+export type CallContent = Message$1<"message.v1.CallContent"> & {
+  /**
+   * @generated from field: message.v1.CallRecordMedia media = 1;
+   */
+  media: CallRecordMedia;
+
+  /**
+   * @generated from field: message.v1.CallResult result = 2;
+   */
+  result: CallResult;
+
+  /**
+   * 只有 CALL_RESULT_COMPLETED 有值：从接听到结束的秒数，按信令时间计算，不是媒体实际连通的时间
+   *
+   * @generated from field: int32 duration_seconds = 3;
+   */
+  durationSeconds: number;
+};
+
+/**
+ * Describes the message message.v1.CallContent.
+ * Use `create(CallContentSchema)` to create a new message.
+ */
+export const CallContentSchema: GenMessage<CallContent> = /*@__PURE__*/
+  messageDesc(file_message_v1_message, 3);
+
+/**
  * MessageContent 是消息正文，按类型取其中一种。
  *
  * @generated from message message.v1.MessageContent
@@ -154,6 +186,14 @@ export type MessageContent = Message$1<"message.v1.MessageContent"> & {
      */
     value: FileContent;
     case: "file";
+  } | {
+    /**
+     * 只由服务端写入
+     *
+     * @generated from field: message.v1.CallContent call = 4;
+     */
+    value: CallContent;
+    case: "call";
   } | { case: undefined; value?: undefined };
 };
 
@@ -162,7 +202,7 @@ export type MessageContent = Message$1<"message.v1.MessageContent"> & {
  * Use `create(MessageContentSchema)` to create a new message.
  */
 export const MessageContentSchema: GenMessage<MessageContent> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 3);
+  messageDesc(file_message_v1_message, 4);
 
 /**
  * @generated from message message.v1.Message
@@ -213,7 +253,7 @@ export type Message = Message$1<"message.v1.Message"> & {
  * Use `create(MessageSchema)` to create a new message.
  */
 export const MessageSchema: GenMessage<Message> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 4);
+  messageDesc(file_message_v1_message, 5);
 
 /**
  * OutgoingMessage 是客户端要发送的消息，经 WebSocket 的 SendMessage 帧发给 access。
@@ -241,6 +281,8 @@ export type OutgoingMessage = Message$1<"message.v1.OutgoingMessage"> & {
   clientMsgId: string;
 
   /**
+   * 通话记录只能由服务端写入，客户端不能发送
+   *
    * @generated from field: message.v1.MessageContent content = 4;
    */
   content?: MessageContent | undefined;
@@ -251,7 +293,7 @@ export type OutgoingMessage = Message$1<"message.v1.OutgoingMessage"> & {
  * Use `create(OutgoingMessageSchema)` to create a new message.
  */
 export const OutgoingMessageSchema: GenMessage<OutgoingMessage> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 5);
+  messageDesc(file_message_v1_message, 6);
 
 /**
  * SendResult 是发送确认：消息已写入数据库。重复发送时返回首次的结果。
@@ -280,7 +322,7 @@ export type SendResult = Message$1<"message.v1.SendResult"> & {
  * Use `create(SendResultSchema)` to create a new message.
  */
 export const SendResultSchema: GenMessage<SendResult> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 6);
+  messageDesc(file_message_v1_message, 7);
 
 /**
  * ReadPosition 表示某个用户在会话中的已读位置。
@@ -309,7 +351,7 @@ export type ReadPosition = Message$1<"message.v1.ReadPosition"> & {
  * Use `create(ReadPositionSchema)` to create a new message.
  */
 export const ReadPositionSchema: GenMessage<ReadPosition> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 7);
+  messageDesc(file_message_v1_message, 8);
 
 /**
  * GroupBrief 是会话列表中展示的群资料。
@@ -348,7 +390,7 @@ export type GroupBrief = Message$1<"message.v1.GroupBrief"> & {
  * Use `create(GroupBriefSchema)` to create a new message.
  */
 export const GroupBriefSchema: GenMessage<GroupBrief> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 8);
+  messageDesc(file_message_v1_message, 9);
 
 /**
  * @generated from message message.v1.Conversation
@@ -419,7 +461,7 @@ export type Conversation = Message$1<"message.v1.Conversation"> & {
  * Use `create(ConversationSchema)` to create a new message.
  */
 export const ConversationSchema: GenMessage<Conversation> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 9);
+  messageDesc(file_message_v1_message, 10);
 
 /**
  * @generated from message message.v1.ListConversationsRequest
@@ -441,7 +483,7 @@ export type ListConversationsRequest = Message$1<"message.v1.ListConversationsRe
  * Use `create(ListConversationsRequestSchema)` to create a new message.
  */
 export const ListConversationsRequestSchema: GenMessage<ListConversationsRequest> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 10);
+  messageDesc(file_message_v1_message, 11);
 
 /**
  * @generated from message message.v1.ListConversationsResponse
@@ -463,7 +505,7 @@ export type ListConversationsResponse = Message$1<"message.v1.ListConversationsR
  * Use `create(ListConversationsResponseSchema)` to create a new message.
  */
 export const ListConversationsResponseSchema: GenMessage<ListConversationsResponse> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 11);
+  messageDesc(file_message_v1_message, 12);
 
 /**
  * @generated from message message.v1.GetConversationRequest
@@ -480,7 +522,7 @@ export type GetConversationRequest = Message$1<"message.v1.GetConversationReques
  * Use `create(GetConversationRequestSchema)` to create a new message.
  */
 export const GetConversationRequestSchema: GenMessage<GetConversationRequest> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 12);
+  messageDesc(file_message_v1_message, 13);
 
 /**
  * @generated from message message.v1.GetConversationResponse
@@ -497,7 +539,7 @@ export type GetConversationResponse = Message$1<"message.v1.GetConversationRespo
  * Use `create(GetConversationResponseSchema)` to create a new message.
  */
 export const GetConversationResponseSchema: GenMessage<GetConversationResponse> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 13);
+  messageDesc(file_message_v1_message, 14);
 
 /**
  * @generated from message message.v1.ListMessagesRequest
@@ -524,7 +566,7 @@ export type ListMessagesRequest = Message$1<"message.v1.ListMessagesRequest"> & 
  * Use `create(ListMessagesRequestSchema)` to create a new message.
  */
 export const ListMessagesRequestSchema: GenMessage<ListMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 14);
+  messageDesc(file_message_v1_message, 15);
 
 /**
  * @generated from message message.v1.ListMessagesResponse
@@ -546,7 +588,7 @@ export type ListMessagesResponse = Message$1<"message.v1.ListMessagesResponse"> 
  * Use `create(ListMessagesResponseSchema)` to create a new message.
  */
 export const ListMessagesResponseSchema: GenMessage<ListMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 15);
+  messageDesc(file_message_v1_message, 16);
 
 /**
  * @generated from message message.v1.GetDifferenceRequest
@@ -575,7 +617,7 @@ export type GetDifferenceRequest = Message$1<"message.v1.GetDifferenceRequest"> 
  * Use `create(GetDifferenceRequestSchema)` to create a new message.
  */
 export const GetDifferenceRequestSchema: GenMessage<GetDifferenceRequest> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 16);
+  messageDesc(file_message_v1_message, 17);
 
 /**
  * @generated from message message.v1.GetDifferenceResponse
@@ -611,7 +653,7 @@ export type GetDifferenceResponse = Message$1<"message.v1.GetDifferenceResponse"
  * Use `create(GetDifferenceResponseSchema)` to create a new message.
  */
 export const GetDifferenceResponseSchema: GenMessage<GetDifferenceResponse> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 17);
+  messageDesc(file_message_v1_message, 18);
 
 /**
  * @generated from message message.v1.MarkReadRequest
@@ -633,7 +675,7 @@ export type MarkReadRequest = Message$1<"message.v1.MarkReadRequest"> & {
  * Use `create(MarkReadRequestSchema)` to create a new message.
  */
 export const MarkReadRequestSchema: GenMessage<MarkReadRequest> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 18);
+  messageDesc(file_message_v1_message, 19);
 
 /**
  * @generated from message message.v1.MarkReadResponse
@@ -652,7 +694,7 @@ export type MarkReadResponse = Message$1<"message.v1.MarkReadResponse"> & {
  * Use `create(MarkReadResponseSchema)` to create a new message.
  */
 export const MarkReadResponseSchema: GenMessage<MarkReadResponse> = /*@__PURE__*/
-  messageDesc(file_message_v1_message, 19);
+  messageDesc(file_message_v1_message, 20);
 
 /**
  * 会话类型，取值与 social.v1.PeerType 一致。
@@ -685,6 +727,87 @@ export enum ConversationType {
  */
 export const ConversationTypeSchema: GenEnum<ConversationType> = /*@__PURE__*/
   enumDesc(file_message_v1_message, 0);
+
+/**
+ * 通话类型，取值与 access.v1.CallMedia 一致；message 不依赖 access 的 proto，所以单独定义。
+ *
+ * @generated from enum message.v1.CallRecordMedia
+ */
+export enum CallRecordMedia {
+  /**
+   * @generated from enum value: CALL_RECORD_MEDIA_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CALL_RECORD_MEDIA_AUDIO = 1;
+   */
+  AUDIO = 1,
+
+  /**
+   * @generated from enum value: CALL_RECORD_MEDIA_VIDEO = 2;
+   */
+  VIDEO = 2,
+}
+
+/**
+ * Describes the enum message.v1.CallRecordMedia.
+ */
+export const CallRecordMediaSchema: GenEnum<CallRecordMedia> = /*@__PURE__*/
+  enumDesc(file_message_v1_message, 1);
+
+/**
+ * 通话结果。客户端按查看者是主叫还是被叫显示不同的文案。
+ *
+ * @generated from enum message.v1.CallResult
+ */
+export enum CallResult {
+  /**
+   * @generated from enum value: CALL_RESULT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * 接听后任一方挂断或连接断开
+   *
+   * @generated from enum value: CALL_RESULT_COMPLETED = 1;
+   */
+  COMPLETED = 1,
+
+  /**
+   * 振铃中主叫取消
+   *
+   * @generated from enum value: CALL_RESULT_CANCELLED = 2;
+   */
+  CANCELLED = 2,
+
+  /**
+   * 被叫拒绝
+   *
+   * @generated from enum value: CALL_RESULT_REJECTED = 3;
+   */
+  REJECTED = 3,
+
+  /**
+   * 振铃超时无人接听
+   *
+   * @generated from enum value: CALL_RESULT_MISSED = 4;
+   */
+  MISSED = 4,
+
+  /**
+   * 接听前连接断开，或邀请时被叫不在线
+   *
+   * @generated from enum value: CALL_RESULT_FAILED = 5;
+   */
+  FAILED = 5,
+}
+
+/**
+ * Describes the enum message.v1.CallResult.
+ */
+export const CallResultSchema: GenEnum<CallResult> = /*@__PURE__*/
+  enumDesc(file_message_v1_message, 2);
 
 /**
  * 补拉的结果。
@@ -723,7 +846,7 @@ export enum DifferenceResult {
  * Describes the enum message.v1.DifferenceResult.
  */
 export const DifferenceResultSchema: GenEnum<DifferenceResult> = /*@__PURE__*/
-  enumDesc(file_message_v1_message, 1);
+  enumDesc(file_message_v1_message, 3);
 
 /**
  * MessageService 是面向客户端的会话与消息接口：经网关以 HTTP 暴露，也可以用 gRPC 调用。
