@@ -55,7 +55,7 @@ func TestWebSocketOutlivesHTTPTimeout(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	// 本测试不发通话帧，通话依赖留空
-	calls := biz.NewCalls(&conf.Call{RingTimeout: durationpb.New(time.Minute)}, wsConf, nil, nil, noRoutes{}, nil, logger)
+	calls := biz.NewCalls(&conf.Call{RingTimeout: durationpb.New(time.Minute)}, wsConf, nil, nil, noRoutes{}, nil, nil, logger)
 	hub := biz.NewHub(wsConf, biz.NewPolicyHolder(&conf.Policy{FramesPerSecond: 30}), allowAll{}, noRoutes{}, noSender{},
 		calls, logger)
 

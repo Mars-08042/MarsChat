@@ -6,6 +6,7 @@ import { ProfileCard } from "@/features/contacts/ProfileCard"
 import { springs } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { FileAttachment, ImageAttachment } from "./attachments"
+import { CallRecordBubble } from "./CallRecordBubble"
 import { EmojiText } from "./EmojiText"
 import type { ChatMessage, ChatUser, ConversationRef, SendStatus } from "./types"
 
@@ -65,6 +66,7 @@ export const MessageRow = memo(function MessageRow({
           <Bubble
             message={message}
             mine={mine}
+            conversation={conversation}
             senderName={senderName}
             lastInGroup={lastInGroup}
             onCancelUpload={() => onCancelUpload(message.id)}
@@ -90,12 +92,14 @@ export const MessageRow = memo(function MessageRow({
 function Bubble({
   message,
   mine,
+  conversation,
   senderName,
   lastInGroup,
   onCancelUpload,
 }: {
   message: ChatMessage
   mine: boolean
+  conversation: ConversationRef
   senderName: string
   lastInGroup: boolean
   onCancelUpload: () => void
@@ -127,6 +131,10 @@ function Bubble({
         <FileAttachment message={message} file={content.file} mine={mine} onCancel={onCancelUpload} />
       </div>
     )
+  }
+
+  if (content.kind === "call") {
+    return <CallRecordBubble record={content.call} mine={mine} conversation={conversation} className={cn(shape, colors)} />
   }
 
   return (

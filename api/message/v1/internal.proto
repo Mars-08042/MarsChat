@@ -12,6 +12,28 @@ service MessageInternalService {
   // 发送消息，由 access 在收到客户端的 SendMessage 帧后调用。写库成功才返回确认。
   // 发言权限不足时原样返回 social 的错误（NOT_FRIENDS、BLOCKED、MEMBER_MUTED 等）。
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+
+  // 在两人的单聊会话里写一条通话记录，由 access 在通话结束时调用，发送者为主叫。
+  // 通话在邀请时已经校验过好友关系，这里不做发言权限检查，也不计入发消息的限流。
+  // 以 (caller_id, "call-<call_id>") 作为幂等键，重复调用只存一条、返回同一个结果。
+  rpc WriteCallRecord(WriteCallRecordRequest) returns (WriteCallRecordResponse);
+}
+
+message WriteCallRecordRequest {
+  option (buf.validate.message).cel = {
+    id: "write_call_record.distinct_parties"
+    message: "caller_id and callee_id must differ"
+    expression: "this.caller_id != this.callee_id"
+  };
+
+  int64 call_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 caller_id = 2 [(buf.validate.field).int64.gt = 0];
+  int64 callee_id = 3 [(buf.validate.field).int64.gt = 0];
+  CallContent call = 4 [(buf.validate.field).required = true];
+}
+
+message WriteCallRecordResponse {
+  SendResult result = 1;
 }
 
 message SendMessageRequest {

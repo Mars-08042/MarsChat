@@ -36,6 +36,13 @@
 
 ## 低
 
+### TD-47 通话记录在 message 长时间不可用或 access 退出时会丢失
+
+- 发现：2026-11-23，实现通话记录
+- 位置：`app/access/internal/biz/call_record.go`
+- 现状：通话结束后 access 在后台调用 message 的 `WriteCallRecord`，失败时按 1、2、4 秒重试 3 次（每次最多 5 秒）。message 不可用超过这段时间、access 进程在写入前或重试期间退出（停机时不再重试）时，这通通话没有记录，只有 WARN 日志和 `marschat_call_records_total{outcome="failed|dropped"}`。通话本身不受影响。access 没有数据库，写入不经过 Outbox。
+- 处理：需要可靠写入时，把「通话已结束」作为事件写进 Redis Stream 或 Kafka，由 message 消费后写记录（按通话 ID 幂等）；或在 Redis 中保留待写的记录，由任一 access 实例补写。
+
 ### TD-46 TURN 没有 TLS，凭据过期后的中继断开没有验证
 
 - 发现：2026-11-22，前端第 9 阶段部署 coturn

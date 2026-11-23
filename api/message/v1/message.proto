@@ -89,6 +89,43 @@ message FileContent {
   string mime_type = 5;
 }
 
+// CallContent 是通话记录，由 access 在单聊通话结束时经内部接口 WriteCallRecord 写入，发送者为主叫。
+// 客户端发送时返回 VALIDATOR（见 OutgoingMessage）。设计见 docs/design/call-record.md。
+message CallContent {
+  CallRecordMedia media = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  CallResult result = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // 只有 CALL_RESULT_COMPLETED 有值：从接听到结束的秒数，按信令时间计算，不是媒体实际连通的时间
+  int32 duration_seconds = 3 [(buf.validate.field).int32.gte = 0];
+}
+
+// 通话类型，取值与 access.v1.CallMedia 一致；message 不依赖 access 的 proto，所以单独定义。
+enum CallRecordMedia {
+  CALL_RECORD_MEDIA_UNSPECIFIED = 0;
+  CALL_RECORD_MEDIA_AUDIO = 1;
+  CALL_RECORD_MEDIA_VIDEO = 2;
+}
+
+// 通话结果。客户端按查看者是主叫还是被叫显示不同的文案。
+enum CallResult {
+  CALL_RESULT_UNSPECIFIED = 0;
+  // 接听后任一方挂断或连接断开
+  CALL_RESULT_COMPLETED = 1;
+  // 振铃中主叫取消
+  CALL_RESULT_CANCELLED = 2;
+  // 被叫拒绝
+  CALL_RESULT_REJECTED = 3;
+  // 振铃超时无人接听
+  CALL_RESULT_MISSED = 4;
+  // 接听前连接断开，或邀请时被叫不在线
+  CALL_RESULT_FAILED = 5;
+}
+
 // MessageContent 是消息正文，按类型取其中一种。
 message MessageContent {
   oneof body {
@@ -96,6 +133,8 @@ message MessageContent {
     TextContent text = 1;
     ImageContent image = 2;
     FileContent file = 3;
+    // 只由服务端写入
+    CallContent call = 4;
   }
 }
 
@@ -125,7 +164,15 @@ message OutgoingMessage {
     max_len: 64
     pattern: "^[A-Za-z0-9_-]+$"
   }];
-  MessageContent content = 4 [(buf.validate.field).required = true];
+  // 通话记录只能由服务端写入，客户端不能发送
+  MessageContent content = 4 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).cel = {
+      id: "outgoing_message.content.no_call"
+      message: "call records are written by the server"
+      expression: "!has(this.call)"
+    }
+  ];
 }
 
 // SendResult 是发送确认：消息已写入数据库。重复发送时返回首次的结果。

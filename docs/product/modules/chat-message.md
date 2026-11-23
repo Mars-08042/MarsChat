@@ -19,7 +19,7 @@
 - 连接首帧认证、心跳续期在线路由、慢连接断开；被踢、封禁、退出登录会立即断开连接。
 - 推送经 Kafka 和 delivery 跨实例投递，推送尽力而为，可靠性靠补拉（`GetDifference`）保证；历史消息分页。
 - 会话在第一条消息时自动创建，不需要单独打开；群会话的成员随入群、退群事件变化，新成员能看历史但不算未读。删除会话暂未实现。
-- 消息类型有文本（`TextContent`，1～4000 字符）、图片（`ImageContent`）和文件（`FileContent`），图片与文件见下一节；通话信令不是消息，见 [av-call.md](av-call.md)。
+- 消息类型有文本（`TextContent`，1～4000 字符）、图片（`ImageContent`）、文件（`FileContent`）和通话记录（`CallContent`）。图片与文件见下一节；通话记录只由服务端在通话结束时写入，客户端发送时返回 `VALIDATOR`，见 [av-call.md](av-call.md)。通话信令不是消息。
 
 接口（HTTP 全部需要登录，同名的 gRPC 方法见 proto）：
 
@@ -33,6 +33,7 @@
 | 建立连接 | `GET ws://<access>:18000/ws` | 帧与关闭码见 [frame.proto](../../../api/access/v1/frame.proto) 和 [data-flow.md](../../architecture/data-flow.md#3-websocket-连接) |
 | 发送消息 | WebSocket `SendMessage` 帧 | 每人每 10 秒 30 条；返回 `SendAck` 或 `Error` |
 | `MessageInternalService.SendMessage` | 仅 gRPC（内网） | access 调用，发送者取自已认证的连接 |
+| `MessageInternalService.WriteCallRecord` | 仅 gRPC（内网） | access 在通话结束时调用，写一条通话记录（发送者为主叫，按通话 ID 幂等，不限流、不校验发言权限） |
 | `AccessInternalService.Push` / `Kick` | 仅 gRPC（内网） | delivery 按在线路由直连调用 |
 
 错误原因见 [message](../../../api/message/v1/error_reason.proto)、[access](../../../api/access/v1/error_reason.proto) 的 `error_reason.proto`；发言权限的拒绝原因沿用 social 的错误（`NOT_FRIENDS`、`BLOCKED`、`NOT_GROUP_MEMBER`、`MEMBER_MUTED`、`GROUP_MUTED`、`GROUP_DISMISSED`）；图片、文件消息另有 `FILE_INVALID`，见下一节。

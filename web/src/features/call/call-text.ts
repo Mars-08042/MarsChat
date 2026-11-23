@@ -1,6 +1,9 @@
 // 通话的结束原因与呼叫错误到界面文案的映射（设计 3.6.10）。
 // 原因对应 access.v1.CallEndReason 与 ErrorReason（call-signaling.md 4.1、4.2），另加两种只在客户端产生的原因。
 
+import type { CallRecord } from "@/features/chat/types"
+import { formatDuration } from "@/lib/time"
+
 export type CallMedia = "audio" | "video"
 
 export type CallEndReason =
@@ -41,6 +44,22 @@ export function endReasonText(reason: CallEndReason, ctx: EndContext): string {
       return "网络无法直连，通话已结束"
     case "local-hangup":
       return ctx.connected ? "通话结束" : "已取消"
+  }
+}
+
+// 聊天里通话记录的文案（docs/design/call-record.md 3.4）。记录的发送者是主叫，mine 表示查看者就是主叫
+export function callRecordText(record: CallRecord, mine: boolean): string {
+  switch (record.result) {
+    case "completed":
+      return `通话时长 ${formatDuration(record.durationSeconds * 1000)}`
+    case "cancelled":
+      return mine ? "已取消" : "对方已取消"
+    case "rejected":
+      return mine ? "对方已拒绝" : "已拒绝"
+    case "missed":
+      return mine ? "对方无应答" : "未接听"
+    case "failed":
+      return mine ? "连接失败" : "未接听"
   }
 }
 

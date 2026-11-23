@@ -114,6 +114,7 @@ k6（压测时）──→ APISIX 网关 ──→ 各服务
 | access | `marschat_ws_closes_total` | `code` | 关闭原因：4003 慢连接、4008 帧频率超限、1001 停机等 |
 | access | `marschat_ws_frames_total` | `type` | 上行帧按类型计数（发消息、心跳、通话） |
 | access | `marschat_call_events_total` | `event` | 通话：邀请、接听、按原因结束 |
+| access | `marschat_call_records_total` | `outcome` | 通话记录写入结果：`written`、`failed`（重试用尽或参数错误）、`dropped`（停机时放弃），见 [call-record.md](call-record.md) |
 | delivery | `marschat_push_total` | `kind`、`result` | 推送结果：`delivered`、`offline`（没有在线连接）、`failed`、`cooling` |
 | delivery | `marschat_message_delivery_seconds` | `conversation_type` | **消息投递延迟**：推送进入 access 时刻减去消息写库时间（`Message.created_at`），覆盖 Outbox、Kafka、delivery 三段 |
 | `pkg/kafka` 消费者 | `marschat_kafka_consumed_total`、`marschat_kafka_handle_seconds` | `group`、`topic`、`result` | 处理结果：`ok`、`retry`、`dlq` |

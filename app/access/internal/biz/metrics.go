@@ -20,12 +20,14 @@ import (
 //     4003 发送队列满、4008 帧频率超限、1001 停机），对端关闭为 peer_normal（1000、1001）或 peer_other，
 //     其余为 heartbeat_timeout、too_large、read_error。对端的关闭码不直接作为标签，避免基数失控；
 //   - marschat_ws_frames_total{type}：上行帧数，按帧类型；
-//   - marschat_call_events_total{event, reason}：通话的发起、接听与结束，结束时 reason 为结束原因。
+//   - marschat_call_events_total{event, reason}：通话的发起、接听与结束，结束时 reason 为结束原因；
+//   - marschat_call_records_total{outcome}：通话记录的写入结果，written、failed（重试用尽或参数错误）、dropped（停机时放弃）。
 var (
 	wsConnections = telemetry.Int64UpDownCounter("marschat_ws_connections", "本实例已认证的 WebSocket 连接数")
 	wsCloses      = telemetry.Int64Counter("marschat_ws_closes", "WebSocket 连接结束次数，按原因区分")
 	wsFrames      = telemetry.Int64Counter("marschat_ws_frames", "上行 WebSocket 帧数，按类型区分")
 	callEvents    = telemetry.Int64Counter("marschat_call_events", "通话事件数")
+	callRecords   = telemetry.Int64Counter("marschat_call_records", "通话记录写入次数，按结果区分")
 )
 
 // 对端关闭与读错误的分类，作为 marschat_ws_closes_total 的 code 标签
@@ -51,6 +53,10 @@ func countCallEvent(event string, reason v1.CallEndReason) {
 		r = strings.ToLower(strings.TrimPrefix(reason.String(), "CALL_END_REASON_"))
 	}
 	callEvents.Add(context.Background(), 1, metric.WithAttributes(attribute.String("event", event), attribute.String("reason", r)))
+}
+
+func countCallRecord(outcome string) {
+	callRecords.Add(context.Background(), 1, metric.WithAttributes(attribute.String("outcome", outcome)))
 }
 
 // peerCloseLabel 把对端发来的关闭码归类：正常关闭和离开页面为 peer_normal，其余为 peer_other。

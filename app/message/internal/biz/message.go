@@ -56,35 +56,9 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 	if err := uc.checkRate(ctx, in.SenderID); err != nil {
 		return nil, err
 	}
-
-	var (
-		known     *Conversation
-		low, high int64
-		err       error
-	)
-	switch in.PeerType {
-	case TypeGroup:
-		known, err = uc.convs.Get(ctx, in.PeerID)
-	case TypeSingle:
-		low, high = min(in.SenderID, in.PeerID), max(in.SenderID, in.PeerID)
-		known, err = uc.convs.FindPair(ctx, low, high)
-	default:
-		return nil, fmt.Errorf("unknown peer type %d", in.PeerType)
-	}
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return nil, err
-	}
-
-	// 幂等快速路径：重发时直接返回首次的结果，不再校验权限（首次已经被接受）
-	if known != nil {
-		m, err := uc.msgs.FindByClientID(ctx, known.ID, in.SenderID, in.ClientMsgID)
-		if err == nil {
-			annotate(ctx, m, true)
-			return m, nil
-		}
-		if !errors.Is(err, ErrNotFound) {
-			return nil, err
-		}
+	t, replay, err := uc.locate(ctx, in)
+	if err != nil || replay != nil {
+		return replay, err
 	}
 
 	if err := uc.perm.CheckSend(ctx, in.SenderID, in.PeerType, in.PeerID); err != nil {
@@ -99,14 +73,85 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 	if err != nil {
 		return nil, err
 	}
+	return uc.write(ctx, in, t, content)
+}
 
+// CallRecordInput 是一通结束的单聊通话，来自 access 的通话结束路径。
+type CallRecordInput struct {
+	CallID   int64
+	CallerID int64
+	CalleeID int64
+	Call     *v1.CallContent
+}
+
+// CallRecordClientMsgID 是通话记录的幂等键（发送者为主叫）。客户端的 client_msg_id 只能由字母、数字、
+// 下划线和连字符组成（OutgoingMessage 的校验规则），带冒号的键不会与客户端发送的消息冲突。
+func CallRecordClientMsgID(callID int64) string {
+	return "call:" + strconv.FormatInt(callID, 10)
+}
+
+// WriteCallRecord 在两人的单聊会话里写一条通话记录，发送者为主叫（设计 docs/design/call-record.md）。
+// 与 Send 共用写入事务、Outbox 与推送，区别是：不限流、不校验发言权限（邀请时已经校验过好友关系，
+// 通话中被删除好友也应留下记录），推送不排除任何连接（没有发起写入的客户端连接）。
+func (uc *MessageUsecase) WriteCallRecord(ctx context.Context, in CallRecordInput) (*Message, error) {
+	send := SendInput{
+		SenderID:    in.CallerID,
+		PeerType:    TypeSingle,
+		PeerID:      in.CalleeID,
+		ClientMsgID: CallRecordClientMsgID(in.CallID),
+		Content:     &v1.MessageContent{Body: &v1.MessageContent_Call{Call: in.Call}},
+	}
+	t, replay, err := uc.locate(ctx, send)
+	if err != nil || replay != nil {
+		return replay, err
+	}
+	return uc.write(ctx, send, t, send.Content)
+}
+
+// sendTarget 是事务外只读解析出的会话：已存在时 known 非空；单聊另外记下两人按大小排列的 ID，用于新建会话。
+type sendTarget struct {
+	known     *Conversation
+	low, high int64
+}
+
+// locate 只读地解析会话，并走幂等快速路径：重发时直接返回首次写入的消息（replay），
+// 调用方不再校验权限（首次已经被接受）。
+func (uc *MessageUsecase) locate(ctx context.Context, in SendInput) (t sendTarget, replay *Message, err error) {
+	switch in.PeerType {
+	case TypeGroup:
+		t.known, err = uc.convs.Get(ctx, in.PeerID)
+	case TypeSingle:
+		t.low, t.high = min(in.SenderID, in.PeerID), max(in.SenderID, in.PeerID)
+		t.known, err = uc.convs.FindPair(ctx, t.low, t.high)
+	default:
+		return t, nil, fmt.Errorf("unknown peer type %d", in.PeerType)
+	}
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return t, nil, err
+	}
+	if t.known == nil {
+		return t, nil, nil
+	}
+	m, err := uc.msgs.FindByClientID(ctx, t.known.ID, in.SenderID, in.ClientMsgID)
+	if err == nil {
+		annotate(ctx, m, true)
+		return t, m, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return t, nil, err
+	}
+	return t, nil, nil
+}
+
+// write 在事务内锁会话行分配 seq、写消息、推进发送者已读位置、写 Outbox 事件。
+func (uc *MessageUsecase) write(ctx context.Context, in SendInput, t sendTarget, content *v1.MessageContent) (*Message, error) {
 	var (
 		created *Message
 		convID  int64
 	)
-	err = uc.tx.InTx(ctx, func(ctx context.Context) error {
+	err := uc.tx.InTx(ctx, func(ctx context.Context) error {
 		now := nowUTC()
-		c, err := uc.lockConversation(ctx, in, known, low, high, now)
+		c, err := uc.lockConversation(ctx, in, t.known, t.low, t.high, now)
 		if err != nil {
 			return err
 		}
@@ -126,7 +171,7 @@ func (uc *MessageUsecase) Send(ctx context.Context, in SendInput) (*Message, err
 		if err := uc.convs.SetMaxSeq(ctx, c.ID, m.Seq, now); err != nil {
 			return err
 		}
-		// 回复视为已读到这里；群成员行还没由事件建立时不更新
+		// 回复视为已读到这里（通话记录同样推进主叫的已读位置）；群成员行还没由事件建立时不更新
 		if _, err := uc.members.AdvanceRead(ctx, c.ID, in.SenderID, m.Seq, now); err != nil {
 			return err
 		}

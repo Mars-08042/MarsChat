@@ -56,6 +56,12 @@ type MessageSender interface {
 	Send(ctx context.Context, p auth.Principal, connID int64, m *messagev1.OutgoingMessage) (*messagev1.SendResult, error)
 }
 
+// CallRecorder 在通话结束后把通话记录写进两人的单聊会话（message 的 WriteCallRecord，按通话 ID 幂等）。
+// 返回的错误规则同 MessageSender：业务错误带原因，调用失败时为 503 UPSTREAM_UNAVAILABLE。
+type CallRecorder interface {
+	WriteCallRecord(ctx context.Context, callID, callerID, calleeID int64, c *messagev1.CallContent) error
+}
+
 // PolicyHolder 持有当前生效的限额策略。配置热更新时整体替换，读取方每次使用时取一次快照。
 type PolicyHolder struct {
 	v atomic.Pointer[conf.Policy]

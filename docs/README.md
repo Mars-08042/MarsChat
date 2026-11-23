@@ -25,7 +25,7 @@ docs/
 └── images/                  文档插图（SVG）
 ```
 
-已完成计划：[后端重构](plans/completed/backend-refactor.md)（含故障实验与压测结果）、[React 前端重写](plans/completed/frontend-rewrite.md)（含各阶段的联调记录）；旧基线时期的 [本地 Compose 开发环境](plans/completed/local-compose.md)、[无证书本地启动](plans/completed/local-http.md)、[前端迁移 pnpm](plans/completed/pnpm-migration.md)。
+已完成计划：[后端重构](plans/completed/backend-refactor.md)（含故障实验与压测结果）、[React 前端重写](plans/completed/frontend-rewrite.md)（含各阶段的联调记录）、[通话记录写入聊天](plans/completed/call-record.md)；旧基线时期的 [本地 Compose 开发环境](plans/completed/local-compose.md)、[无证书本地启动](plans/completed/local-http.md)、[前端迁移 pnpm](plans/completed/pnpm-migration.md)。
 
 ## 按问题查找
 

@@ -98,7 +98,7 @@
 | 振铃超时、挂断与断线 | 振铃 60 秒无人接听自动结束；任一方挂断；信令连接断开时结束通话，access 实例崩溃时状态按 TTL 过期 | 已实现 | 自动化测试：单元（超时）、e2e（断线）、`make cluster-test`（2026-11-21，通话中杀掉接听方所在的 access） | access 滚动重启会结束进行中的通话；主叫所在实例崩溃时被叫靠客户端的振铃上限停止 |
 | TURN 中继与 ICE 服务器下发 | 邀请和接听的 `CallAck` 带 ICE 服务器与 12 小时的 TURN 临时凭据（TURN REST API）；coturn 在 Compose profile `call` 中，可选部署，禁止中继到内网；没有配置时不下发 | 已实现 | 自动化测试：单元；coturn 自带工具与浏览器只走中继的通话（2026-11-22，局域网地址） | 设计见 [turn-relay.md](../design/turn-relay.md)；TURN over TLS 随公网部署配置；未验证跨网络（移动网络）的通话 |
 | 群通话 | 多人音视频 | 未实现 | — | 需要 SFU，不在前端重写范围内 |
-| 通话记录 | 通话结束后写入聊天记录 | 未实现 | — | 设计第 8 节问题 5 |
+| 通话记录 | 单聊通话结束后在会话里写一条记录（发送者为主叫）：通话时长、已取消、已拒绝、无人接听、连接失败，按主叫或被叫显示不同文案，点击回拨；客户端不能伪造 | 已实现 | 自动化测试：单元（access 结果映射与重试、message 幂等与拒绝客户端写入、前端转换与气泡）（2026-11-23） | 设计见 [call-record.md](../design/call-record.md)；message 长时间不可用、或 access 在写入前退出时缺这条记录（TD-47）；忙线不记录 |
 
 ## 基础能力
 
@@ -119,4 +119,4 @@
 
 （暂无）
 
-后端已按[后端重构计划](../plans/completed/backend-refactor.md)完成（2026-11-21），前端已按[前端计划](../plans/completed/frontend-rewrite.md)完成（2026-11-22，设计 [frontend.md](../design/frontend.md)，[ADR-0008](../architecture/adr/0008-react-frontend.md)）。新计划在 `docs/plans/active/` 中建立（规则见 [docs/README.md](../README.md#计划文档)），并在此登记。
+后端已按[后端重构计划](../plans/completed/backend-refactor.md)完成（2026-11-21），前端已按[前端计划](../plans/completed/frontend-rewrite.md)完成（2026-11-22，设计 [frontend.md](../design/frontend.md)，[ADR-0008](../architecture/adr/0008-react-frontend.md)），通话记录按[计划](../plans/completed/call-record.md)完成（2026-11-23）。新计划在 `docs/plans/active/` 中建立（规则见 [docs/README.md](../README.md#计划文档)），并在此登记。

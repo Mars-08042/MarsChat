@@ -3,15 +3,26 @@
 import { timestampMs } from "@bufbuild/protobuf/wkt"
 import { Gender, type UserProfile } from "@/gen/account/v1/account_pb"
 import {
+  CallRecordMedia,
+  CallResult as PbCallResult,
   ConversationType,
   type Conversation as PbConversation,
   type Message as PbMessage,
   type MessageContent as PbContent,
 } from "@/gen/message/v1/message_pb"
 import { GroupStatus } from "@/gen/social/v1/social_pb"
-import type { ChatMessage, ChatUser, Conversation, MessageContent } from "@/features/chat/types"
+import type { CallResult, ChatMessage, ChatUser, Conversation, MessageContent } from "@/features/chat/types"
 
 export const GROUP_DISMISSED_TEXT = "群已解散，不能发送消息"
+export const UNSUPPORTED_MESSAGE_TEXT = "[暂不支持的消息类型]"
+
+const CALL_RESULTS: Partial<Record<PbCallResult, CallResult>> = {
+  [PbCallResult.COMPLETED]: "completed",
+  [PbCallResult.CANCELLED]: "cancelled",
+  [PbCallResult.REJECTED]: "rejected",
+  [PbCallResult.MISSED]: "missed",
+  [PbCallResult.FAILED]: "failed",
+}
 
 // 同一发送者的 client_msg_id 唯一。用它做界面上的 ID，发送中的消息收到确认后 ID 不变，不会重新播放入场动画
 export const messageId = (senderId: string, clientMsgId: string) => `${senderId}:${clientMsgId}`
@@ -42,9 +53,19 @@ export function toContent(c: PbContent | undefined): MessageContent {
         file: { fileId: v.fileId.toString(), accessKey: v.accessKey, name: v.name, size: Number(v.size), mimeType: v.mimeType },
       }
     }
+    case "call": {
+      const v = c.body.value
+      const result = CALL_RESULTS[v.result]
+      // 新版本服务端增加的通话结果，按不认识的消息处理
+      if (!result) return { kind: "text", text: UNSUPPORTED_MESSAGE_TEXT }
+      return {
+        kind: "call",
+        call: { media: v.media === CallRecordMedia.VIDEO ? "video" : "audio", result, durationSeconds: v.durationSeconds },
+      }
+    }
     default:
       // 新版本服务端增加的消息类型，旧客户端显示占位文字
-      return { kind: "text", text: "[暂不支持的消息类型]" }
+      return { kind: "text", text: UNSUPPORTED_MESSAGE_TEXT }
   }
 }
 

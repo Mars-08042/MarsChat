@@ -1,9 +1,41 @@
 import { describe, expect, it } from "vitest"
-import { deviceErrorText, endReasonText, INSECURE_CONTEXT_ERROR, inviteErrorText, type CallEndReason, type EndContext } from "./call-text"
+import type { CallRecord, CallResult } from "@/features/chat/types"
+import {
+  callRecordText,
+  deviceErrorText,
+  endReasonText,
+  INSECURE_CONTEXT_ERROR,
+  inviteErrorText,
+  type CallEndReason,
+  type EndContext,
+} from "./call-text"
 
 const outgoing: EndContext = { direction: "outgoing", connected: false }
 const incoming: EndContext = { direction: "incoming", connected: false }
 const talking: EndContext = { direction: "outgoing", connected: true }
+
+describe("callRecordText", () => {
+  const record = (result: CallResult, durationSeconds = 0): CallRecord => ({ media: "audio", result, durationSeconds })
+
+  it("主叫和被叫看到不同的说法", () => {
+    const cases: [CallResult, string, string][] = [
+      ["cancelled", "已取消", "对方已取消"],
+      ["rejected", "对方已拒绝", "已拒绝"],
+      ["missed", "对方无应答", "未接听"],
+      ["failed", "连接失败", "未接听"],
+    ]
+    for (const [result, caller, callee] of cases) {
+      expect(callRecordText(record(result), true)).toBe(caller)
+      expect(callRecordText(record(result), false)).toBe(callee)
+    }
+  })
+
+  it("通话完成时双方都显示时长，超过一小时带小时", () => {
+    expect(callRecordText(record("completed", 83), true)).toBe("通话时长 01:23")
+    expect(callRecordText(record("completed", 83), false)).toBe("通话时长 01:23")
+    expect(callRecordText(record("completed", 3725), false)).toBe("通话时长 1:02:05")
+  })
+})
 
 describe("endReasonText", () => {
   it("振铃中挂断：被叫看到的是主叫取消", () => {

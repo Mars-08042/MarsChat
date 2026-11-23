@@ -169,9 +169,22 @@ func (s *InternalService) SendMessage(ctx context.Context, req *v1.SendMessageRe
 	if err != nil {
 		return nil, err
 	}
-	return &v1.SendMessageResponse{Result: &v1.SendResult{
-		ConversationId: m.ConversationID,
-		Seq:            m.Seq,
-		CreatedAt:      timestamppb.New(m.CreatedAt),
-	}}, nil
+	return &v1.SendMessageResponse{Result: sendResult(m)}, nil
+}
+
+func (s *InternalService) WriteCallRecord(ctx context.Context, req *v1.WriteCallRecordRequest) (*v1.WriteCallRecordResponse, error) {
+	m, err := s.msgs.WriteCallRecord(ctx, biz.CallRecordInput{
+		CallID:   req.GetCallId(),
+		CallerID: req.GetCallerId(),
+		CalleeID: req.GetCalleeId(),
+		Call:     req.GetCall(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &v1.WriteCallRecordResponse{Result: sendResult(m)}, nil
+}
+
+func sendResult(m *biz.Message) *v1.SendResult {
+	return &v1.SendResult{ConversationId: m.ConversationID, Seq: m.Seq, CreatedAt: timestamppb.New(m.CreatedAt)}
 }

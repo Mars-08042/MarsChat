@@ -122,8 +122,13 @@ type Calls struct {
 	routes    RouteRepo
 	fwd       Forwarder
 	// 邀请和接听的 CallAck 带上的 ICE 服务器，没有配置 TURN 时为 nil
-	turn   *turnServers
-	logger *slog.Logger
+	turn *turnServers
+	// 通话结束后写通话记录（call_record.go）。recordRetry 是失败后的重试间隔，测试中缩短
+	records     CallRecorder
+	recordRetry []time.Duration
+	recordStop  chan struct{}
+	recordWG    sync.WaitGroup
+	logger      *slog.Logger
 	// 由 NewHub 设置。Calls 与 Hub 互相引用，wire 不允许构造时成环
 	hub *Hub
 
@@ -133,7 +138,8 @@ type Calls struct {
 }
 
 // NewCalls 创建通话信令处理器。
-func NewCalls(c *conf.Call, ws *conf.WebSocket, repo CallRepo, perm CallPermission, routes RouteRepo, fwd Forwarder, logger *slog.Logger) *Calls {
+func NewCalls(c *conf.Call, ws *conf.WebSocket, repo CallRepo, perm CallPermission, routes RouteRepo, fwd Forwarder,
+	records CallRecorder, logger *slog.Logger) *Calls {
 	ring := c.GetRingTimeout().AsDuration()
 	return &Calls{
 		ringTimeout: ring,
@@ -144,6 +150,9 @@ func NewCalls(c *conf.Call, ws *conf.WebSocket, repo CallRepo, perm CallPermissi
 		routes:      routes,
 		fwd:         fwd,
 		turn:        newTurnServers(c.GetTurn()),
+		records:     records,
+		recordRetry: defaultRecordRetry,
+		recordStop:  make(chan struct{}),
 		logger:      logger,
 		timers:      make(map[int64]*time.Timer),
 	}
@@ -432,9 +441,11 @@ func (k *Calls) notifyEnded(ctx context.Context, call *Call, reason v1.CallEndRe
 	}
 }
 
+// logEnded 在每通通话结束时调用一次（结束由 Redis 原子判断，只有一个实例走到这里）：记日志和指标，并写通话记录。
 func (k *Calls) logEnded(call *Call, reason v1.CallEndReason) {
 	countCallEvent("ended", reason)
 	now := time.Now()
+	k.recordEnded(call, reason, now)
 	attrs := []any{slog.Int64("call_id", call.ID), slog.Int64("caller_id", call.CallerID),
 		slog.Int64("callee_id", call.CalleeID), slog.String("reason", reason.String())}
 	if call.AnsweredAt.IsZero() {
@@ -552,14 +563,19 @@ func (k *Calls) onRingTimeout(call *Call) {
 }
 
 // stop 取消全部振铃定时器，在 Hub 停机、连接全部关闭后调用。此时还在振铃的通话按 Redis TTL 过期。
+// 之后等待正在写的通话记录：进行中的那次调用做完，不再重试（见 call_record.go）。
 func (k *Calls) stop() {
 	k.mu.Lock()
-	defer k.mu.Unlock()
-	k.stopped = true
+	if !k.stopped {
+		k.stopped = true
+		close(k.recordStop)
+	}
 	for id, t := range k.timers {
 		t.Stop()
 		delete(k.timers, id)
 	}
+	k.mu.Unlock()
+	k.recordWG.Wait()
 }
 
 func callAckFrame(rid uint64, id int64) *v1.ServerFrame {
