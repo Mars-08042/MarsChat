@@ -916,7 +916,7 @@ React Router 与 TanStack Router 相比：后者路由类型安全更强，但�
 
 以下为第 8 阶段（通话，2026-11-22）中的调整：
 
-70. **引擎与界面的分工**：`realtime/call/engine.ts` 的 `createCallEngine` 不直接访问浏览器 API，`getUserMedia`、`RTCPeerConnection` 的构造、发帧、取用户资料都由 `realtime/client.ts` 注入，单元测试用假的设备和连接（模拟 JSEP 的信令状态）。状态在 `stores/call.ts`，只放界面要显示的内容（阶段、静音、本地和远端的 `MediaStream`、提示）；`RTCPeerConnection`、定时器、待发信令留在引擎内部。界面通过 `callActions` 调用，没有登录时这些动作什么也不做。原型的 `features/call/fake-call-store.ts` 已不再使用。
+70. **引擎与界面的分工**：`realtime/call/engine.ts` 的 `createCallEngine` 不直接访问浏览器 API，`getUserMedia`、`RTCPeerConnection` 的构造、发帧、取用户资料都由 `realtime/client.ts` 注入，单元测试用假的设备和连接（模拟 JSEP 的信令状态）。状态在 `stores/call.ts`，只放界面要显示的内容（阶段、静音、本地和远端的 `MediaStream`、提示）；`RTCPeerConnection`、定时器、待发信令留在引擎内部。界面通过 `callActions` 调用，没有登录时这些动作什么也不做。原型的 `features/call/fake-call-store.ts` 已删除。
 71. **被叫收到 offer 后才加轨道**：perfect negotiation 允许双方同时发 offer，再由 polite 一方让步。实际做法更简单：主叫收到 `CallAccepted` 后加入本地轨道，由 `negotiationneeded` 发出 offer；被叫在设置远端 offer 之后才加入轨道，再用 `setLocalDescription()` 生成 answer，正常流程不会出现冲突。冲突处理的代码仍按 polite 写法保留（有单元测试）。语音通话没有摄像头按钮（3.6.10），所以第 8 阶段不会在通话中重新协商。
 72. **新增 `dialing` 阶段**：点击呼叫后立即进入全屏界面，显示「正在呼叫…」，同时申请设备、发邀请；收到 `CallAck` 后进入 `outgoing`，显示等待接听和计时。设备不可用、邀请被拒绝（3.6.10 的「呼叫被拒」）时收起界面，在顶部提示原因。这比「拿到权限之后才出现界面」反馈更及时，浏览器弹出权限框时用户也知道发生了什么。邀请和接听最多等 10 秒回复，超时按失败处理；用户在这期间取消、或者超时之后 `CallAck` 才到，说明服务端已经建立了通话，引擎补发挂断。
 73. **信令每秒最多 8 帧，不发收集结束标记**：access 按固定 1 秒窗口统计每个连接的上行帧，超过 30 帧以 4008 断开（`app/access/internal/biz/conn.go`）；发送队列每秒最多 20 帧（3.9.4）。没有 TURN 时本机每块网卡都会产生候选，一次可能有几十个，所以通话信令另外按 1 秒滑动窗口限到 8 帧，超出的排队稍后发送，与消息、心跳加在一起也不会超过 30 帧。联调时一秒内最多发出 3 帧。ICE 收集结束（`candidate` 为 null 或空串）不发送：现在的浏览器不需要这个标记也能完成连接，省下一帧；收到对端的空候选同样忽略。
